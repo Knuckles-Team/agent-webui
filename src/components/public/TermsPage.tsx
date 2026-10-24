@@ -8,12 +8,7 @@ export default function TermsPage() {
   const config = getSiteConfig()
   if (!route) return null
   return (
-    <PublicPageLayout
-      route={route}
-      eyebrow="Terms"
-      title="Terms and conditions"
-      description="The reviewed terms and safe agent-control boundaries for this deployment."
-    >
+    <PublicPageLayout route={route} eyebrow="Terms" title="Terms and conditions">
       <LegalPageContent config={config} text={config.termsText} />
     </PublicPageLayout>
   )

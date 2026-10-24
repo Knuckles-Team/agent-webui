@@ -1,4 +1,4 @@
-import { useSyncExternalStore, type MouseEvent } from 'react'
+import { useSyncExternalStore, type MouseEvent, type ReactNode } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -14,6 +14,7 @@ import type { WebMcpControlChannel, WebMcpChannelView } from '@/lib/webmcp/chann
 export interface WebMcpControlProps {
   readonly channel: Pick<WebMcpControlChannel, 'arm' | 'confirm' | 'deny' | 'getView' | 'revoke' | 'subscribe'>
   readonly placement?: 'floating' | 'workspace'
+  readonly collapsible?: boolean
   readonly visible: boolean
   readonly isAttendedGesture?: (event: MouseEvent<HTMLButtonElement>) => boolean
 }
@@ -28,10 +29,38 @@ function browserTrustedGesture(event: MouseEvent<HTMLButtonElement>): boolean {
   return event.nativeEvent.isTrusted
 }
 
+function panelClass(placement: 'floating' | 'workspace'): string {
+  return placement === 'workspace'
+    ? 'min-w-0 rounded-lg border bg-background p-3 text-sm'
+    : 'fixed top-16 right-3 z-40 max-w-[min(22rem,calc(100vw-1.5rem))] rounded-lg border bg-background/95 p-3 text-sm shadow-lg backdrop-blur'
+}
+
+function ControlFrame({
+  collapsible,
+  view,
+  children,
+}: {
+  collapsible: boolean
+  view: WebMcpChannelView
+  children: ReactNode
+}) {
+  if (!collapsible) return <>{children}</>
+  return (
+    <details className="min-w-0 border-b bg-background">
+      <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px]">
+        Browser control settings · {view.status}
+        {view.message ? ' · attention needed' : ''}
+      </summary>
+      {children}
+    </details>
+  )
+}
+
 export function WebMcpControl({
   channel,
   visible,
   placement = 'floating',
+  collapsible = false,
   isAttendedGesture = browserTrustedGesture,
 }: WebMcpControlProps) {
   const view = useSyncExternalStore(
@@ -42,77 +71,75 @@ export function WebMcpControl({
   const confirmation = view.pendingConfirmation
   if (!visible) return null
 
+  const controls = (
+    <aside className={panelClass(placement)} aria-label="Remote browser control">
+      <div className="flex items-center gap-2 font-medium">
+        <ShieldCheck aria-hidden="true" className="size-4" />
+        Browser control
+      </div>
+      {view.status === 'armed' || view.status === 'connected' ? (
+        <div className="mt-2 space-y-2">
+          <p role="status" className="text-xs text-muted-foreground">
+            {view.status === 'armed'
+              ? `Armed for ${scopeSummary(view)} in this visible page.`
+              : `Connected for ${scopeSummary(view)}; Arbora validation is pending.`}
+          </p>
+          {view.expiresAt !== null && (
+            <p className="text-xs text-muted-foreground">
+              Attended authorization expires at{' '}
+              <time dateTime={new Date(view.expiresAt * 1_000).toISOString()}>
+                {new Date(view.expiresAt * 1_000).toLocaleTimeString()}
+              </time>
+              .
+            </p>
+          )}
+          <ul className="sr-only" aria-label="Armed browser tools">
+            {view.toolIds.map((toolId) => (
+              <li key={toolId}>{toolId}</li>
+            ))}
+          </ul>
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            onClick={() => {
+              channel.revoke()
+            }}
+          >
+            Revoke browser control
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Allow Arbora to request only the registered tools in this page. Control ends on page or identity change.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            disabled={view.status === 'connecting'}
+            onClick={(event) => {
+              if (!isAttendedGesture(event)) return
+              void channel.arm()
+            }}
+          >
+            {view.status === 'connecting' ? 'Arming…' : 'Arm browser control'}
+          </Button>
+        </div>
+      )}
+      {view.message && (
+        <p role="alert" className="mt-2 text-xs text-destructive">
+          {view.message}
+        </p>
+      )}
+    </aside>
+  )
+
   return (
     <>
-      <aside
-        className={
-          placement === 'workspace'
-            ? 'min-w-0 rounded-lg border bg-background p-3 text-sm'
-            : 'fixed top-16 right-3 z-40 max-w-[min(22rem,calc(100vw-1.5rem))] rounded-lg border bg-background/95 p-3 text-sm shadow-lg backdrop-blur'
-        }
-        aria-label="Remote browser control"
-      >
-        <div className="flex items-center gap-2 font-medium">
-          <ShieldCheck aria-hidden="true" className="size-4" />
-          Browser control
-        </div>
-        {view.status === 'armed' || view.status === 'connected' ? (
-          <div className="mt-2 space-y-2">
-            <p role="status" className="text-xs text-muted-foreground">
-              {view.status === 'armed'
-                ? `Armed for ${scopeSummary(view)} in this visible page.`
-                : `Connected for ${scopeSummary(view)}; Arbora validation is pending.`}
-            </p>
-            {view.expiresAt !== null && (
-              <p className="text-xs text-muted-foreground">
-                Attended authorization expires at{' '}
-                <time dateTime={new Date(view.expiresAt * 1_000).toISOString()}>
-                  {new Date(view.expiresAt * 1_000).toLocaleTimeString()}
-                </time>
-                .
-              </p>
-            )}
-            <ul className="sr-only" aria-label="Armed browser tools">
-              {view.toolIds.map((toolId) => (
-                <li key={toolId}>{toolId}</li>
-              ))}
-            </ul>
-            <Button
-              type="button"
-              size="sm"
-              variant="destructive"
-              onClick={() => {
-                channel.revoke()
-              }}
-            >
-              Revoke browser control
-            </Button>
-          </div>
-        ) : (
-          <div className="mt-2 space-y-2">
-            <p className="text-xs text-muted-foreground">
-              Allow Arbora to request only the registered tools in this page. Control ends on page or identity change.
-            </p>
-            <Button
-              type="button"
-              size="sm"
-              disabled={view.status === 'connecting'}
-              onClick={(event) => {
-                if (!isAttendedGesture(event)) return
-                void channel.arm()
-              }}
-            >
-              {view.status === 'connecting' ? 'Arming…' : 'Arm browser control'}
-            </Button>
-          </div>
-        )}
-        {view.message && (
-          <p role="alert" className="mt-2 text-xs text-destructive">
-            {view.message}
-          </p>
-        )}
-      </aside>
-
+      <ControlFrame collapsible={collapsible} view={view}>
+        {controls}
+      </ControlFrame>
       <Dialog open={confirmation !== null}>
         <DialogContent showCloseButton={false} aria-describedby="webmcp-confirmation-description">
           <DialogHeader>

@@ -47,7 +47,7 @@ import { cleanup } from '@testing-library/react'
 import { ROUTES } from './route-source'
 import { HOSTILE_FIXTURES, MOBILE_FIXTURE_IDS } from './hostile-fixtures'
 import { renderRoute, setViewport, flush, clearLeakedIntervals, DESKTOP_WIDTH, MOBILE_WIDTH } from './render-route'
-import { isKnownBroken, type Viewport } from './baseline'
+import { isKnownBroken, KNOWN_BROKEN_ROUTES, type Viewport } from './baseline'
 
 // See render-route.tsx's `clearLeakedIntervals` doc comment: several views
 // leak a polling `setInterval`; force-clearing it after every test is what
@@ -126,6 +126,7 @@ function runOne(
   }
 }
 
+// spec: WEBUI-APPS-R005.5.2
 describe('route render harness — desktop x hostile payload matrix', () => {
   beforeEach(() => {
     setViewport(DESKTOP_WIDTH)
@@ -172,7 +173,12 @@ describe('route render harness — mobile viewport x hostile payload subset', ()
 })
 
 describe('route registry coverage', () => {
-  // Partial coverage for WEBUI-APPS-R005.5; known-broken route baselines remain open.
+  // spec: WEBUI-APPS-R005.5.2
+  it('has no known-failure exemptions in complete route acceptance', () => {
+    expect(KNOWN_BROKEN_ROUTES).toEqual([])
+  })
+
+  // The injection test independently proves the harness detects a crashing view.
   // spec: WEBUI-APPS-R005.5.1
   it('detects an injected throwing view through the real ErrorBoundary', async () => {
     const fixture = HOSTILE_FIXTURES[0]

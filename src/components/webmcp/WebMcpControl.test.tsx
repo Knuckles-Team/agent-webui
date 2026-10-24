@@ -140,3 +140,36 @@ describe('attended WebMCP controls', () => {
     expect(controlled.channel.confirm).not.toHaveBeenCalled()
   })
 })
+
+// spec: WEBUI-APPS-R005.6.2
+it('keeps legacy browser controls in a dismissible flow disclosure without arming on disclosure', async () => {
+  const controlled = fakeChannel(IDLE)
+  const user = userEvent.setup()
+  render(
+    <WebMcpControl
+      visible
+      collapsible
+      placement="workspace"
+      channel={controlled.channel}
+      isAttendedGesture={() => true}
+    />,
+  )
+  const summary = screen.getByText('Browser control settings · idle')
+  const disclosure = summary.closest('details')!
+  expect(disclosure).not.toHaveAttribute('open')
+  expect(disclosure.querySelector('aside')).not.toHaveClass('fixed')
+  await user.click(summary)
+  expect(disclosure).toHaveAttribute('open')
+  expect(controlled.channel.arm).not.toHaveBeenCalled()
+  await user.click(screen.getByRole('button', { name: 'Arm browser control' }))
+  expect(controlled.channel.arm).toHaveBeenCalledOnce()
+  act(() => {
+    controlled.update({ status: 'armed', toolIds: ['navigate'] })
+  })
+  expect(summary).toHaveTextContent('armed')
+  await user.click(screen.getByRole('button', { name: 'Revoke browser control' }))
+  expect(controlled.channel.revoke).toHaveBeenCalledOnce()
+  await user.click(summary)
+  expect(disclosure).not.toHaveAttribute('open')
+  expect(summary).toHaveFocus()
+})

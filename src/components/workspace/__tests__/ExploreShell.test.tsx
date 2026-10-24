@@ -30,7 +30,9 @@ vi.mock('@/components/ChatPanel', () => ({
 vi.mock('@/lib/webmcp/provider', () => ({
   useWebMcpToolSet: vi.fn(),
   WebMcpProvider: ({ children }: { children: React.ReactNode }) => children,
-  WorkspaceWebMcpControl: () => <p>Attended control</p>,
+  WorkspaceWebMcpControl: ({ collapsible }: { collapsible?: boolean }) => (
+    <p data-collapsible={String(collapsible)}>Attended control</p>
+  ),
 }))
 const identity: Identity = { userKey: 'reader', role: 'reader', ssoConfigured: true, needsSignIn: false, raw: null }
 const route = ROUTES.find((entry) => entry.id === 'workspace.explore-proof')!
@@ -134,3 +136,30 @@ describe('new workspace composition', () => {
     expect(screen.queryByRole('navigation', { name: 'Primary workspace contexts' })).not.toBeInTheDocument()
   })
 })
+
+// spec: WEBUI-APPS-R005.6.2
+it.each(['chat.console', 'observability.dashboard'])(
+  'places %s control in bounded flow rather than over the content',
+  async (id) => {
+    const selected = ROUTES.find((entry) => entry.id === id)!
+    render(
+      <Suspense fallback={<p>Loading</p>}>
+        <PrivateAppSurface
+          route={selected}
+          currentView={id}
+          isChat={id === 'chat.console'}
+          isDashboard={id === 'observability.dashboard'}
+          routeAccessDenied={false}
+          identity={identity}
+          isObjectDetail={false}
+          objectId=""
+        />
+      </Suspense>,
+    )
+    const control = await screen.findByText('Attended control')
+    expect(screen.getAllByText('Attended control')).toHaveLength(1)
+    expect(control).toHaveAttribute('data-collapsible', 'true')
+    expect(control.parentElement).toHaveClass('shrink-0', 'overflow-auto')
+    expect(control.closest('.fixed')).toBeNull()
+  },
+)

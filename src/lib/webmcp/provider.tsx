@@ -181,9 +181,9 @@ function createRootTools(
 const WorkspaceControlContext = createContext<ComponentProps<typeof WebMcpControl> | null>(null)
 
 /** Same attended channel and confirmation controls, placed in workspace flow. */
-export function WorkspaceWebMcpControl() {
+export function WorkspaceWebMcpControl({ collapsible = false }: { collapsible?: boolean }) {
   const props = useContext(WorkspaceControlContext)
-  return props ? <WebMcpControl {...props} placement="workspace" /> : null
+  return props ? <WebMcpControl {...props} placement="workspace" collapsible={collapsible} /> : null
 }
 
 /** Mount once inside `PageContextProvider` to expose only local UI tools. */

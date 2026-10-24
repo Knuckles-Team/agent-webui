@@ -18,6 +18,7 @@ interface ChatPanelProps {
   currentView: string
   /** Render the same mounted assistant as the primary `/chat` surface. */
   isPrimary: boolean
+  purpose?: string
 }
 
 function isUnhandledEscape(event: KeyboardEvent): boolean {
@@ -214,7 +215,11 @@ function drawerLabel(isPrimary: boolean): string | undefined {
   return isPrimary ? undefined : 'Agent Chat'
 }
 
-export default function ChatPanel({ currentView, isPrimary }: ChatPanelProps) {
+function ChatPurpose({ purpose }: { purpose?: string }) {
+  return purpose ? <p className="shrink-0 px-4 py-2 text-sm text-muted-foreground">{purpose}</p> : null
+}
+
+export default function ChatPanel({ currentView, isPrimary, purpose }: ChatPanelProps) {
   const { isOpen, isExpanded, toggle, toggleExpand } = useChatPanelState()
   const { panelRef, fabRef } = useChatDrawerFocus(isPrimary, isOpen)
   const pageContext = usePageContextEnvelope()
@@ -243,6 +248,7 @@ export default function ChatPanel({ currentView, isPrimary }: ChatPanelProps) {
         />
 
         <div className={cn('flex flex-col flex-1 min-h-0 overflow-hidden', !isPrimary && 'px-2')}>
+          <ChatPurpose purpose={purpose} />
           <Chat pageContext={pageContext} />
         </div>
       </div>
