@@ -1,0 +1,23 @@
+.workspace-viewport {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  height: var(--workspace-visible-height, 100dvh);
+  overflow: auto;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+    env(safe-area-inset-left, 0px);
+  scroll-behavior: auto;
+}
+
+/* Keep a usable task pane when wrapped chrome exceeds the visible height.
+   The outer workspace then scrolls instead of squeezing content to zero. */
+.workspace-viewport > .workspace-body {
+  min-height: 16rem;
+  flex: 1;
+}
+
+.workspace-body-flow {
+  display: flex;
+  flex-direction: column;
+}
