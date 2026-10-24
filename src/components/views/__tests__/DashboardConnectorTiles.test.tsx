@@ -17,15 +17,13 @@ let status: unknown
 let refused: boolean
 let pending: boolean
 const fetcher = vi.fn(async (url: string, _options?: RequestInit) => {
+  if (url === '/api/enhanced/tools')
+    return Response.json({
+      source: 'epistemic_graph',
+      servers: [{ server_id: 'srv:catalog-only', name: 'catalog-only', status: 'unavailable', tool_count: 0 }],
+    })
   if (url === '/auth/session') return Response.json({ authenticated: true, csrf_token: 'session-fixture' })
-  if (url === '/api/v1/ops/fleet.status') {
-    if (pending)
-      return new Promise<Response>(() => {
-        /* Keep discovery pending to prove the loading state. */
-      })
-    if (refused) return Response.json({ message: 'unavailable' }, { status: 503 })
-    return Response.json({ ok: true, result: status, meta })
-  }
+  if (url === '/api/v1/ops/fleet.status') return fleetResponse()
   if (url === '/api/v1/ops/fleet.catalog.list')
     return Response.json({
       ok: true,
@@ -34,6 +32,15 @@ const fetcher = vi.fn(async (url: string, _options?: RequestInit) => {
     })
   throw new Error(`Unexpected request: ${url}`)
 })
+
+function fleetResponse() {
+  if (pending)
+    return new Promise<Response>(() => {
+      /* Keep discovery pending to prove the loading state. */
+    })
+  if (refused) return Response.json({ message: 'unavailable' }, { status: 503 })
+  return Response.json({ ok: true, result: status, meta })
+}
 
 beforeEach(() => {
   refused = false
@@ -72,7 +79,10 @@ describe('Operate connector inventory through the real browser adapter', () => {
     expect(records.getByText('Restarts').nextElementSibling).toHaveTextContent('1')
     const archive = within(screen.getByRole('article', { name: 'Connector archive' }))
     expect(archive.getAllByText('Not available')).toHaveLength(4)
-    expect(screen.getAllByRole('article')).toHaveLength(2)
+    expect(within(screen.getByRole('region', { name: 'Fleet children' })).getAllByRole('article')).toHaveLength(2)
+    expect(await screen.findByRole('article', { name: 'Catalog connector catalog-only' })).toHaveTextContent(
+      'Registration: unavailable',
+    )
     expect(document.body).not.toHaveTextContent('private-fixture')
     expect(localStorage.length).toBe(0)
     expect(sessionStorage.length).toBe(0)

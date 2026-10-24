@@ -246,3 +246,8 @@ R048 remains open until its native-browser and served authority acceptance passe
 ### R048 native replacement routing
 
 Chromium 156 experimental WebMCP resolved a retained native Tool reference to a new same-name registration. Each native registration now has a unique routing name; the application registry retains the semantic tool ID. This prevents stale native references from selecting replacement callbacks. The rendered route, Back/Forward, deep-link and restoration matrix uses native discovery with synthetic backend responses. Authenticated served authority acceptance remains open; R048 is not complete.
+
+R005.3 additional source evidence: `src/components/views/__tests__/OperateCatalogPanel.test.tsx` exercises the real typed GET adapter.
+It covers returned servers without fleet processes, registration labels and zero counts.
+It checks field stripping, filtering, empty/refused reads, admission retirement and incompatible payload rejection.
+Fixtures support this source coverage. It does not prove installed-provider or connection-state acceptance.

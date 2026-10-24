@@ -560,3 +560,18 @@ Native browser scheduling, served authority and complete R048 acceptance remain 
 ### R048 native replacement routing
 
 Chromium 156 experimental WebMCP resolved a retained native Tool reference to a new same-name registration. Each native registration now has a unique routing name; the application registry retains the semantic tool ID. This prevents stale native references from selecting replacement callbacks. The rendered route, Back/Forward, deep-link and restoration matrix uses native discovery with synthetic backend responses. Authenticated served authority acceptance remains open; R048 is not complete.
+
+
+### Connector catalog registration presentation
+
+Extend the R005.3 Operate panel with the existing Arbora `/api/enhanced/tools`
+contract. Arbora v0.1.7 and current main define `EnhancedCatalog.servers` in
+`arbora/gateway/enhanced_catalog_api.py`. Its WebUI composer mounts
+`register_graph_routes`, which registers this route before the SPA fallback.
+Render every returned catalog server, including absent registrations and zero
+catalog tools, independently of running fleet children. `available` means a
+live registration exists; it does not establish a provider connection. Preserve
+that distinction in visible labels. Strip URLs and raw error fields from the
+browser projection. Scope reads to the current admission, and withdraw stale
+results on refusal. Missing host composition remains visibly unavailable.
+Full connection-state and installed-provider acceptance remain open.
