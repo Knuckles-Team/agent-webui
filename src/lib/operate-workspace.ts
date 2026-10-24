@@ -12,10 +12,18 @@ function safeText(s: string) {
   }
 }
 const text = z.string().min(1).max(256).refine(safeText)
-export const OperateStateSchema = z
-  .object({ server: text.nullable(), item: text.nullable(), q: z.string().max(128).refine(safeText) })
+export const OperateFleetSelectionSchema = z
+  .object({
+    server: text.nullable(),
+    item: text.nullable(),
+    q: z.string().max(128).refine(safeText),
+  })
   .strict()
   .refine((s) => !s.item || Boolean(s.server), 'A capability requires a server')
+export const OperateStateSchema = OperateFleetSelectionSchema.safeExtend({
+  connector: text.optional(),
+  definition: text.optional(),
+}).refine((s) => !s.definition || Boolean(s.connector), 'A definition requires a connector')
 export type OperateState = z.infer<typeof OperateStateSchema>
 export const OPERATE_PATH = '/workspace/operate'
 export function parseOperateState(location: string): OperateState {
@@ -24,20 +32,23 @@ export function parseOperateState(location: string): OperateState {
     url.origin !== 'https://workspace.invalid' ||
     url.pathname !== OPERATE_PATH ||
     url.hash ||
-    [...url.searchParams.keys()].some((key) => !['server', 'item', 'q'].includes(key)) ||
-    ['server', 'item', 'q'].some((key) => url.searchParams.getAll(key).length > 1)
+    [...url.searchParams.keys()].some((key) => !['server', 'item', 'q', 'connector', 'definition'].includes(key)) ||
+    ['server', 'item', 'q', 'connector', 'definition'].some((key) => url.searchParams.getAll(key).length > 1)
   )
     throw new Error('Invalid Operate destination')
   return OperateStateSchema.parse({
     server: url.searchParams.get('server'),
     item: url.searchParams.get('item'),
     q: url.searchParams.get('q') ?? '',
+    ...(url.searchParams.has('connector') ? { connector: url.searchParams.get('connector') } : {}),
+    ...(url.searchParams.has('definition') ? { definition: url.searchParams.get('definition') } : {}),
   })
 }
 export function operateHref(state: OperateState): string {
   const parsed = OperateStateSchema.parse(state)
   const query = new URLSearchParams()
-  for (const key of ['server', 'item', 'q'] as const) if (parsed[key]) query.set(key, parsed[key])
+  for (const key of ['server', 'item', 'q', 'connector', 'definition'] as const)
+    if (parsed[key]) query.set(key, parsed[key])
   return `${OPERATE_PATH}${query.size ? `?${query}` : ''}`
 }
 export function navigateOperate(state: OperateState, role: Role): void {

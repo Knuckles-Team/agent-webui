@@ -487,6 +487,15 @@ A regression test covers initiation, finalization and revocation with session-bo
 Safe readiness reads carry no token. Rotation replaces the token and session clearing removes it.
 This proves client forwarding only, not authenticated admission or native browser execution.
 
+### Loaded catalog navigation
+
+Partial source checks for WEBUI-APPS-R046.2.2, WEBUI-APPS-R047 and WEBUI-APPS-R049.1.2
+cover typed connector/definition URLs, explicit associations and unavailable IDs.
+They also check refresh withdrawal, admission retirement and shared command navigation.
+`e2e/workspace-catalog.browser.ts` uses synthetic catalog responses to check
+fresh deep links, native Back/Forward, keyboard search and six viewport sizes.
+These checks do not establish installed-provider or full migration acceptance.
+
 ### Canonical chat turn receipt consumer
 
 This bounded consumer check does not satisfy WEBUI-APPS-R004.3 or
