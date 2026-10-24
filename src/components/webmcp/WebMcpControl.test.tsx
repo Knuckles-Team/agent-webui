@@ -9,6 +9,7 @@ function fakeChannel(initial: WebMcpChannelView) {
   const listeners = new Set<() => void>()
   const channel = {
     arm: vi.fn(async () => undefined),
+    respondProposal: vi.fn(),
     confirm: vi.fn(),
     deny: vi.fn(),
     revoke: vi.fn(),
@@ -32,6 +33,7 @@ function fakeChannel(initial: WebMcpChannelView) {
 const IDLE: WebMcpChannelView = {
   status: 'idle',
   toolIds: [],
+  pendingProposal: null,
   pendingConfirmation: null,
   message: null,
   expiresAt: null,
@@ -172,4 +174,48 @@ it('keeps legacy browser controls in a dismissible flow disclosure without armin
   await user.click(summary)
   expect(disclosure).not.toHaveAttribute('open')
   expect(summary).toHaveFocus()
+})
+
+const PROPOSAL = {
+  proposalId: 'proposal-1',
+  proposalDigest: `sha256:${'d'.repeat(64)}`,
+  toolId: 'agent-webui.navigate',
+  toolTitle: 'Navigate to branch',
+  argumentsJson: '{"target":"/atlas?tip=branch-2"}',
+  requesterAgent: 'web-agent',
+  requesterRunRef: 'run-42',
+  expiresAt: 2_000_000_000,
+}
+
+describe('agent proposal review surface', () => {
+  it('displays the exact tool, arguments and requester before trusted human acceptance', async () => {
+    const controlled = fakeChannel({ ...IDLE, status: 'armed', pendingProposal: PROPOSAL })
+    const user = userEvent.setup()
+    render(<WebMcpControl visible channel={controlled.channel} isAttendedGesture={() => true} />)
+    expect(screen.getByRole('dialog', { name: 'Review agent browser request' })).toBeVisible()
+    expect(screen.getByText(PROPOSAL.argumentsJson)).toBeVisible()
+    expect(screen.getByText(PROPOSAL.requesterAgent)).toBeVisible()
+    expect(screen.getByText(PROPOSAL.requesterRunRef)).toBeVisible()
+    expect(screen.getByText('Navigate to branch (agent-webui.navigate)')).toBeVisible()
+    expect(controlled.channel.respondProposal).not.toHaveBeenCalled()
+    expect(controlled.channel.arm).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Accept request' }))
+    expect(controlled.channel.respondProposal).toHaveBeenCalledWith('proposal-1', true)
+    expect(controlled.channel.confirm).not.toHaveBeenCalled()
+    act(() => {
+      controlled.update({ pendingProposal: null })
+    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('rejects synthetic acceptance and permits declining without arming', async () => {
+    const controlled = fakeChannel({ ...IDLE, status: 'armed', pendingProposal: PROPOSAL })
+    const user = userEvent.setup()
+    render(<WebMcpControl visible channel={controlled.channel} />)
+    await user.click(screen.getByRole('button', { name: 'Accept request' }))
+    expect(controlled.channel.respondProposal).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Decline request' }))
+    expect(controlled.channel.respondProposal).toHaveBeenCalledWith('proposal-1', false)
+    expect(controlled.channel.arm).not.toHaveBeenCalled()
+  })
 })

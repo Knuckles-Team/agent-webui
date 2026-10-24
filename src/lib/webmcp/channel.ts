@@ -1,3 +1,4 @@
+import type { WebMcpPendingProposal } from './proposal'
 import { z } from 'zod'
 import { WEBMCP_CONTROL_PROTOCOL, toCatalogRegisterMessage } from './catalog'
 import { RemoteWebMcpDispatcher, type WebMcpPendingConfirmation } from './bridge'
@@ -31,6 +32,7 @@ const ChannelReadySchema = z
 export interface WebMcpChannelView {
   readonly status: WebMcpChannelStatus
   readonly toolIds: readonly string[]
+  readonly pendingProposal: WebMcpPendingProposal | null
   readonly pendingConfirmation: WebMcpPendingConfirmation | null
   readonly message: string | null
   readonly expiresAt: number | null
@@ -143,6 +145,7 @@ export class WebMcpControlChannel {
   private view: WebMcpChannelView = {
     status: 'idle',
     toolIds: [],
+    pendingProposal: null,
     pendingConfirmation: null,
     message: null,
     expiresAt: null,
@@ -420,6 +423,9 @@ export class WebMcpControlChannel {
       send: (message) => {
         if (this.socket === socket && this.dispatcher === dispatcher) this.sendControlMessage(message)
       },
+      onProposalChange: (pendingProposal) => {
+        if (this.socket === socket && this.dispatcher === dispatcher) this.setView({ pendingProposal })
+      },
       onConfirmationChange: (pendingConfirmation) => {
         if (this.socket === socket && this.dispatcher === dispatcher) this.setView({ pendingConfirmation })
       },
@@ -458,6 +464,10 @@ export class WebMcpControlChannel {
     socket.onclose = () => {
       if (this.socket === socket) this.retireWithAuthorityCleanup('Browser control was disconnected.', 'idle', false)
     }
+  }
+
+  respondProposal(proposalId: string, accepted: boolean): void {
+    this.dispatcher?.respondProposal(proposalId, accepted)
   }
 
   confirm(callId: string): void {
@@ -559,7 +569,7 @@ export class WebMcpControlChannel {
     this.armedGeneration = null
     this.armedCatalogDigest = null
     this.armedToolScopeDigest = null
-    this.setView({ status, toolIds: [], pendingConfirmation: null, message, expiresAt: null })
+    this.setView({ status, toolIds: [], pendingProposal: null, pendingConfirmation: null, message, expiresAt: null })
   }
 
   private setView(patch: Partial<WebMcpChannelView>): void {
