@@ -27,7 +27,7 @@ dynamic depth, all-leaf coverage or manual screen-reader acceptance.
 | Run surface WEBUI-APPS-R004.1 | `tests/x::test_run_read_uses_arbora_operations` | Run read goes through the arbora read operations. |
 | Run surface WEBUI-APPS-R004.2 | `tests/x::test_harness_config_shown` | Applied harness configuration is shown. |
 | Run surface WEBUI-APPS-R004.3 | `tests/x::test_context_and_cost_shown` | Context use is shown against the budget. |
-| Run surface WEBUI-APPS-R004.4 | `tests/x::test_plan_read_only` | Current plan is shown read-only. |
+| Run surface WEBUI-APPS-R004.4 | `current-plan.test.ts`, `CurrentPlanPanel.test.tsx`, `WorkWorkspace.test.tsx`, `WorkWorkspaceAdmission.test.tsx`, `test_security_boundaries.py` | Read-only typed snapshots, metadata-only selection, expiry and identity retirement. Installed-producer acceptance remains open. |
 | Run surface WEBUI-APPS-R004.5 | `tests/x::test_termination_reasons_distinct` | Each termination reason has a distinct state. |
 | Run surface WEBUI-APPS-R004.6 | `tests/x::test_absent_operation_not_available` | Absent operation shows an honest state. |
 | Graph and memory WEBUI-APPS-R030.1 | `src/__tests__/graph-edit-types.test.ts::test_edit_types_closed` | Graph edit types. |
@@ -514,3 +514,25 @@ open. No producer or full-session accounting acceptance is claimed.
   Generic provider metadata stays unchanged.
 - `src/__tests__/Chat.conversation-identity.test.tsx` checks rendered counts,
   stream persistence, replay invalidation and caller, tenant or session changes.
+
+## Read-only current plan
+
+WEBUI-APPS-R004.4 uses `src/lib/__tests__/current-plan.test.ts` for the
+canonical cookie/CSRF operation and strict snapshot validation.
+`CurrentPlanPanel.test.tsx` checks ordered,
+empty, unavailable, denied and error states, expiry, abort and refresh races.
+`WorkWorkspace.test.tsx` and `WorkWorkspaceAdmission.test.tsx` bind task
+selection and identity retirement to the rendered workspace. Host security
+tests admit only the exact audited read and refuse neighboring mutations.
+Synthetic contracts do not establish an installed producer or live provider.
+Keep served acceptance open until that separate qualification passes.
+
+A manual native qualification now covers public plan publication and this host's
+registered read with a genuinely read-only native client. See the
+[sanitized receipt](current-plan-native-receipt.json) and the opt-in
+[reproducer](../../scripts/qualify_current_plan_native.py). Supply its three
+explicit input paths and the recorded source/package overlay on `PYTHONPATH`.
+Missing fixtures and version/hash mismatches fail, rather than count as a skip.
+The test-only internal fixture imports do not add application dependencies.
+The issuer/session seam is synthetic; installed-wheel, live-issuer and native
+browser acceptance remain open. This evidence does not promote R004.4.
