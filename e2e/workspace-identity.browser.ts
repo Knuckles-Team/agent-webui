@@ -82,7 +82,14 @@ for (const theme of ['light', 'dark', 'glass']) {
       await page.locator('.workspace-context-rail nav a[aria-current]').hover()
       const contrast = await page
         .locator(
-          '.workspace-context-rail nav a[aria-current], .workspace-map-node, .workspace-map-context p, .workspace-frame-eyebrow, .workspace-frame-actions button',
+          [
+            '.workspace-context-rail nav a[aria-current]',
+            '.workspace-map-node',
+            '.workspace-map-context p',
+            '.workspace-frame-eyebrow',
+            '.workspace-frame-actions button',
+            '.workspace-task-surface .workspace-route-content :is(h1, h2, h3, p, label, input, a, button:not(:disabled))',
+          ].join(', '),
         )
         .evaluateAll((elements) => {
           const canvas = document.createElement('canvas')
@@ -115,10 +122,12 @@ for (const theme of ['light', 'dark', 'glass']) {
             const back = luminance(background(element))
             return {
               label: element.textContent,
+              nativeTask: element.closest('.workspace-task-surface') !== null,
               ratio: (Math.max(foreground, back) + 0.05) / (Math.min(foreground, back) + 0.05),
             }
           })
         })
+      expect(contrast.filter((result) => result.nativeTask).length).toBeGreaterThan(5)
       for (const result of contrast) expect(result.ratio, `${theme}: ${result.label}`).toBeGreaterThanOrEqual(4.5)
       await closeContext(page)
       await selected.focus()

@@ -131,3 +131,19 @@ Check reduced-motion animation removal and opaque forced-colors/reduced-transpar
 Hit-test command-dialog close and assistant close controls above the shell header.
 Unit tests cover retired portal slots, retained task identity and malformed or unavailable preference storage.
 These checks do not establish live WebMCP, manual screen-reader, provider or complete migration acceptance.
+
+
+## Native task contrast regression
+
+Extend the existing identity journey under WEBUI-DESIGN-R002 and WEBUI-DESIGN-R002.1.
+Measure native Operate headings, body text, labels, inputs, links and enabled buttons beside the shell.
+Require at least six native task samples and a 4.5:1 contrast ratio for every sample.
+Run light, dark and glass at the existing desktop and narrow widths.
+This planned check does not establish browser acceptance or repair the reported glass contrast gap.
+
+## Theme class retirement
+
+`ThemeProvider.test.tsx` mounts the provider with a persisted glass preference.
+Four cases switch repeatedly to light, dark, system-light and system-dark, then return to glass.
+Each case requires exactly one theme class, persistent selection and preservation of unrelated root classes.
+These mounted tests prove class retirement, not rendered palette contrast.

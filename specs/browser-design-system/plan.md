@@ -81,3 +81,12 @@ A default 14-rem map rail resizes between 12 and 22 rem while preserving center 
 Pointer and keyboard resizing persist a bounded presentation preference, not navigation state.
 Natural translucent shell surfaces use modest blur, with opaque reduced-transparency and forced-colors alternatives.
 Keep native task palettes and shared assistant components unchanged.
+
+
+## Glass theme transitions
+
+The existing WEBUI-DESIGN-R002 token owner includes the glass palette in `src/index.css`.
+`ThemeProvider` must select one theme class and retire the previous palette when the user changes themes.
+The provider must preserve unrelated root classes and resolve system selection from the current color preference.
+Mounted transition tests cover repeated glass-to-light, glass-to-dark and glass-to-system changes.
+These tests do not establish native task contrast or explain the reported glass screenshot defect.

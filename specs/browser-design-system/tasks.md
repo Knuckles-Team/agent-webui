@@ -116,3 +116,13 @@ Rendered captures use synthetic fleet data. The desktop capture is
 The narrow capture is `branches-320x740.png`, SHA-256
 `31e22b9af6b865d0b056c13e8a4ab15161cbafe1e38328172122c9d5f4873ad3`.
 The browser test writes these files into its configured output directory.
+
+
+## Glass class retirement
+
+- [x] Add glass to the provider theme type and retire its root class when selection changes.
+- [x] Exercise repeated light, dark and both system-preference transitions with four mounted regression cases.
+- [ ] Resolve the reported native glass task contrast gap with rendered regression evidence.
+
+All four mounted cases failed before class cleanup and passed after it.
+This result does not prove native task contrast or complete WEBUI-DESIGN-R002 acceptance.

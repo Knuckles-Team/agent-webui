@@ -42,7 +42,8 @@
       ],
       "verified_by": [
         "src/__tests__/design-tokens.test.ts:53",
-        "src/__tests__/design-tokens.test.ts:97"
+        "src/__tests__/design-tokens.test.ts:97",
+        "src/components/__tests__/ThemeProvider.test.tsx:1"
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R002.1"
