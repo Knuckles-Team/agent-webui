@@ -56,6 +56,7 @@ describe('registry purpose is visible in every shell path', () => {
         )
       }
       expect(await screen.findByText(route.blurb)).toBeVisible()
+      if (route.redirects) expect(screen.queryByText('Feature-owned heading')).not.toBeInTheDocument()
     })
   }
 })

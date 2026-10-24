@@ -136,6 +136,8 @@ export interface RouteDef {
   /** Stable identifier, e.g. 'knowledge.graph'. Never reused, never renumbered. */
   id: string
   path: string
+  /** Ordered canonical destinations, selected only after source and target role admission. */
+  redirects?: readonly { routeId: string; search?: string }[]
   label: string
   section: SectionId
   /**
@@ -292,6 +294,7 @@ export const ROUTES: readonly RouteDef[] = [
   {
     id: 'control-plane.prompts',
     path: '/prompts',
+    redirects: [{ routeId: 'workspace.work-proof', search: 'lens=prompts' }],
     label: 'Prompts Registry',
     section: 'control-plane',
     blurb: 'Write and save the instructions that tell an agent how to behave.',
@@ -387,6 +390,19 @@ export const ROUTES: readonly RouteDef[] = [
     // Reads its `:planRef` from `window.location.pathname` itself (see the
     // file doc), so it needs no App.tsx param-passing special case.
     element: lazy(() => import('@/components/views/ConsoleConfirmView')),
+  },
+
+  {
+    id: 'workspace.entry',
+    path: '/',
+    label: 'Workspace',
+    section: 'workspace',
+    blurb: 'Open your admitted workspace, with conversations and investigation together.',
+    icon: Compass,
+    minRole: 'reader',
+    mobile: 'adapted',
+    redirects: [{ routeId: 'workspace.work-proof' }, { routeId: 'workspace.operate' }],
+    element: lazy(() => import('@/components/workspace/WorkspaceEntry')),
   },
 
   // ------------------------------------------------------------- Knowledge
@@ -713,7 +729,7 @@ export const ROUTES: readonly RouteDef[] = [
   // ---------------------------------------------------------- Observability
   {
     id: 'observability.dashboard',
-    path: '/',
+    path: '/overview',
     label: 'Dashboard',
     section: 'observability',
     blurb: "See an at-a-glance overview of your agent system's health and recent activity.",

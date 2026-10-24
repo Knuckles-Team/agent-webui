@@ -705,3 +705,27 @@ Presentation changes add no browser history. Preserve the stable chat instance
 and all existing controls during viewport changes. Narrow layouts stack the map
 and task surface with explicit focus controls. This bounded shell does not
 migrate legacy pages or prove all dynamic leaves and installed providers.
+
+### Workspace entry and prompt compatibility slice (2026-10-24)
+
+R045/R049.1/R049.1.2 retain ownership of entry migration. The registry declares
+`/` as the workspace entry. Admitted user-or-higher identities enter Work.
+Readers enter Operate. Signed-out or unresolved identities do not redirect.
+The still-unmigrated dashboard remains available at `/overview`. `/prompts`
+retains its admin admission and resolves to the Work prompt lens using the same
+editor, not a second authoring implementation. Compatibility replaces the
+current history entry, retains query and fragment context, and fails closed on
+malformed or conflicting Work state. Manual and WebMCP navigation share the
+same registry resolution; WebMCP still rejects caller-provided query/fragment
+state. Existing owner retirement and retained drafts apply within Work.
+All other legacy destinations remain unchanged. Source-mounted journeys do not
+establish native-browser acceptance, complete semantic authoring coverage, or
+completion of the ground-up redesign.
+
+Entry reconciliation also tests the real persistent frame after tree/map integration.
+The location subscription retains its pathname/query contract. Compatibility history
+replacement preserves inert fragments without admitting them as semantic map state.
+Mounted tests check the selected Work branch and editor DOM across map presentation changes.
+
+R049 owns this partial entry migration. R049.1.3 owns the retained Work source behavior.
+R045 and R049.1.2 remain open; these source receipts do not complete either requirement.
