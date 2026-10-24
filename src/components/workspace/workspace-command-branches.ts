@@ -38,6 +38,10 @@ function workspaceCommandParent(command: WorkspaceCommand, nodes: ReadonlyMap<st
     const state = parseOperateState(href)
     const server = nodes.get(operateHref({ ...state, item: null }))
     if (server?.command.id.startsWith('server:')) parent = server
+  } else if (path === '/workspace/operate' && id.startsWith('definition:')) {
+    const state = parseOperateState(href)
+    const connector = nodes.get(operateHref({ ...state, definition: undefined }))
+    if (connector?.command.id.startsWith('connector:')) parent = connector
   } else if (path === '/workspace/work' && id.startsWith('node:')) {
     const state = parseWorkState(href)
     const trace = nodes.get(workHref({ ...state, node: null }))

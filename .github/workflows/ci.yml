@@ -59,7 +59,7 @@ jobs:
 
   workspace-browser:
     name: workspace-browser
-    # Synthetic workspace identity/contrast and modal cancellation only.
+    # Synthetic workspace identity/contrast, modal cancellation and catalog navigation.
     # Hosted Chromium avoids the cloud editor's isolated loopback namespace.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -83,6 +83,8 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - name: Workspace identity, native readability and cancellation
         run: pnpm exec playwright test --config e2e/workspace-identity.config.ts
+      - name: Catalog destination history and responsive navigation
+        run: pnpm exec playwright test --config e2e/workspace-branches.config.ts workspace-catalog
 
   tests:
     name: tests

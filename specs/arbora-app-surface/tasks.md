@@ -300,3 +300,5 @@ The browser test writes these files into its configured output directory.
 - [x] WEBUI-APPS-R049.1.2: Compose the existing admin prompt editor as a Work lens and preserve investigation context.
 - [x] WEBUI-APPS-R049.1.3: Cover lens navigation, draft retention, owner retirement and explicit save with rendered source tests.
 - [ ] WEBUI-APPS-R049.1.2: Qualify served-provider and native-browser prompt authoring, full editor-tool parity, and remaining Work authoring destinations.
+
+- [ ] R046.2.2, R047 and R049.1.2: qualify loaded catalog navigation with installed providers. Source tests and the synthetic Chromium catalog journey do not close complete migration or dynamic-leaf acceptance.

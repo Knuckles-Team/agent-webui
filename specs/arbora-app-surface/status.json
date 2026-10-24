@@ -2075,7 +2075,9 @@
       "title": "Native WebMCP action equivalence",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": [],
+      "verified_by": [
+        "src/components/views/__tests__/OperateCatalogPanel.test.tsx:239"
+      ],
       "priority": 0
     },
     {
@@ -2189,11 +2191,11 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [
+        "e2e/workspace-catalog.browser.ts:4",
         "e2e/workspace-task-lifecycle.spec.ts:391",
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:156",
-        "src/components/views/__tests__/ArboraReadinessView.test.tsx:1",
-        "src/components/workspace/__tests__/OperateReadinessPanel.test.tsx:1"
+        "src/components/views/__tests__/ArboraReadinessView.test.tsx:1"
       ],
       "priority": 0
     },
@@ -2274,7 +2276,10 @@
       "landed_in": [],
       "verified_by": [
         "e2e/workspace-branches.browser.ts:2",
-        "src/components/workspace/__tests__/WorkspaceCommandBranches.test.tsx:2"
+        "e2e/workspace-catalog.browser.ts:3",
+        "src/components/views/__tests__/OperateCatalogPanel.test.tsx:208",
+        "src/components/views/__tests__/OperateCatalogPanel.test.tsx:268",
+        "src/components/views/__tests__/OperateCatalogPanel.test.tsx:291"
       ],
       "priority": 0
     },

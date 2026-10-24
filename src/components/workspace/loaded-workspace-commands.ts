@@ -88,3 +88,28 @@ export function loadedOperateCommands(
       ),
   ]
 }
+
+/** Catalog registration IDs are distinct from fleet process names and callable tool IDs. */
+export function loadedCatalogCommands(
+  state: OperateState,
+  servers: readonly { server_id: string; name: string }[],
+  components: readonly { id: string; name: string; kind: string; server_name?: string | null }[],
+): WorkspaceCommand[] {
+  return servers
+    .slice(0, 25)
+    .flatMap((server) => {
+      const destination = { ...state, connector: server.server_id, definition: undefined }
+      return [
+        ...command(`connector:${server.server_id}`, `Connector: ${server.name}`, () => operateHref(destination)),
+        ...components
+          .filter((entry) => entry.server_name === server.name && entry.kind !== 'workflow')
+          .slice(0, 25)
+          .flatMap((entry) =>
+            command(`definition:${entry.id}`, `${entry.kind}: ${entry.name} (${server.name})`, () =>
+              operateHref({ ...destination, definition: entry.id }),
+            ),
+          ),
+      ]
+    })
+    .slice(0, 100)
+}
