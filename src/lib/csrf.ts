@@ -1,3 +1,4 @@
+import { observeIdentityStatus } from './identity-events'
 /**
  * @file csrf.ts
  * @description The one CSRF chokepoint for cookie-authenticated requests.
@@ -54,6 +55,14 @@ export function currentCsrfToken(): string | null {
   return currentToken
 }
 
+function observeResponse(input: RequestInfo | URL, response: Response): Response {
+  const url = requestUrl(input)
+  if (url.origin === window.location.origin && url.pathname !== '/auth/session') {
+    observeIdentityStatus(response.status)
+  }
+  return response
+}
+
 /**
  * Remember the session's CSRF token and wrap `window.fetch` once so every
  * same-origin state-changing request carries it. `null` (no session) stops
@@ -66,8 +75,8 @@ export function installCsrfToken(token: string | null): void {
   const original = window.fetch.bind(window)
   const wrapped: MarkedFetch = (input: RequestInfo | URL, init?: RequestInit) => {
     const token = currentToken
-    if (token && needsCsrfToken(input, init)) return original(input, withCsrfToken(input, init, token))
-    return original(input, init)
+    const prepared = token && needsCsrfToken(input, init) ? withCsrfToken(input, init, token) : init
+    return original(input, prepared).then((response) => observeResponse(input, response))
   }
   wrapped[WRAPPED] = true
   window.fetch = wrapped
