@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-10-24
+
+### Fixed
+- **Route purpose** — every registered view now shows its registry purpose,
+  with rendered role-filter and complete route census acceptance.
+- **Browser control** — the attended browser-control disclosure sits in normal
+  document flow instead of overlaying content.
+
 ## [2.8.0] - 2026-10-23
 
 ### Added
