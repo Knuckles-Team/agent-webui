@@ -4,5 +4,7 @@
   "owner_repo": "agent-webui",
   "delivery_state": "RETIRED",
   "requirement_ids": [],
-  "requirements": []
+  "requirements": [],
+  "frontier": [],
+  "unserved": []
 }

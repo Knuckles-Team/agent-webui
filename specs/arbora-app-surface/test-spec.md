@@ -346,6 +346,31 @@ Check successful document/assets and rendered headings. Reload with the query
 retained. Only identity and API responses are synthetic. These tests do
 not prove authentication, real providers, full migration or R050 acceptance.
 
+### R048 attended agent proposal delivery
+
+The armed WebMCP channel accepts an Arbora proposal for human review.
+It shows the exact tool, arguments, requesting agent and opaque requester reference.
+A trusted human acceptance returns only the proposal decision.
+It neither runs a tool nor satisfies the separate exact-request mutation confirmation.
+Generation, schema and retained input validation bind the prompt to the active registration.
+Expiry, server withdrawal, disconnect and retirement withdraw the prompt.
+The client rejects terminal proposal IDs.
+
+Source tests cover proposals, channel transport, rendered review and Python message validation.
+Accepted-path component tests use the existing attended-gesture seam.
+These fixtures do not establish authenticated served execution or installed native browser acceptance.
+WEBUI-APPS-R048 remains open pending that composed acceptance.
+This change grants no session, arms no browser and changes no production authority.
+
+The proposal dialog bounds its height and wraps complete arguments and metadata.
+`e2e/proposal-review.browser.ts` passed six sandboxed Chromium cases at 320 by 568,
+375 by 320 and 640 by 240 pixels with 8192-byte and 500-row JSON payloads.
+The tests check exact text, keyboard scrolling, reachable decisions and no horizontal overflow.
+Chromium 156.0.8078.4 ran with its sandbox active, fresh contexts and localhost requests only.
+The browser used no native API feature flag.
+Synthetic clicks cannot accept; trusted browser clicks can accept or decline.
+This uses the production component with a synthetic channel and does not qualify served or native execution.
+
 ### Readiness producer parity boundary
 
 This is a supported-contract migration, not equivalence with the unavailable graph readiness producer.
@@ -454,3 +479,10 @@ It runs at narrow width and native 200-percent zoom with normal and reduced moti
 Edge hit tests include the fixed assistant trigger and its animated halo.
 The outer workspace scrollport reserves focus clearance when the persistent frame is active.
 This supplements the existing four-viewport continuity journey, including short landscape.
+
+### R048 canonical CSRF forwarding
+
+The attended client uses the installed canonical fetch wrapper.
+A regression test covers initiation, finalization and revocation with session-bound CSRF.
+Safe readiness reads carry no token. Rotation replaces the token and session clearing removes it.
+This proves client forwarding only, not authenticated admission or native browser execution.

@@ -12,7 +12,10 @@ import {
 import type { WebMcpControlChannel, WebMcpChannelView } from '@/lib/webmcp/channel'
 
 export interface WebMcpControlProps {
-  readonly channel: Pick<WebMcpControlChannel, 'arm' | 'confirm' | 'deny' | 'getView' | 'revoke' | 'subscribe'>
+  readonly channel: Pick<
+    WebMcpControlChannel,
+    'respondProposal' | 'arm' | 'confirm' | 'deny' | 'getView' | 'revoke' | 'subscribe'
+  >
   readonly placement?: 'floating' | 'workspace'
   readonly collapsible?: boolean
   readonly visible: boolean
@@ -140,6 +143,14 @@ export function WebMcpControl({
       <ControlFrame collapsible={collapsible} view={view}>
         {controls}
       </ControlFrame>
+
+      <ProposalReview
+        channel={channel}
+        proposal={view.pendingProposal}
+        blocked={confirmation !== null}
+        isAttendedGesture={isAttendedGesture}
+      />
+
       <Dialog open={confirmation !== null}>
         <DialogContent showCloseButton={false} aria-describedby="webmcp-confirmation-description">
           <DialogHeader>
@@ -193,5 +204,77 @@ export function WebMcpControl({
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+function ProposalReview({
+  channel,
+  proposal,
+  blocked,
+  isAttendedGesture,
+}: {
+  readonly channel: WebMcpControlProps['channel']
+  readonly proposal: WebMcpChannelView['pendingProposal']
+  readonly blocked: boolean
+  readonly isAttendedGesture: (event: MouseEvent<HTMLButtonElement>) => boolean
+}) {
+  return (
+    <Dialog open={proposal !== null && !blocked}>
+      <DialogContent
+        showCloseButton={false}
+        aria-describedby="webmcp-proposal-description"
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto [overflow-wrap:anywhere]"
+      >
+        <DialogHeader>
+          <DialogTitle>Review agent browser request</DialogTitle>
+          <DialogDescription id="webmcp-proposal-description">
+            Accepting lets Arbora evaluate this request. Changes still require a separate exact-action confirmation.
+          </DialogDescription>
+        </DialogHeader>
+        {proposal && (
+          <dl className="min-w-0">
+            <dt>Tool</dt>
+            <dd>
+              {proposal.toolTitle} ({proposal.toolId})
+            </dd>
+            <dt>Requesting agent</dt>
+            <dd>{proposal.requesterAgent}</dd>
+            <dt>Agent run reference</dt>
+            <dd>{proposal.requesterRunRef}</dd>
+            <dt>Exact arguments</dt>
+            <dd>
+              <pre className="max-h-[40dvh] overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere]" tabIndex={0}>
+                {proposal.argumentsJson}
+              </pre>
+            </dd>
+            <dt>Expires</dt>
+            <dd>
+              <time dateTime={new Date(proposal.expiresAt * 1_000).toISOString()}>
+                {new Date(proposal.expiresAt * 1_000).toLocaleTimeString()}
+              </time>
+            </dd>
+          </dl>
+        )}
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (proposal) channel.respondProposal(proposal.proposalId, false)
+            }}
+          >
+            Decline request
+          </Button>
+          <Button
+            type="button"
+            onClick={(event) => {
+              if (proposal && isAttendedGesture(event)) channel.respondProposal(proposal.proposalId, true)
+            }}
+          >
+            Accept request
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

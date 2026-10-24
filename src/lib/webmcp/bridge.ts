@@ -1,3 +1,10 @@
+import {
+  AttendedWebMcpProposals,
+  ProposalRequestSchema,
+  ProposalWithdrawnSchema,
+  type WebMcpPendingProposal,
+  type WebMcpProposalResponse,
+} from './proposal'
 import { z } from 'zod'
 import { canonicalJson, digestBoundedArguments, utf8ByteLength } from './canonical'
 import { WEBMCP_CONTROL_PROTOCOL, type WebMcpCapabilityDescriptor } from './catalog'
@@ -58,6 +65,7 @@ export interface WebMcpPendingConfirmation {
 }
 
 export type WebMcpBrowserMessage =
+  | WebMcpProposalResponse
   | {
       readonly protocol: typeof WEBMCP_CONTROL_PROTOCOL
       readonly type: 'control.confirm'
@@ -80,7 +88,11 @@ export type WebMcpBrowserMessage =
     }
 
 export type WebMcpServerMessage =
-  z.infer<typeof ConfirmationRequestSchema> | z.infer<typeof ControlCallSchema> | z.infer<typeof ControlCancelSchema>
+  | z.infer<typeof ProposalRequestSchema>
+  | z.infer<typeof ProposalWithdrawnSchema>
+  | z.infer<typeof ConfirmationRequestSchema>
+  | z.infer<typeof ControlCallSchema>
+  | z.infer<typeof ControlCancelSchema>
 
 interface RunningCall {
   readonly controller: AbortController
@@ -126,15 +138,22 @@ export interface RemoteWebMcpDispatcherOptions {
   readonly registry: ActiveWebMcpRegistry
   readonly registrationGeneration: number
   readonly send: (message: WebMcpBrowserMessage) => void
+  readonly onProposalChange?: (proposal: WebMcpPendingProposal | null) => void
   readonly onConfirmationChange?: (confirmation: WebMcpPendingConfirmation | null) => void
 }
 
+const ServerMessageSchema = z.discriminatedUnion('type', [
+  ConfirmationRequestSchema,
+  ControlCallSchema,
+  ControlCancelSchema,
+  ProposalRequestSchema,
+  ProposalWithdrawnSchema,
+])
+
 function parseServerMessage(raw: unknown): WebMcpServerMessage {
-  const discriminant = z.looseObject({ type: z.string() }).parse(raw).type
-  if (discriminant === 'control.confirmation_request') return ConfirmationRequestSchema.parse(raw)
-  if (discriminant === 'control.call') return ControlCallSchema.parse(raw)
-  if (discriminant === 'control.cancel') return ControlCancelSchema.parse(raw)
-  throw new Error('Unsupported WebMCP control message')
+  const parsed = ServerMessageSchema.safeParse(raw)
+  if (!parsed.success) throw new Error('Unsupported or invalid WebMCP control message')
+  return parsed.data
 }
 
 function descriptorFor(
@@ -188,8 +207,10 @@ export class RemoteWebMcpDispatcher {
   private pending: WebMcpPendingConfirmation | null = null
   private approved: ApprovedConfirmation | null = null
   private closed = false
+  private readonly proposals: AttendedWebMcpProposals
 
   constructor(options: RemoteWebMcpDispatcherOptions) {
+    this.proposals = new AttendedWebMcpProposals(options)
     this.registry = options.registry
     this.generation = options.registrationGeneration
     this.sendMessage = options.send
@@ -198,7 +219,18 @@ export class RemoteWebMcpDispatcher {
 
   async accept(raw: unknown): Promise<void> {
     if (this.closed) throw new Error('WebMCP dispatcher is closed')
-    const message = parseServerMessage(raw)
+    await this.dispatchServerMessage(parseServerMessage(raw))
+  }
+
+  private async dispatchServerMessage(message: WebMcpServerMessage): Promise<void> {
+    if (message.type === 'control.proposal_request') {
+      await this.proposals.request(message)
+      return
+    }
+    if (message.type === 'control.proposal_withdrawn') {
+      this.proposals.withdraw(message.proposal_id)
+      return
+    }
     if (message.type === 'control.confirmation_request') {
       await this.requestConfirmation(message)
       return
@@ -208,6 +240,10 @@ export class RemoteWebMcpDispatcher {
       return
     }
     await this.execute(message)
+  }
+
+  respondProposal(proposalId: string, accepted: boolean): void {
+    this.proposals.respond(proposalId, accepted)
   }
 
   confirm(callId: string): void {
@@ -235,6 +271,7 @@ export class RemoteWebMcpDispatcher {
   close(reportCancellation = true): void {
     if (this.closed) return
     this.closed = true
+    this.proposals.retire()
     if (reportCancellation && this.pending?.callId) this.sendCancelled(this.pending.callId, 'none')
     this.pending = null
     this.approved = null

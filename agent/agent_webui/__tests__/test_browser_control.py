@@ -16,12 +16,13 @@ from agent_webui.browser_control import (
     BrowserControlBinding,
     BrowserMessage,
     ControlCancelled,
+    ServerMessage,
 )
 from agent_webui.browser_control_canonical import canonical_protocol_json
 from agent_webui.server import create_agent_web_app
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 from starlette.websockets import WebSocketDisconnect
 
 pytestmark = pytest.mark.integration
@@ -108,7 +109,10 @@ class MismatchedCatalogReceiptConnection(RecordingConnection):
 class AcknowledgingConnection(RecordingConnection):
     async def receive(self, message: BrowserMessage) -> Any:
         receipt = await super().receive(message)
-        if message.type != 'catalog.register':
+        if (
+            message.type != 'catalog.register'
+            and message.type != 'control.proposal_response'
+        ):
             await self.outbound_send(
                 _AuCancel(
                     protocol='webmcp.control.v1',
@@ -277,7 +281,7 @@ def _browser_headers(*, origin: str = 'https://au.example') -> dict[str, str]:
     session = {
         'access_token': 'verified-human-access-token',
         'refresh_token': '',
-        'expires_at': time.time() + 300,
+        'expires_at': int(time.time()) + 300,
     }
     packed = zlib.compress(json.dumps(session).encode('utf-8'), 9)
     sealed = Fernet(_SESSION_KEY.encode('ascii')).encrypt(packed).decode('ascii')
@@ -1002,3 +1006,110 @@ def test_unicode_result_uses_the_same_utf8_json_budget_as_the_browser(
         )
 
     assert port.connection.messages[-1].type == 'control.result'
+
+
+def _proposal_request() -> dict[str, Any]:
+    return {
+        'protocol': 'webmcp.control.v1',
+        'type': 'control.proposal_request',
+        'proposal_id': 'proposal-1',
+        'proposal_digest': _DIGEST,
+        'registration_generation': 7,
+        'tool_id': 'webui.page.context',
+        'schema_digest': _DIGEST,
+        'arguments': {},
+        'requester_agent': 'web-agent',
+        'requester_run_ref': 'run-1',
+        'expires_at': int(time.time()) + 30,
+    }
+
+
+def test_proposal_wire_round_trip_uses_existing_authority_connection(
+    mock_agent: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_identity(monkeypatch)
+    port = RecordingPort()
+    request = _proposal_request()
+    withdrawn = {
+        'protocol': 'webmcp.control.v1',
+        'type': 'control.proposal_withdrawn',
+        'proposal_id': 'proposal-1',
+        'reason': 'declined',
+    }
+
+    class ProposalConnection(RecordingConnection):
+        async def receive(self, message: BrowserMessage) -> Any:
+            receipt = await super().receive(message)
+            if message.type == 'control.cancelled':
+                await self.outbound_send(request)
+            if message.type == 'control.proposal_response':
+                await self.outbound_send(withdrawn)
+            return receipt
+
+    port.connection = ProposalConnection()
+    client = TestClient(_app(mock_agent, port))
+    with client.websocket_connect(
+        '/ws/browser-control', headers=_browser_headers()
+    ) as websocket:
+        websocket.send_json(_OPEN)
+        websocket.send_json(_CATALOG)
+        assert websocket.receive_json()['type'] == 'channel.ready'
+        websocket.send_json(
+            {
+                'protocol': 'webmcp.control.v1',
+                'type': 'control.cancelled',
+                'call_id': 'synthetic-trigger',
+                'effect': 'none',
+            }
+        )
+        assert websocket.receive_json() == request
+        websocket.send_json(
+            {
+                'protocol': 'webmcp.control.v1',
+                'type': 'control.proposal_response',
+                'proposal_id': 'proposal-1',
+                'proposal_digest': _DIGEST,
+                'accepted': False,
+            }
+        )
+        assert websocket.receive_json() == withdrawn
+    assert port.connection.messages[-1].type == 'control.proposal_response'
+    assert port.connection.messages[-1].accepted is False
+    assert len(port.bindings) == 1
+
+
+@pytest.mark.parametrize(
+    'field,value',
+    [
+        ('registration_generation', True),
+        ('registration_generation', 0),
+        ('schema_digest', 'wrong'),
+        ('requester_run_ref', '../run'),
+        ('requester_agent', 'a' * 513),
+        ('expires_at', float('inf')),
+        ('arguments', {'bad': float('nan')}),
+    ],
+)
+def test_proposal_server_wire_rejects_malformed_input(field: str, value: Any) -> None:
+
+    with pytest.raises((ValidationError, ValueError)):
+        TypeAdapter(ServerMessage).validate_python(
+            {**_proposal_request(), field: value}, strict=True
+        )
+
+
+@pytest.mark.parametrize('accepted', ['true', 1, None])
+def test_proposal_response_requires_a_boolean_decision(accepted: Any) -> None:
+
+    with pytest.raises(ValidationError):
+        TypeAdapter(BrowserMessage).validate_python(
+            {
+                'protocol': 'webmcp.control.v1',
+                'type': 'control.proposal_response',
+                'proposal_id': 'proposal-1',
+                'proposal_digest': _DIGEST,
+                'accepted': accepted,
+            },
+            strict=True,
+        )
