@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.2] - 2026-10-24
+
+### Fixed
+- **Container image** — the image build copies the patches, site scripts,
+  mkdocs.yml and README.md that the frontend stage needs, so the release
+  publishes the container again.
+
 ## [2.8.1] - 2026-10-24
 
 ### Fixed
