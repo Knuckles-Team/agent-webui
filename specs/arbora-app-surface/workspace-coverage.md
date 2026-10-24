@@ -163,7 +163,7 @@ WEBUI-APPS-R049.1 owns this migration. All 58 app destinations below become work
 | `observability.dashboard` | `/` | Work. | Active work / overview. | Recent work and live run summary, no catalogue home. |
 | `observability.live-dashboards` | `/dashboards` | Operate. | Health / dashboard lens. | Live telemetry composition. |
 | `observability.system-status` | `/system-status` | Operate. | Health / status. | Health indicators and dependency inspector. |
-| `observability.arbora-readiness` | `/arbora-readiness` | Operate. | Health / readiness. | Readiness diagnostics in same health context. |
+| `observability.arbora-readiness` | `/arbora-readiness` | Operate. | Health / readiness. | Typed compatibility address replaces history into Operate; contextual diagnostics, full evidence and reprobe preserve supported actions. |
 | `observability.observability` | `/observability` | Operate. | Health / trace. | Logs/metrics/traces lenses with run cross-reference. |
 | `observability.broker` | `/broker` | Operate. | Services / broker. | Broker entity inspector and controls. |
 | `observability.usage` | `/usage` | Operate. | Health / usage. | Usage/cost/token lens with shared run metrics. |
@@ -184,3 +184,19 @@ WEBUI-APPS-R049.1 owns this migration. All 58 app destinations below become work
 | `apps.markets.share` | `/apps/markets/share/:lease` | Explore. | Markets / shared analysis. | Lease-bound read-only workspace state. |
 
 The first redesign proof combines search results, selected entity, relationship traversal and history in one Explore workspace. Retain search and conversation state during traversal. Do not mount the old explorer and detail pages behind tabs. Extract useful domain widgets and clients into the new composition. Native controls, keyboard, touch, deep links and WebMCP use the same controller. Real browser evidence must distinguish mock-service presentation proof from served API acceptance.
+
+
+### Supported Operate migration evidence
+
+The readiness address now replaces its standalone layout with the contextual Operate panel.
+Installed synthetic qualification covered cold entry, heading focus, Back/Forward, keyboard inspection and mobile reprobe.
+Catalog filtering, connector selection, tool/skill definitions and refresh remain reachable in the same workspace.
+This retires only the readiness layout; other operational destinations and complete migration acceptance remain open.
+
+### Work prompt-authoring source continuation
+
+The Work prompts lens now composes the existing validated admin editor without a second
+page wrapper. It preserves investigation selection and in-memory edits across lenses.
+It retires editor state at admission changes and keeps the legacy `/prompts` route available.
+Lens navigation has manual/WebMCP parity and cannot save a document. Prompt document selection and editing remain local to the shared editor.
+Full semantic editor parity, served-provider and native-browser acceptance remain open under R049.1.2.

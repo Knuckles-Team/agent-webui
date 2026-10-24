@@ -1,5 +1,18 @@
 # Arbora shell and app verification
 
+## Loaded destination branches
+
+Partial WEBUI-APPS-R046.2.2 delivery uses the existing command catalog and typed
+selection dispatcher for branch cards, list search and native links. The rendered
+`WorkspaceCommandBranches.test.tsx` checks confirmed parent relationships without inventing task-to-trace associations.
+It checks modified links, breadcrumb focus and retirement. It also checks shared entity IDs at distinct loaded destination paths.
+`e2e/workspace-branches.browser.ts` exercises keyboard drill-in, global search,
+resizing, immediate return, native detail selection and real browser history.
+These synthetic identity/data fixtures do not qualify served authority, complete
+dynamic depth, all-leaf coverage or manual screen-reader acceptance.
+
+## General verification matrix
+
 | Case | Level/fixture | Pass |
 |---|---|---|
 | Product identity | Asset-generator check, metadata/route snapshots | All exposed names and generated hashes match |
@@ -301,6 +314,27 @@ Neither viewport produced page errors or horizontal overflow. All 49 focused sou
 The browser entered through the root and existing history event; cold-entry assets remain separately owned.
 Synthetic engine and identity fixtures do not qualify live engine, identity-provider or complete migration acceptance.
 
+### Operate compatibility and action acceptance
+
+Preserve the legacy readiness refresh action, backend rollup, provenance, reasons and full check evidence.
+Test its typed compatibility address, role/loading refusal, replacement history and readiness-heading focus.
+Distinguish missing routes from access denial, invalid snapshots and transport failures.
+Exercise catalog filtering, connector and definition selection, refresh, and readiness inspection/reprobe without legacy page navigation.
+Record actual browser history, keyboard and mobile evidence separately from source fixtures and live-provider acceptance.
+
+The installed Arbora 0.1.7 dashboard and enhanced catalog served the production build with synthetic authorities.
+At 1366 by 900 and 375 by 812 pixels, cold readiness entry replaced history and focused the contextual heading.
+Back/Forward retained the Operate destination without returning to the retired layout.
+Catalog filtering, tool/skill definition inspection and refresh succeeded beside readiness diagnosis and explicit reprobe.
+Readiness transitioned from HTTP 503 to 200; a temporary invalid bearer caused HTTP 401 and evidence withdrawal.
+Restoring the synthetic bearer recovered the panel. Neither viewport produced page errors or horizontal overflow.
+The 66 focused tests cover alias refusal, failure distinctions, dynamic checks and existing catalog behavior.
+
+Fleet POST qualification remains blocked: the installed host requires `kg:write` for the synthetic reader's discovery requests.
+Both `fleet.status` and `fleet.catalog.list` returned HTTP 403 before the installed invocation pipeline.
+No grants or admission rules changed. Synthetic browser identity does not qualify production authentication or provider connectivity.
+The integrations alias remains open because package identity and frontend contribution mappings lack a supported served contract.
+
 ## Cold-entry asset resolution
 
 `src/lib/__tests__/build-asset-base.test.ts` builds a minimal entry using the real
@@ -337,6 +371,27 @@ The browser used no native API feature flag.
 Synthetic clicks cannot accept; trusted browser clicks can accept or decline.
 This uses the production component with a synthetic channel and does not qualify served or native execution.
 
+### Readiness producer parity boundary
+
+This is a supported-contract migration, not equivalence with the unavailable graph readiness producer.
+Arbora v0.1.7 resolves to commit `4a7f71c4c8c4d9911f5f12cfa8f6530acf1c50ad`.
+Current Arbora inspection used commit `d18028683e44734d794246f455a60f4668bc250d`.
+At both revisions, `arbora/mcp_server/backing/tools/analysis_tools.py:1383` unconditionally raises `not_served` for the readiness action.
+Its action dispatch entry is at line 1441.
+The supported GET producer is `arbora/gateway/dashboard_api.py:226`.
+Its collector, `arbora/observability/readiness.py:74`, returns dynamic checks, rollup, snapshot identity, observation time, failures and reasons.
+It does not return top-level `refresh` or `principal` fields.
+
+The retired page showed `snapshot.refresh.mode`; its legacy client also required `principal` and seven fixed checks.
+Those unavailable fields and fixed-check assumptions are retired, not fabricated or inferred from dashboard evidence.
+The old client required principal metadata, but the retired page did not show it.
+Reprobe invokes the supported collector again; it does not claim the old refresh-mode semantics.
+Full provider, authentication and operational migration acceptance remain open.
+
+### Qualification source backup
+
+`e2e/fixtures/operate-qualification/` preserves the manual synthetic scripts used for the catalog, readiness and migration evidence above.
+Historical assertions remain candidate-specific. This backup adds no implementation or acceptance claim.
 WEBUI-APPS-R049.1.3 continuation uses mounted WorkWorkspace tests for selected
 trace refresh, failed-refresh evidence withdrawal, retry, loaded-parent
 navigation and return to trace. Preserve conversation/task URL fields. A
@@ -358,12 +413,72 @@ Preserve the follow-up draft through navigation, browser Back, denial and retry.
 Capture desktop, portrait and short-landscape screenshots.
 These tests prove browser composition with synthetic responses, not live-provider execution or the complete migration.
 
+### Current-main Operate reconciliation
+
+PR 158 reconciles the readiness producer boundary with the Work task-inspection
+coverage on current main without dropping either acceptance record.
+The mounted readiness alias, readiness panel, catalog panel, Operate workspace
+and discovery model suites pass together (56 tests). This source evidence does
+not replace the installed qualification above or close the remaining fleet gap.
+
+Fleet discovery reaches the canonical POST operation paths
+`/api/v1/ops/fleet.status` and `/api/v1/ops/fleet.catalog.list`.
+`WebUIAuthorizationMiddleware._required_http_scope` classifies an unknown POST
+as `kg:write`; neither path was in its exact audited-read allowlist.
+The outer WebUI host refused a reader before the Arbora operation policy evaluated `mcp:discover`. The repair adds only those two audited
+read paths. The security-boundary suite passes 92 tests, including real host
+entry-point reader access, anonymous refusal and neighboring fleet-effect
+refusal. Installed qualification remains required.
+Do not add writer grants to the fixture. Do not bypass the host middleware to turn this acceptance gap green.
+
 R049.1.3 conversation lifecycle tests exercise the real owner-scoped store in mounted controls.
 Check local rename and removal, remote-only refusal, failed storage writes and stale owner or conversation reviews.
 Semantic tools request visible review only; synthetic confirmation must not apply changes.
 The browser journey starts a new conversation, sends once, inspects its task, renames its local copy and removes that copy.
 Keep task and trace selections. Check that server history and another owner's cache remain unchanged.
 These fixtures do not qualify live-provider history or remote deletion.
+
+
+
+The manual migration fixture also exercised the canonical fleet invocation
+pipeline with installed dependencies and the candidate WebUI source. Both
+discovery operations returned HTTP 200 for `kg:read mcp:discover`. Removing
+only `mcp:discover` from the signed synthetic credential returned HTTP 403
+with Arbora's `SCOPE_REQUIRED` and that missing scope for both operations.
+Real JWKS verification and the downstream operation pipeline remained active.
+This source-overlay check is not built-wheel, browser, live-provider or
+production identity acceptance.
+
+### Contextual prompt authoring in Work
+
+WEBUI-APPS-R049.1.2/R049.1.3: `WorkPromptLens.test.tsx` covers strict typed lens URLs, admin-only admission and preserved conversation/task/trace state.
+It covers shared manual and semantic lens selection, stale-handle refusal, draft retention and owner retirement.
+It also checks an explicit save through the existing prompt adapter. Existing `PromptsView.test.tsx`
+retains validation, create, overwrite and request-race coverage for the shared editor.
+These source tests do not qualify a real provider or native browser, nor complete editor-tool parity.
+
+
+## Persistent loaded workspace map evidence
+
+Run `pnpm exec playwright test --config e2e/workspace-persistent.config.ts`.
+The synthetic journey selects a fleet child and capability through the persistent map.
+It checks URL state, Back/Forward, native task focus and retained unsent chat DOM.
+Map/list presentation adds no history. Four viewports cover desktop, narrow, landscape and irregular dimensions.
+Each viewport checks focused link hit targets with normal and reduced motion.
+A separate isolated Chromium profile checks keyboard navigation at actual 200-percent tab zoom.
+The browser extension sets native zoom; it does not emulate CSS scaling.
+`WorkspaceFrame.test.tsx` checks callback retirement and stable task DOM across map and legacy layout changes.
+
+This evidence supports partial WEBUI-APPS-R046, WEBUI-APPS-R049 and WEBUI-DESIGN-R002.1/R005.1 delivery.
+The existing broad requirements and tasks remain open.
+The map includes loaded admitted destinations, not every legacy capability or dynamic leaf.
+Live authentication, installed providers, manual screen readers and physical fold hardware remain unverified.
+
+The persistent-map keyboard matrix also covers filter, list selection, breadcrumb return and three Back/Forward cycles.
+It runs at narrow width and native 200-percent zoom with normal and reduced motion.
+Edge hit tests include the fixed assistant trigger and its animated halo.
+The outer workspace scrollport reserves focus clearance when the persistent frame is active.
+This supplements the existing four-viewport continuity journey, including short landscape.
 
 ### R048 canonical CSRF forwarding
 

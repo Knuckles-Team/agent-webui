@@ -230,7 +230,7 @@ These clauses extend existing rollups. Every new row is SPECIFIED; the test refe
 | `WEBUI-APPS-R049.1.6` | **Bounded workspace command search.** Search the three migrated context roots and loaded caller-visible Explore results. Use native links and the same typed dispatcher for manual and semantic tool selection. Retire catalog handles on owner, role, availability and location changes. Keep executable operations and legacy page routes outside this catalog. | Source tests in `WorkspaceCommands.test.tsx` cover search, permission filtering, lifecycle refusal and keyboard access. Full destination migration and native browser acceptance remain open under R049.1.2. |
 
 | `WEBUI-APPS-R046.2.1` | **Consent prompt lifecycle source repair.** Keep the authenticated workspace prompt in normal flow below navigation. Hide it after a choice or explicit dismissal without a permanent floating control. Dismissal never grants optional consent. Manage choices through the public Privacy page and workspace menu. Preserve dismissal and explicit denial across route remounts when browser storage fails. Ignore unrelated storage events when retaining a failed-denial fallback. Focus Home after a workspace prompt choice or dismissal. Focus the surviving Disable optional control after revocation. | Source tests cover prompt dismissal, explicit choices, management access and storage failure. Check that dismissal grants nothing and unrelated session-storage events cannot restore an old grant. Repeat rendered mobile clearance, focus and remount checks on the exact candidate. This repair does not qualify the complete navigation matrix. |
-| `WEBUI-APPS-R046.2.2` | **Remaining complete navigation qualification.** Retain every R046.2 obligation beyond the consent placement source repair. Qualify dynamic deepest leaves, shared-entity paths, semantic zoom and actual browser history. Preserve selection and focus through keyboard, touch and mobile journeys. | Planned: Run the complete parent all-leaf and installed-browser matrix. Include consent clearance on supported viewports. Source fixtures cannot replace this acceptance. |
+| `WEBUI-APPS-R046.2.2` | **Remaining complete navigation qualification.** Retain every R046.2 obligation beyond the consent placement source repair. Qualify dynamic deepest leaves, shared-entity paths, semantic zoom and actual browser history. Preserve selection and focus through keyboard, touch and mobile journeys. | Partial delivery: loaded context, fleet/capability and trace/node branches share the command catalog and typed dispatcher. Rendered tests cover retirement and focus; Chromium fixtures cover branch/search selection and real Back/Forward. Complete deepest-leaf, shared-entity and installed-browser qualification remains open. Synthetic responses do not prove served authority. |
 
 | `WEBUI-APPS-R049.1.7` | **Retained query and validation lenses.** Integrate existing query and validation controls into Explore without a legacy page shell. Preserve evidence selection and collection search across typed lens navigation. Keep drafts outside URLs. Require maintainer access for query and validation. Retire controller state on owner or evidence-context changes. Lens navigation must not submit requests. | Source tests in `ExploreQueryWorkspace.test.tsx` and `explore-lens-state.test.ts` cover composition, drafts, permissions and typed navigation. Provider and browser acceptance remain separate under R049.1.2. |
 
@@ -250,6 +250,10 @@ Both requirements retain their existing acceptance gaps.
 R049.1.2 readiness migration preserves the supported dashboard snapshot and its explicit reprobe action.
 Diagnostic HTTP 503 responses are distinct from unreadable, denied or unavailable transport responses.
 
+R049.1.2 supported readiness migration includes its compatibility address and distinct failure states.
+Catalog and readiness controls remain available within Operate without visiting legacy feature pages.
+Complete destination migration and native-control parity remain open.
+
 ## Cold-entry asset resolution
 
 R046 and R046.2.2 retain complete navigation acceptance. The production build
@@ -257,6 +261,8 @@ uses origin-root asset URLs. Direct workspace URLs do not resolve scripts
 and styles beneath the route directory. Explicit Vite deployment-base overrides
 remain supported for asset hosting. This repair alone does not qualify dynamic
 leaves, history, semantic zoom, provider behavior or complete redesign.
+
+Readiness alias retirement follows the supported dashboard contract. Unavailable graph `refresh.mode` and `principal` fields are explicitly retired.
 
 ### R048 attended agent proposal delivery
 

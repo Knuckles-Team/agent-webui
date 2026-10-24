@@ -8,6 +8,9 @@ import { navigateOperate, parseOperateState, operateHref } from '@/lib/operate-w
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
 import { useWebMcpToolSet } from '@/lib/webmcp/provider'
 import { makeTool } from '@/lib/webmcp/tools'
+import { WorkspaceCommandDestinations } from './WorkspaceCommandDestinations'
+import { useWorkspaceViewportBoundary } from './useWorkspaceViewportBoundary'
+import { useWorkspacePaletteFocus } from './useWorkspacePaletteFocus'
 
 export interface WorkspaceCommand {
   id: string
@@ -114,10 +117,48 @@ export function WorkspaceCommandPalette() {
   if (!context) return null
   return <OwnedPalette key={context.owner} context={context} />
 }
+
+/** A second presentation of the same current, admitted destination catalog. */
+export function useWorkspaceCommandNavigation() {
+  const context = useContext(Context)
+  const location = useWorkspaceLocation()
+  const live = useRef(context)
+  const active = useRef(true)
+  live.current = context
+  useEffect(() => {
+    active.current = true
+    return () => {
+      active.current = false
+    }
+  }, [])
+  const select = useCallback(
+    (href: string) => {
+      if (
+        !context ||
+        !active.current ||
+        live.current !== context ||
+        !context.entries.some((entry) => entry.href === href)
+      )
+        throw new Error('Workspace command is stale or unavailable')
+      navigate(href, context.role)
+    },
+    [context],
+  )
+  let current: string | null = null
+  try {
+    if (context) current = canonical(location, context.role)
+  } catch {
+    // Unknown destinations stay with the native surface; never expose raw query text.
+  }
+  return { entries: context?.entries ?? [], owner: context?.owner ?? '', current, select }
+}
 function OwnedPalette({ context }: { context: CommandContext }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [surface, setSurface] = useState<HTMLDivElement | null>(null)
+  useWorkspaceViewportBoundary(surface, open)
   const location = useWorkspaceLocation()
+  const { trigger, onOpenAutoFocus, onCloseAutoFocus, onNavigate } = useWorkspacePaletteFocus(location)
   const active = useRef(true)
   const generation = useMemo(() => ({ id: crypto.randomUUID() }), [context.entries, context.role, location])
   const live = useRef(generation)
@@ -147,10 +188,11 @@ function OwnedPalette({ context }: { context: CommandContext }) {
     (href: string) => {
       if (!active.current || live.current !== generation || !context.entries.some((entry) => entry.href === href))
         throw new Error('Workspace command is stale or unavailable')
+      onNavigate()
       navigate(href, context.role)
       setOpen(false)
     },
-    [context.entries, context.role, generation],
+    [context.entries, context.role, generation, onNavigate],
   )
   const tools = useMemo(() => {
     if (!context.entries.length) return []
@@ -215,7 +257,6 @@ function OwnedPalette({ context }: { context: CommandContext }) {
     ]
   }, [context.entries, select, generation])
   useWebMcpToolSet(tools)
-  const matches = context.entries.filter((entry) => entry.label.toLowerCase().includes(search.toLowerCase()))
   return (
     <Dialog
       open={open}
@@ -225,9 +266,17 @@ function OwnedPalette({ context }: { context: CommandContext }) {
       }}
     >
       <DialogTrigger asChild>
-        <button className="min-h-11 rounded border px-3 text-sm">Find destination</button>
+        <button ref={trigger} className="min-h-11 rounded border px-3 text-sm">
+          Find destination
+        </button>
       </DialogTrigger>
-      <DialogContent className="max-h-[85dvh] overflow-auto motion-reduce:animate-none" showCloseButton={false}>
+      <DialogContent
+        ref={setSurface}
+        onOpenAutoFocus={onOpenAutoFocus}
+        onCloseAutoFocus={onCloseAutoFocus}
+        className="top-[min(50%,calc(var(--workspace-visible-height,100dvh)/2))] max-h-[min(85dvh,calc(var(--workspace-visible-height,100dvh)*0.85))] overflow-auto motion-reduce:animate-none sm:max-w-3xl"
+        showCloseButton={false}
+      >
         <DialogTitle>Find a workspace destination</DialogTitle>
         <DialogDescription>
           Three contexts and currently loaded evidence. Other capabilities are still being migrated.
@@ -242,24 +291,7 @@ function OwnedPalette({ context }: { context: CommandContext }) {
             }}
           />
         </label>
-        <ul className="space-y-1">
-          {matches.map((entry) => (
-            <li key={entry.href}>
-              <a
-                className="block min-h-11 rounded border px-3 py-2 break-words"
-                href={entry.href}
-                onClick={(event) => {
-                  if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
-                  event.preventDefault()
-                  select(entry.href)
-                }}
-              >
-                {entry.label}
-              </a>
-            </li>
-          ))}
-        </ul>
-        {!matches.length && <p role="status">No matching available destinations.</p>}
+        <WorkspaceCommandDestinations entries={context.entries} search={search} onSelect={select} />
         <button
           className="min-h-11 rounded border px-3"
           onClick={() => {

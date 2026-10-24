@@ -1,0 +1,143 @@
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { useWorkspaceCommandNavigation } from './WorkspaceCommands'
+import { WorkspaceMap } from './WorkspaceMap'
+import { WorkspaceMapResize } from './WorkspaceMapResize'
+import { useWorkspaceMapWidth } from './useWorkspaceMapWidth'
+import './WorkspaceFrame.css'
+
+function useHeaderSlots(enabled: boolean, owner: string) {
+  const [slots, setSlots] = useState<{ toggle: HTMLElement | null; focus: HTMLElement | null }>({
+    toggle: null,
+    focus: null,
+  })
+  useLayoutEffect(() => {
+    setSlots({
+      toggle: enabled ? document.getElementById('workspace-map-toggle-slot') : null,
+      focus: enabled ? document.getElementById('workspace-frame-tools-slot') : null,
+    })
+  }, [enabled, owner])
+  return slots
+}
+
+function FrameControls({
+  slots,
+  showMap,
+  toggleMap,
+  focusMap,
+  focusTask,
+}: {
+  slots: ReturnType<typeof useHeaderSlots>
+  showMap: boolean
+  toggleMap: () => void
+  focusMap: () => void
+  focusTask: () => void
+}) {
+  return (
+    <>
+      {slots.toggle &&
+        createPortal(
+          <button
+            className="workspace-map-toggle"
+            aria-label={showMap ? 'Hide map' : 'Show map'}
+            aria-expanded={showMap}
+            aria-controls="workspace-map"
+            onClick={toggleMap}
+          >
+            Map
+          </button>,
+          slots.toggle,
+        )}
+      {slots.focus &&
+        createPortal(
+          <div className="workspace-frame-actions">
+            <button onClick={focusMap}>Focus map</button>
+            <button aria-label="Focus current task" onClick={focusTask}>
+              Focus task
+            </button>
+          </div>,
+          slots.focus,
+        )}
+    </>
+  )
+}
+
+function focusMapFilter(map: HTMLElement | null) {
+  map?.querySelector<HTMLInputElement>('input[type="search"]')?.focus()
+}
+function revealFocusedMap(map: HTMLElement | null) {
+  const focused = document.activeElement
+  if (focused instanceof HTMLElement && map?.contains(focused))
+    focused.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+}
+function useMapDisclosure() {
+  const [showMap, setShowMap] = useState(() => window.matchMedia('(min-width: 64rem)').matches)
+  const map = useRef<HTMLElement>(null)
+  const focusRequested = useRef(false)
+  useLayoutEffect(() => {
+    if (!showMap || !focusRequested.current) return
+    focusMapFilter(map.current)
+    focusRequested.current = false
+  }, [showMap])
+  function focusMap() {
+    if (showMap) focusMapFilter(map.current)
+    else {
+      focusRequested.current = true
+      setShowMap(true)
+    }
+  }
+  return { showMap, setShowMap, map, focusMap }
+}
+
+/** Stable task/chat subtree with presentation controls hosted in the single rail. */
+export function WorkspaceFrame({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+  const catalog = useWorkspaceCommandNavigation()
+  const slots = useHeaderSlots(enabled, catalog.owner)
+  const { showMap, setShowMap, map, focusMap } = useMapDisclosure()
+  const [frame, setFrame] = useState<HTMLDivElement | null>(null)
+  const width = useWorkspaceMapWidth(frame)
+  const task = useRef<HTMLDivElement>(null)
+  const taskProps = enabled ? { role: 'region', 'aria-label': 'Current workspace task', tabIndex: -1 } : {}
+  return (
+    <div
+      ref={setFrame}
+      className={enabled ? 'workspace-frame' : 'contents'}
+      style={{ '--workspace-map-size': `${width.width}rem` } as CSSProperties}
+    >
+      <FrameControls
+        slots={slots}
+        showMap={showMap}
+        toggleMap={() => {
+          setShowMap(!showMap)
+        }}
+        focusMap={focusMap}
+        focusTask={() => task.current?.focus()}
+      />
+      <div className={enabled ? 'workspace-frame-layout' : 'contents'} data-map-open={showMap}>
+        {enabled && (
+          <aside
+            ref={map}
+            id="workspace-map"
+            className="workspace-map"
+            aria-label="Workspace map"
+            hidden={!showMap}
+            onAnimationEnd={() => {
+              revealFocusedMap(map.current)
+            }}
+          >
+            <WorkspaceMap
+              key={catalog.owner}
+              entries={catalog.entries}
+              current={catalog.current}
+              onSelect={catalog.select}
+            />
+          </aside>
+        )}
+        {enabled && showMap && <WorkspaceMapResize control={width} />}
+        <div ref={task} className={enabled ? 'workspace-task-surface' : 'contents'} {...taskProps}>
+          {children}
+        </div>
+      </div>
+    </div>
+  )
+}

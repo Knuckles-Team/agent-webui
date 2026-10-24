@@ -10,7 +10,7 @@ Inputs and actions expose name, role, state and error association. Dynamic resul
 
 ## Review evidence
 
-Create synthetic chat, Atlas and operational-form fixtures. Cover viewport widths 320, 375, 768 and 1440px, with light/dark and reduced-motion variants. Commit small baseline/after screenshots only if the repository's artifact policy permits; otherwise publish CI artifacts and record URLs/digests in `tasks.md`. No screenshot may contain real tenant, personal or secret data. Assess contrast and accessible names automatically, then perform keyboard and screen-reader manual review with a short result record. Check copied patterns and external text against licensing before adoption; do not add a telemetry network call.
+Create synthetic chat, Atlas and operational-form fixtures. Cover viewport widths 320, 375, 768 and 1440px, with light/dark and reduced-motion variants. Commit small baseline/after screenshots only if the repository's artifact policy permits. Otherwise publish CI artifacts and record URLs/digests in `tasks.md`. No screenshot may contain real tenant, personal or secret data. Assess contrast and accessible names automatically, then perform keyboard and screen-reader manual review with a short result record. Check copied patterns and external text against licensing before adoption; do not add a telemetry network call.
 
 ## Fresh checkout
 
@@ -27,3 +27,73 @@ Reuse table virtualization, graph worker layout and LOD transport rather than ad
 ## Consolidated workspace acceptance
 
 WEBUI-APPS-R049.1/R049.2 define three primary contexts instead of page-per-feature navigation. Density and responsiveness must serve that redesigned composition. Preserving an old standalone page under a compact rail is not visual acceptance. Reuse accessible domain widgets inside the new context surfaces. Record task navigation and scrolling outcomes alongside performance, focus and viewport evidence.
+
+## Loaded workspace branch navigation
+
+Extend the existing command catalog for partial WEBUI-DESIGN-R005.1 and
+WEBUI-APPS-R046.2.2 delivery. Branches and the flat searchable list consume the
+same validated, caller-visible destinations. Context roots contain loaded leaves;
+confirmed fleet capabilities nest under their server and trace nodes under their
+loaded trace. No other relationship is inferred. Drilling changes readable DOM
+content without camera travel, scaling text or adding browser-history entries.
+Breadcrumbs return to any visible ancestor and restore focus; selecting a leaf
+uses the existing typed dispatcher and retained workspace surface. Missing
+branches retire immediately with their catalog. Full dynamic-leaf, shared-entity,
+installed-provider and manual accessibility acceptance remain open.
+
+The portalled command dialog shares the workspace's existing deferred focus
+reveal and listener cleanup. Its height and placement follow the visual viewport
+at normal scale. Resizing must keep a retained focused leaf reachable. Pinch zoom
+does not reflow the workspace or force focus scrolling. Keyboard occlusion tests
+using an overridden viewport height remain simulated evidence.
+
+## Persistent loaded workspace frame
+
+Extend the existing workspace requirements without new decomposition. Keep the
+three-context rail and task surfaces. Add a persistent map/list of loaded
+caller-visible destinations beside those surfaces. Let the URL select the map
+branch. Native links, breadcrumbs and search use the existing typed dispatchers.
+Presentation changes add no browser history. Preserve the stable chat instance
+and all existing controls during viewport changes. Narrow layouts stack the map
+and task surface with explicit focus controls. This bounded shell does not
+migrate legacy pages or prove all dynamic leaves and installed providers.
+
+## Scoped Arbora workspace identity
+
+Use local shell tokens for the existing R002.1 hierarchy requirement.
+Ivory surfaces, sage toolbar tones and forest selection distinguish the light workspace.
+Dark and glass themes use deep green surfaces and pale sage selection.
+Bark-colored relationship strokes show only the existing loaded branches.
+The context rail, map controls and selected paths share this vocabulary.
+Keep task content, assistant styling, global theme tokens and legacy pages unchanged.
+Preserve readable type, target sizes, focus clearance and responsive capability access.
+Use the exact README-referenced PNG brand asset without redrawing or tracing it.
+Keep motion limited to short map reveal and control feedback, with a reduced-motion alternative.
+
+Initially narrow workspaces disclose the map on request and retain that choice across resize.
+Keep all map, list, filter and breadcrumb controls available through the keyboard.
+Order the selected path by its actual loaded ancestry, with numbered steps and small indentation.
+Reserve a narrow launcher dock outside the task scroll viewport while the assistant trigger is enabled.
+Keep primary Work at full height and preserve assistant open/close focus behavior.
+One context row hosts map and focus controls through owned slots, without a second toolbar.
+Compact context and More disclosures retain keyboard access on narrow screens.
+A default 14-rem map rail resizes between 12 and 22 rem while preserving center space.
+Pointer and keyboard resizing persist a bounded presentation preference, not navigation state.
+Natural translucent shell surfaces use modest blur, with opaque reduced-transparency and forced-colors alternatives.
+Keep native task palettes and shared assistant components unchanged.
+
+
+## Glass theme transitions
+
+The existing WEBUI-DESIGN-R002 token owner includes the glass palette in `src/index.css`.
+`ThemeProvider` must select one theme class and retire the previous palette when the user changes themes.
+The provider must preserve unrelated root classes and resolve system selection from the current color preference.
+Mounted transition tests cover repeated glass-to-light, glass-to-dark and glass-to-system changes.
+These tests do not establish native task contrast or explain the reported glass screenshot defect.
+
+## Command palette cancellation focus
+
+Under WEBUI-DESIGN-R005.1, capture the actual focused opener when the modal opens.
+On cancellation, restore a connected, visible, enabled opener or the visible command trigger.
+If responsive layout hides both, focus the enclosing More summary without reopening its disclosure.
+Native selection and URL navigation retain destination-owned focus rather than restoring stale context.

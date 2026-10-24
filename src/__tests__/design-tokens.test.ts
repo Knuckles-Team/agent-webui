@@ -10,7 +10,13 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { contrastRatio, cssColorToHex } from '@/components/knowledge-graph/theme-colors'
+import {
+  contrastRatio,
+  cssColorToHex,
+  oklchToRgb,
+  parseOklch,
+  rgbToHex,
+} from '@/components/knowledge-graph/theme-colors'
 
 const CSS_PATH = resolve(import.meta.dirname, '../index.css')
 const CSS_SOURCE = readFileSync(CSS_PATH, 'utf-8')
@@ -99,4 +105,20 @@ describe.each(['light', 'dark'] as const)('%s theme contrast targets (WEBUI-DESI
     const ratio = contrastRatio(cssColorToHex(fg, '#000000'), cssColorToHex(bg, '#ffffff'))
     expect(ratio).toBeGreaterThanOrEqual(target)
   })
+})
+
+// spec: WEBUI-DESIGN-R002
+it('keeps glass muted text readable on the translucent page over a white backdrop', () => {
+  const glass = readThemeBlock(CSS_SOURCE, '.glass')
+  const background = parseOklch(glass['--background'])!
+  const rgb = oklchToRgb(background.l, background.c, background.h)
+  const alpha = Number(/\/\s*([\d.]+)%/.exec(glass['--background'])?.[1]) / 100
+  expect(alpha).toBeGreaterThan(0)
+  expect(alpha).toBeLessThanOrEqual(1)
+  const composite = rgbToHex({
+    r: Math.round(rgb.r * alpha + 255 * (1 - alpha)),
+    g: Math.round(rgb.g * alpha + 255 * (1 - alpha)),
+    b: Math.round(rgb.b * alpha + 255 * (1 - alpha)),
+  })
+  expect(contrastRatio(cssColorToHex(glass['--muted-foreground'], '#000000'), composite)).toBeGreaterThanOrEqual(4.5)
 })

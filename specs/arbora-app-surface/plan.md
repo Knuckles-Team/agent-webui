@@ -601,6 +601,15 @@ Fleet load/unload require authenticated MCP sessions and are not HTTP actions.
 Legacy broker topic/message requests do not match its advertised queue/publish contract.
 Readiness diagnosis uses the supported dashboard collector rather than those unavailable journeys.
 
+### Supported Operate migration acceptance
+
+Consolidate catalog inspection and readiness diagnosis through their existing Operate controls.
+Retire the standalone readiness layout only after its refresh and evidence behavior passes in Operate.
+Map the legacy readiness address through a typed compatibility adapter with reader access and replacement history.
+Focus the readiness heading on arrival without creating a Back-navigation loop.
+Preserve missing-route, access-denied, invalid-response and transport-failure distinctions before retiring the legacy view.
+Keep integration package descriptors separate from connector identities; their missing contract prevents that alias migration.
+
 ## Cold-entry asset resolution amendment
 
 Fix nested workspace entry in the existing Vite configuration. Keep the static
@@ -668,6 +677,15 @@ Task reads do not retry explicit 401, 403, 404 or 501 responses.
 Transient failures retain bounded retries. The caller can request another read explicitly.
 This avoids keeping cached output visible during retry backoff after an explicit refusal.
 
+### Fleet discovery host admission
+
+WEBUI-APPS-R049.1.4 classifies only the canonical fleet status and catalog-list
+POSTs as host-level reads. Arbora declares both `Effect.READ` and requires
+`mcp:discover`; that downstream policy remains authoritative. Neighboring fleet
+calls, tool load/unload, unknown POST paths and other mutation methods retain
+the write floor. This repairs transport classification, not caller grants or provider
+acceptance.
+
 ### Work conversation lifecycle
 
 Extend R049.1.3 and the migration inventory under R049.1.2 with the existing owner-scoped chat store.
@@ -678,3 +696,28 @@ Use visible attended review for these changes, including the loss of an unsent d
 Bind reviews and semantic review requests to the current owner, conversation and local-copy snapshot.
 Retire reviews when that context changes. Check local storage readback before reporting success.
 Keep the existing conversation selector, legacy links and one retained Chat instance.
+
+### Contextual Work prompt authoring
+
+Extend WEBUI-APPS-R049.1.2 and R049.1.3 with an admin-only prompts lens.
+Reuse the existing validated prompt editor and its canonical list/read/upsert adapter.
+Do not add a backend API or infer a task association.
+Keep conversation, task and independent trace selection in typed Work URLs.
+Keep prompt documents and unsaved edits out of URLs and semantic navigation.
+Share lens selection between native links and WebMCP. Selecting a lens must
+not save a prompt. Preserve drafts while switching lenses in the admitted
+Work workspace, and retire the editor when the identity admission changes.
+Retain the legacy prompts route and its existing editor behavior. This slice
+does not claim full authoring-tool parity, provider acceptance, plan metrics,
+harness discovery, or complete Work destination migration.
+
+## Persistent loaded workspace frame
+
+Extend the existing workspace requirements without new decomposition. Keep the
+three-context rail and task surfaces. Add a persistent map/list of loaded
+caller-visible destinations beside those surfaces. Let the URL select the map
+branch. Native links, breadcrumbs and search use the existing typed dispatchers.
+Presentation changes add no browser history. Preserve the stable chat instance
+and all existing controls during viewport changes. Narrow layouts stack the map
+and task surface with explicit focus controls. This bounded shell does not
+migrate legacy pages or prove all dynamic leaves and installed providers.

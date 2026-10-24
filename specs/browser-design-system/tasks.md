@@ -83,3 +83,75 @@ submit, inspect results and return to the retained draft. Browser zoom is set
 to 200 percent in a fresh profile. The test records the browser zoom value,
 doubled pixel ratio, halved CSS viewport width and unchanged visual-viewport scale.
 This is partial evidence; the full requirement remains open. It does not establish physical fold-device, native soft-keyboard, manual screen-reader or live-service acceptance.
+
+## Loaded destination branch delivery
+
+- [x] Present the existing validated command catalog as native DOM branches and a flat searchable list.
+- [x] Nest only confirmed fleet capabilities and selected-trace nodes beneath their loaded parents.
+- [x] Restore breadcrumb focus, retain the branch while searching, and retire unavailable entries.
+- [ ] Complete WEBUI-APPS-R046.2.2 and WEBUI-DESIGN-R005.1 acceptance across deepest dynamic leaves, real touch, manual screen readers and installed providers.
+
+This bounded source implementation uses main `c5c8ce0a3b5b9a09f30c5f9098a83407be396c22`.
+Branch drill-in is instantaneous native DOM navigation, not camera animation.
+It adds no browser-history entries until a destination is selected. The existing
+catalog bounds and typed dispatchers remain authoritative. It does not migrate
+legacy pages, infer backend relationships or complete the broad parent rows.
+
+
+Validation on this branch:
+
+- Workspace component suite: 14 files, 101 tests passed.
+- Branch browser journeys: 2 passed, with normal and reduced motion across four viewport shapes.
+- Existing viewport continuity journeys: 2 passed, including simulated keyboard occlusion.
+- Native Chromium 200-percent zoom journeys: 3 passed at 1280, 640 and 740 physical pixels.
+- Production asset regeneration, TypeScript compilation and strict documentation build passed.
+
+The browser fixtures supply synthetic identity and API responses. They are not
+live-provider or manual screen-reader acceptance. Earlier runs exposed hidden
+focus after dialog resize and animation settling. The shared viewport hook now
+repairs both cases. The final browser chain ran on unchanged source.
+
+Rendered captures use synthetic fleet data. The desktop capture is
+`branches-1440x900.png`, SHA-256 `1a697b1fe14272569417f50929f08d02d6b62ed0b8aa6b5a15624b1eb481480d`.
+The narrow capture is `branches-320x740.png`, SHA-256
+`31e22b9af6b865d0b056c13e8a4ab15161cbafe1e38328172122c9d5f4873ad3`.
+The browser test writes these files into its configured output directory.
+
+
+## Glass class retirement
+
+- [x] Add glass to the provider theme type and retire its root class when selection changes.
+- [x] Exercise repeated light, dark and both system-preference transitions with four mounted regression cases.
+- [ ] Resolve the reported native glass task contrast gap with rendered regression evidence.
+
+All four mounted cases failed before class cleanup and passed after it.
+This result does not prove native task contrast or complete WEBUI-DESIGN-R002 acceptance.
+
+## Palette cancellation focus
+
+- [x] Reproduce shortcut Escape, shortcut Close and desktop-to-narrow hidden-trigger failures in mounted Radix tests.
+- [x] Restore a reachable opener or visible More summary without reopening the compact disclosure.
+- [x] Cover removed opener and native destination focus preservation in mounted tests.
+- [x] Run the focused three-theme rendered cancellation cases on a supported browser runner.
+
+The three original mounted cases failed before the repair and passed afterward.
+All six new mounted cases and thirteen existing command tests passed locally.
+This evidence leaves native glass text contrast and broader design acceptance open.
+
+
+## Hosted palette and native contrast evidence
+
+The Ubuntu Chromium job on source `07138071486168669dbc7887591a08a4eaec630e` passed all three palette cancellation cases.
+Its light and dark identity journeys passed. Glass failed the native route description at 4.3300:1 against a 4.5:1 target.
+An alpha-aware token regression reproduced the insufficient glass muted-text contrast locally before the token change.
+The repair brightens only the glass muted-text token; dark and light palettes remain unchanged.
+Rendered confirmation of this repair remains pending. No whole-theme or full accessibility acceptance follows from this focused evidence.
+
+
+## Hosted drag actionability
+
+The hosted run on `db91e9ad7aecdc25ca85c2c6d56b134aea455a4c` passed glass identity and native text readability.
+Dark identity and all three palette cancellation cases also passed.
+Light stopped at the pointer-resize assertion: the expected 14-rem width remained 22 rem.
+The fixture now waits for a stable, actionable separator after keyboard resizing before beginning the raw drag.
+It retains the same 14-rem result and preference-persistence assertions. Fresh full-matrix confirmation remains pending.

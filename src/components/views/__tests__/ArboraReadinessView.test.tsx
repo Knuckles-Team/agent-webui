@@ -1,150 +1,67 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+// spec: WEBUI-APPS-R049.1.2
+import { StrictMode } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, expect, it, vi } from 'vitest'
 import ArboraReadinessView from '@/components/views/ArboraReadinessView'
-import { fetchReadinessSnapshot } from '@/lib/readiness-api'
-import type { ReadinessSnapshot, ReadinessCheck } from '@/lib/readiness-api'
+import { focusReadinessOnArrival, resolveOperateReadinessAlias } from '@/lib/operate-compatibility'
 
-vi.mock('@/lib/readiness-api', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/readiness-api')>('@/lib/readiness-api')
-  return { ...actual, fetchReadinessSnapshot: vi.fn() }
+const access = vi.hoisted(() => ({ loading: false, role: 'reader', needsSignIn: false }))
+vi.mock('@/lib/auth', () => ({
+  useIdentity: () => ({ loading: access.loading, identity: { role: access.role, needsSignIn: access.needsSignIn } }),
+}))
+beforeEach(() => {
+  access.loading = false
+  access.role = 'reader'
+  access.needsSignIn = false
+  window.history.replaceState({}, '', '/arbora-readiness')
 })
-
-const mockedFetch = vi.mocked(fetchReadinessSnapshot)
-
-function check(state: ReadinessCheck['state'], extra: Partial<ReadinessCheck> = {}): ReadinessCheck {
-  return { state, ...extra }
-}
-
-function snapshot(overrides: Partial<ReadinessSnapshot> = {}): ReadinessSnapshot {
-  return {
-    schema_version: 'arbora.readiness.v1',
-    snapshot_id: 'sha256:deadbeef',
-    observed_at: '2026-08-16T12:00:00+00:00',
-    principal: { subject: null, tenant: null, policy_epoch: null },
-    overall: 'ready',
-    checks: {
-      engine: check('ready'),
-      identity_policy: check('not_configured'),
-      catalog: check('ready'),
-      source_sync: check('ready'),
-      synthetic_query: check('ready', { evidence_count: 3, route: 'graph_code_context' }),
-      dense_index: check('ready', { coverage_pct: 100 }),
-      sparse_index: check('ready', { coverage_pct: 100 }),
-    },
-    required_failures: [],
-    degraded_reasons: [],
-    refresh: { mode: 'not_probed', cursor: null, next_due_at: null },
-    ...overrides,
-  }
-}
-
-describe('ArboraReadinessView', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-    mockedFetch.mockReset()
+it('replaces the compatibility address with typed Operate state without a history loop', async () => {
+  const length = window.history.length
+  render(
+    <StrictMode>
+      <ArboraReadinessView />
+    </StrictMode>,
+  )
+  await waitFor(() => {
+    expect(window.location.pathname).toBe('/workspace/operate')
   })
-
-  it('KNOWN-GOOD: renders overall Ready only when the backend genuinely reports ready', async () => {
-    mockedFetch.mockResolvedValue({ ok: true, data: snapshot(), unavailable: false })
-
-    render(<ArboraReadinessView />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Every check reported ready.')).toBeInTheDocument()
-    })
-    // "Ready" appears both as the overall badge and per-check badges; assert at
-    // least the overall summary text renders, not a fabricated green state.
-    expect(screen.getAllByText('Ready').length).toBeGreaterThan(0)
-  })
-
-  it('KNOWN-BAD: renders Unavailable and the failing check reason when the engine is degraded, never Ready', async () => {
-    const bad = snapshot({
-      overall: 'unavailable',
-      required_failures: ['synthetic_query'],
-      checks: {
-        ...snapshot().checks,
-        synthetic_query: check('unavailable', { reason: 'engine_degraded', evidence_count: 0 }),
-      },
-    })
-    mockedFetch.mockResolvedValue({ ok: true, data: bad, unavailable: false })
-
-    render(<ArboraReadinessView />)
-
-    await waitFor(() => {
-      expect(screen.getByText(/Required check\(s\) failing: synthetic_query/)).toBeInTheDocument()
-    })
-    expect(screen.getByText('engine_degraded')).toBeInTheDocument()
-    // The overall badge must read Unavailable, not Ready — fetch it scoped to
-    // avoid matching the per-row badge text.
-    expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
-    expect(screen.queryByText('Every check reported ready.')).not.toBeInTheDocument()
-  })
-
-  it('renders degraded reasons without claiming success', async () => {
-    const degraded = snapshot({
-      overall: 'degraded',
-      degraded_reasons: ['sparse_index:compiled_index_empty'],
-      checks: {
-        ...snapshot().checks,
-        sparse_index: check('unavailable', { reason: 'compiled_index_empty', coverage_pct: 0 }),
-      },
-    })
-    mockedFetch.mockResolvedValue({ ok: true, data: degraded, unavailable: false })
-
-    render(<ArboraReadinessView />)
-
-    await waitFor(() => {
-      expect(screen.getByText('sparse_index:compiled_index_empty')).toBeInTheDocument()
-    })
-    expect(screen.queryByText('Every check reported ready.')).not.toBeInTheDocument()
-  })
-
-  it('shows a distinct "not activated" notice on a 404/501, never a false readiness state', async () => {
-    mockedFetch.mockResolvedValue({ ok: false, data: null, unavailable: true, error: 'HTTP 404' })
-
-    render(<ArboraReadinessView />)
-
-    await waitFor(() => {
-      expect(screen.getByText(/not activated on this backend yet/)).toBeInTheDocument()
-    })
-  })
-
-  it('shows an explicit error state on a schema-validation failure (hostile payload), never a fabricated state', async () => {
-    mockedFetch.mockResolvedValue({ ok: false, data: null, unavailable: false, error: 'response shape mismatch' })
-
-    render(<ArboraReadinessView />)
-
-    await waitFor(() => {
-      expect(screen.getByText('response shape mismatch')).toBeInTheDocument()
-    })
-  })
-
-  it('handles a rejected fetch promise without crashing (ErrorBoundary-safe)', async () => {
-    mockedFetch.mockRejectedValue(new Error('network exploded'))
-
-    render(<ArboraReadinessView />)
-
-    await waitFor(() => {
-      expect(screen.getByText('network exploded')).toBeInTheDocument()
-    })
-  })
-
-  it('shows the shared loading status message (WEBUI-DESIGN-R006) while the first probe is in flight', () => {
-    mockedFetch.mockReturnValue(new Promise(() => undefined))
-
-    render(<ArboraReadinessView />)
-
-    expect(screen.getByText('Running the live readiness probe…')).toBeInTheDocument()
-    expect(screen.getByRole('status')).toBeInTheDocument()
-  })
-
-  it('uses role=alert (not role=status) for an error state (WEBUI-DESIGN-R006)', async () => {
-    mockedFetch.mockResolvedValue({ ok: false, data: null, unavailable: false, error: 'response shape mismatch' })
-
-    render(<ArboraReadinessView />)
-
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('response shape mismatch')
-    })
-  })
+  expect(window.history.length).toBe(length)
+  expect(window.history.state).toEqual({ operateArrival: 'readiness' })
+  expect(screen.queryByText('Arbora Readiness')).not.toBeInTheDocument()
+})
+it('defers navigation while identity is loading', () => {
+  access.loading = true
+  render(<ArboraReadinessView />)
+  expect(screen.getByRole('status')).toHaveTextContent('Checking readiness access')
+  expect(window.location.pathname).toBe('/arbora-readiness')
+})
+it('retains denial without navigating', () => {
+  access.needsSignIn = true
+  render(<ArboraReadinessView />)
+  expect(screen.getByRole('alert')).toHaveTextContent('not available for this identity')
+  expect(window.location.pathname).toBe('/arbora-readiness')
+})
+it('rejects malformed compatibility state', () => {
+  window.history.replaceState({}, '', '/arbora-readiness?unknown=value')
+  render(<ArboraReadinessView />)
+  expect(screen.getByRole('alert')).toHaveTextContent('Invalid readiness destination')
+})
+it.each([
+  '/integrations',
+  '//other.invalid/arbora-readiness',
+  '/arbora-readiness#other',
+  '/arbora-readiness?check=engine',
+])('does not alias %s', (path) => {
+  expect(resolveOperateReadinessAlias(path)).toBeNull()
+})
+it('focuses the contextual heading only for a readiness arrival', () => {
+  const heading = document.createElement('h2')
+  heading.tabIndex = -1
+  document.body.append(heading)
+  focusReadinessOnArrival(heading)
+  expect(document.activeElement).not.toBe(heading)
+  window.history.replaceState({ operateArrival: 'readiness' }, '', '/workspace/operate')
+  focusReadinessOnArrival(heading)
+  expect(document.activeElement).toBe(heading)
+  heading.remove()
 })

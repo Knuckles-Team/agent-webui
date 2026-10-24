@@ -21,6 +21,7 @@ import {
   type WorkRunDetail,
 } from '@/lib/work-workspace'
 import { useWorkspaceCommands } from './WorkspaceCommands'
+import { WorkPromptLens } from './WorkPromptLens'
 import { WorkTaskControls } from './WorkTaskControls'
 import { WorkConversationControls } from './WorkConversationControls'
 import { WorkTaskInspector } from './WorkTaskInspector'
@@ -213,7 +214,8 @@ function AuthorizedWork({
           }}
         />
       </section>
-      <div className="workspace-panels workspace-panels-balanced">
+      <WorkPromptLens state={state} role={identity.role} disabled={Boolean(error)} />
+      <div className={state.lens === 'prompts' ? 'hidden' : 'workspace-panels workspace-panels-balanced'}>
         <section aria-label="Agent tasks" className="rounded border p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-medium">Agent tasks</h2>
