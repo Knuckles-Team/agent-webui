@@ -14,6 +14,7 @@ import {
   useId,
   useMemo,
   useRef,
+  useSyncExternalStore,
   type ComponentProps,
   type ReactNode,
 } from 'react'
@@ -72,6 +73,23 @@ function contextFingerprint(envelope: ReturnType<typeof usePageContextEnvelope>)
 
 function identityFingerprint(identity: Identity): string {
   return JSON.stringify(identity)
+}
+
+function subscribeDocumentVisibility(listener: () => void): () => void {
+  document.addEventListener('visibilitychange', listener)
+  return () => {
+    document.removeEventListener('visibilitychange', listener)
+  }
+}
+
+function documentIsVisible(): boolean {
+  return document.visibilityState === 'visible'
+}
+
+function useVisibleWebMcpAdapter(): WebMcpAdapter | null {
+  const visible = useSyncExternalStore(subscribeDocumentVisibility, documentIsVisible, () => false)
+  const adapter = useMemo(() => detectWebMcpAdapter(), [])
+  return visible ? adapter : null
 }
 
 function providerEnabled(options: {
@@ -179,7 +197,7 @@ export function WebMcpProvider({
 }: WebMcpProviderProps) {
   const documentId = useId()
   const pageContext = usePageContextEnvelope()
-  const adapter = useMemo(() => detectWebMcpAdapter(), [])
+  const adapter = useVisibleWebMcpAdapter()
   const publicContext = useMemo(() => publicContextOrNull(pageContext), [pageContext])
   const identityKey = identityFingerprint(identity)
   const contextKey = contextFingerprint(pageContext)

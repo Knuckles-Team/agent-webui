@@ -538,3 +538,11 @@ Failed refresh withdraws the old tiles; an empty inventory and a filter with
 no matches remain distinct. These tests prove presentation over returned fleet children.
 They do not prove complete connector catalog membership or connection state.
 R005.3 and full migration and installed-provider acceptance remain open.
+
+## R048 hidden document registration lifecycle
+
+The provider subscribes to document visibility before registering page or child tools.
+Hidden documents keep manual content mounted but expose no browser tool registrations.
+Visibility changes trigger existing registration cleanup and publish fresh registrations when the document becomes visible.
+The channel retains its existing visibility revocation behavior.
+This partial source repair does not qualify native browser support or complete R048.

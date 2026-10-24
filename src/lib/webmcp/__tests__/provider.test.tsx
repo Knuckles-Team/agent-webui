@@ -120,6 +120,75 @@ afterEach(() => {
 })
 
 describe('WebMCP provider remote projection', () => {
+  it('defers hidden registrations and retires them across hide/show without removing manual content', async function hiddenRegistrationLifecycle() {
+    const signals: AbortSignal[] = []
+    installModelContext((_tool, options) => {
+      if (options?.signal) signals.push(options.signal)
+      return Promise.resolve()
+    })
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    render(<Surface />)
+    expect(screen.getByRole('main')).toHaveTextContent('Application')
+    expect(signals).toHaveLength(0)
+
+    act(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await waitFor(() => {
+      expect(signals).toHaveLength(2)
+    })
+    expect(signals.every((signal) => !signal.aborted)).toBe(true)
+
+    act(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await waitFor(() => {
+      expect(signals.every((signal) => signal.aborted)).toBe(true)
+    })
+    expect(screen.getByRole('main')).toHaveTextContent('Application')
+    expect(screen.queryByRole('button', { name: 'Arm browser control' })).not.toBeInTheDocument()
+
+    act(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await waitFor(() => {
+      expect(signals).toHaveLength(4)
+    })
+    expect(signals.slice(0, 2).every((signal) => signal.aborted)).toBe(true)
+    expect(signals.slice(2).every((signal) => !signal.aborted)).toBe(true)
+    expect(TestSocket.instances).toHaveLength(0)
+  })
+
+  it('does not revive pending registrations acknowledged after the document hides', async function hiddenPendingAcknowledgement() {
+    const pending: { signal?: AbortSignal; acknowledge: () => void }[] = []
+    installModelContext(
+      (_tool, options) =>
+        new Promise<void>((resolve) => {
+          pending.push({ signal: options?.signal, acknowledge: resolve })
+        }),
+    )
+    render(<Surface />)
+    await waitFor(() => {
+      expect(pending).toHaveLength(2)
+    })
+    act(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await act(async () => {
+      pending.forEach(({ acknowledge }) => {
+        acknowledge()
+      })
+      await Promise.resolve()
+    })
+    expect(pending.every(({ signal }) => signal?.aborted)).toBe(true)
+    expect(TestSocket.instances).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'Arm browser control' })).not.toBeInTheDocument()
+  })
+
   it('arms only after browser registration acknowledgement and reuses those exact definitions', async () => {
     const registered: { tool: Record<string, unknown>; signal?: AbortSignal }[] = []
     installModelContext((tool, options) => {

@@ -192,3 +192,8 @@ Unchecked tasks remain open. Definitions alone do not establish runtime delivery
 ## R048 retained callback repair
 
 - [x] Validate the R048 registration-lifetime guard with the document adapter and rendered navigation observer (99 focused WebMCP/navigation tests passed). Keep native browser, hidden-page retirement, replay, cross-origin, in-flight cancellation and served authority acceptance open. This partial repair does not complete R048.
+
+## R048 hidden document source repair
+
+- [x] Validate hidden-document registration cleanup, late acknowledgements and fresh registrations on return. The 98 focused tests passed.
+- [ ] Keep native-browser qualification, full authority acceptance and in-flight cancellation open under R048.
