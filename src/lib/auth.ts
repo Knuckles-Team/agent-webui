@@ -16,8 +16,8 @@
  * demo posture, and it is still a real principal the server resolved (the
  * bootstrap administrator), reported with `mode: "none"` and a banner.
  */
-import { useEffect, useState } from 'react'
-import { installCsrfToken } from './csrf'
+import { useSyncExternalStore } from 'react'
+import { createIdentitySession } from './identity-session'
 import { isRole, type Role } from './nav-registry'
 
 /** The deployment's auth mode, as the identity broker reports it. */
@@ -75,9 +75,15 @@ const DEV_USER_KEY = 'local'
 /** Exported for callers outside the `useIdentity` hook that need the raw
  * session once (for example a transport module reading the caller's tenant)
  * without duplicating this same-origin cookie check. */
-export async function fetchAuthSession(): Promise<{ session: AuthSession | null; ssoConfigured: boolean }> {
+export async function fetchAuthSession(
+  signal?: AbortSignal,
+): Promise<{ session: AuthSession | null; ssoConfigured: boolean }> {
   try {
-    const res = await fetch('/auth/session', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const res = await fetch('/auth/session', {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+      signal,
+    })
     const contentType = res.headers.get('content-type') ?? ''
     if (!res.ok || !contentType.includes('application/json')) {
       // The identity boundary did not answer JSON: the principal is unknown,
@@ -127,30 +133,17 @@ const UNRESOLVED_IDENTITY: Identity = {
   raw: null,
 }
 
-/**
- * The one hook every role check in the app (nav filtering, the route guard,
- * per-user storage keys) should call. Resolves once on mount; `/auth/session`
- * is a cheap same-origin cookie check, not worth polling for this UI.
- */
+/** Mounted consumers share one server read and bounded lifecycle revalidation. */
+const identitySession = createIdentitySession(fetchAuthSession)
+
+function identityFromSnapshot(state: ReturnType<typeof identitySession.getSnapshot>): Identity {
+  return state.loading ? UNRESOLVED_IDENTITY : resolveIdentity(state.session, state.ssoConfigured)
+}
+
 export function useIdentity(): { identity: Identity; loading: boolean } {
-  const [state, setState] = useState<{ identity: Identity; loading: boolean }>({
-    identity: UNRESOLVED_IDENTITY,
-    loading: true,
-  })
-
-  useEffect(() => {
-    let cancelled = false
-    void fetchAuthSession().then(({ session, ssoConfigured }) => {
-      if (cancelled) return
-      installCsrfToken(session?.csrf_token ?? null)
-      setState({ identity: resolveIdentity(session, ssoConfigured), loading: false })
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  return state
+  const state = useSyncExternalStore(identitySession.subscribe, identitySession.getSnapshot)
+  const identity = identityFromSnapshot(state)
+  return { identity, loading: state.loading }
 }
 
 export const DEV_IDENTITY_USER_KEY = DEV_USER_KEY

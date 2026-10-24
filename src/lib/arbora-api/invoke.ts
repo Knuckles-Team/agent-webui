@@ -1,3 +1,4 @@
+import { invalidateIdentity } from '@/lib/identity-events'
 /** One browser transport for Arbora operations. Authority stays at Arbora. */
 import { z } from 'zod'
 import { validateShape } from '@/lib/api-validation'
@@ -42,15 +43,23 @@ export interface InvokeOptions {
 const OP_ID = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/
 const sessionSchema = z.object({ authenticated: z.literal(true), csrf_token: z.string().min(1) })
 
+function validatedSessionToken(body: unknown): string {
+  if (!sessionSchema.safeParse(body).success) invalidateIdentity()
+  return validateShape(sessionSchema, body, '/auth/session').csrf_token
+}
+
 async function csrfToken(signal?: AbortSignal): Promise<string> {
   const response = await fetch('/auth/session', {
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
     signal,
   })
-  if (!response.ok) throw new Error('Arbora browser session is unavailable')
-  const session = validateShape(sessionSchema, await response.json(), '/auth/session')
-  return session.csrf_token
+  if (!response.ok) {
+    invalidateIdentity()
+    throw new Error('Arbora browser session is unavailable')
+  }
+  const body: unknown = await response.json()
+  return validatedSessionToken(body)
 }
 
 /** Validate both the shared envelope and the operation result before rendering. */

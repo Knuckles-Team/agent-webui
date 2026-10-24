@@ -36,6 +36,7 @@ from agent_webui.server import (
 )
 from fastapi import FastAPI
 from fastapi import HTTPException as FastAPIHTTPException
+from fastapi.testclient import TestClient
 
 
 def test_governed_host_helpers_are_public_api() -> None:
@@ -662,6 +663,8 @@ def test_graph_route_admin_gate_is_narrowed_to_arbitrary_query_execution() -> No
 @pytest.mark.parametrize(
     'path',
     [
+        '/api/v1/ops/fleet.status',
+        '/api/v1/ops/fleet.catalog.list',
         '/api/graph/ask',
         '/api/graph/ask-data',
         '/api/graph/catalog',
@@ -716,6 +719,11 @@ def test_unknown_post_route_keeps_the_write_floor() -> None:
 @pytest.mark.parametrize(
     'path',
     [
+        '/api/v1/ops/fleet.call',
+        '/api/v1/ops/fleet.tools.load',
+        '/api/v1/ops/fleet.tools.unload',
+        '/api/v1/ops/fleet.status/mutation',
+        '/api/v1/ops/fleet.catalog.list/mutation',
         '/api/graph/table',
         '/api/graph/document-tree',
         '/api/graph/write',
@@ -964,3 +972,48 @@ def test_webui_local_database_keeps_schema_and_privacy_migrations(
 
 
 # --------------------------------------- 1:1 AgentConfig form (GOC config-schema)
+
+
+@pytest.mark.parametrize('operation', ['fleet.status', 'fleet.catalog.list'])
+def test_fleet_discovery_host_entrypoint(
+    mock_agent, authenticated_client_factory, operation
+):
+    """The real host admits readers without granting fleet effect authority."""
+    app = create_agent_web_app(
+        mock_agent, workspace_helpers={}, listener_host='127.0.0.1'
+    )
+    calls = []
+
+    @app.post(f'/api/v1/ops/{operation}')
+    async def discovery():
+        calls.append(operation)
+        return {'value': {}}
+
+    with authenticated_client_factory(app, scope='kg:read mcp:discover') as client:
+        response = client.post(f'/api/v1/ops/{operation}', json={})
+    assert response.status_code == 200
+    assert calls == [operation]
+    assert TestClient(app).post(f'/api/v1/ops/{operation}', json={}).status_code == 401
+    assert calls == [operation]
+
+
+@pytest.mark.parametrize(
+    'operation', ['fleet.call', 'fleet.tools.load', 'fleet.tools.unload']
+)
+def test_fleet_effect_host_entrypoint_refuses_reader(
+    mock_agent, authenticated_client_factory, operation
+):
+    app = create_agent_web_app(
+        mock_agent, workspace_helpers={}, listener_host='127.0.0.1'
+    )
+    calls = []
+
+    @app.post(f'/api/v1/ops/{operation}')
+    async def effect():
+        calls.append(operation)
+        return {'value': {}}
+
+    with authenticated_client_factory(app, scope='kg:read mcp:discover') as client:
+        response = client.post(f'/api/v1/ops/{operation}', json={})
+    assert response.status_code == 403
+    assert calls == []

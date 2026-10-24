@@ -10,7 +10,7 @@ Each app has a stable ID, manifest version and route definitions from the same `
 
 ## Brand and migration
 
-Regenerate favicon/icon/social images using the repository asset script and check generated files against source. Move Python import and distribution metadata, npm package metadata and release image naming in one cutover. Coordinate that cutover with Arbora's consumer dependency. Keep the npm package private when the SPA is shipped in the Python wheel. Change WebMCP tool IDs to `arbora.*` and regenerate digests; old grants drain by expiry and are not silently reinterpreted. Browser storage keys receive a version bump and explicit re-consent. Environment names use one canonical prefix and reject stale aliases after the documented cutover. Preserve browser route paths except those required for the Apps section. Published Pages navigation resolves to the new site after publication; broken links are measured.
+Regenerate favicon/icon/social images using the repository asset script and check generated files against source. Move Python import and distribution metadata, npm package metadata naming in one cutover. Coordinate that cutover with Arbora's consumer dependency. Keep the npm package private when the SPA is shipped in the Python wheel. Change WebMCP tool IDs to `arbora.*` and regenerate digests; old grants drain by expiry and are not silently reinterpreted. Browser storage keys receive a version bump and explicit re-consent. Environment names use one canonical prefix and reject stale aliases after the documented cutover. Preserve browser route paths except those required for the Apps section. Published Pages navigation resolves to the new site after publication; broken links are measured.
 
 ## Failure and portability
 
@@ -618,3 +618,65 @@ the default origin root and an explicit asset prefix. Drive the production
 bundle through the installed Arbora application composer and WebUI static mount.
 Use synthetic identity/data only; retain the full R046.2.2 and R050 acceptance
 obligations. No additional requirement decomposition is introduced.
+
+### Work trace inspection continuation
+
+Extend WEBUI-APPS-R049.1.3 within the existing Work surface.
+Refresh the selected trace through its existing waterfall adapter.
+Return from a node to its trace.
+Follow a recorded parent only when that parent exists in the loaded trace.
+Preserve conversation and independent task selection in all destinations.
+Failed detail refresh withdraws stale evidence and node controls.
+Retry restores only validated matching detail.
+
+Mounted components and synthetic Chromium history tests qualify this bounded interaction.
+Served-provider acceptance remains open.
+This does not provide a conversation/task/trace join, subagent identity, plan state or unified harness discovery.
+
+Chat owns streaming, local conversation history, approval/elicitation and ask/plan/code input modes.
+CurrentResponseTaskLink uses the explicit response task identifier to enter Work.
+Work uses the existing enhanced sessions facade for agents.tasks.list/get/cancel.
+It uses the traces search/waterfall adapter for independent inspection.
+SessionsView expects legacy title/turn-count/string-status fields.
+That model differs from the facade's task model.
+Its reply/delete console remains outside this migration.
+ConsoleConfirmView retains its direct plan-reference URL and human review boundary.
+Chat's plan mode and routing-plan activity do not provide an authoritative current-run plan snapshot.
+Richer metrics, goal/workflow editing, IDE authoring and harness discovery remain migration obligations.
+This continuation preserves their legacy routes.
+
+### Task output inspection in Work
+
+WEBUI-APPS-R049.1.3 also renders returned task output inside the selected task.
+The producer is agents.tasks.get through the existing enhanced sessions detail facade.
+Arbora's A2ATask contains text artifacts and explicit metadata from WorkItemA2AAuthority.
+Artifact containment establishes its task association. No identifier parsing establishes any other association.
+Render contextId, metadata.arbora.runId and runTraceRef as opaque text when valid.
+Do not navigate from those references or infer a browser conversation, trace selection or subagent.
+Render only bounded text artifacts. Refuse unsupported or malformed output without hiding valid task status and cancellation controls.
+Preserve missing output and explicit producer refusal as distinct states.
+Component and synthetic browser fixtures qualify presentation only. Full migration and live-provider acceptance remain open.
+
+Task reads do not retry explicit 401, 403, 404 or 501 responses.
+Transient failures retain bounded retries. The caller can request another read explicitly.
+This avoids keeping cached output visible during retry backoff after an explicit refusal.
+
+### Fleet discovery host admission
+
+WEBUI-APPS-R049.1.4 classifies only the canonical fleet status and catalog-list
+POSTs as host-level reads. Arbora declares both `Effect.READ` and requires
+`mcp:discover`; that downstream policy remains authoritative. Neighboring fleet
+calls, tool load/unload, unknown POST paths and other mutation methods retain
+the write floor. This repairs transport classification, not caller grants or provider
+acceptance.
+
+### Work conversation lifecycle
+
+Extend R049.1.3 and the migration inventory under R049.1.2 with the existing owner-scoped chat store.
+Start a new conversation without leaving Work or clearing independent task and trace selection.
+Rename only a local index entry and delete only the selected owner's local index and message cache.
+Neither action mutates server history; remote records can remain in the selector.
+Use visible attended review for these changes, including the loss of an unsent draft when changing conversation.
+Bind reviews and semantic review requests to the current owner, conversation and local-copy snapshot.
+Retire reviews when that context changes. Check local storage readback before reporting success.
+Keep the existing conversation selector, legacy links and one retained Chat instance.

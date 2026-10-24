@@ -199,6 +199,9 @@ _ADMIN_MUTATION_ROUTE_PREFIXES = (
 # deliberately retain the mutation fallback.
 _READ_ONLY_POST_PATHS = frozenset(
     {
+        # Canonical Arbora Effect.READ operations; mcp:discover is checked downstream.
+        '/api/v1/ops/fleet.status',
+        '/api/v1/ops/fleet.catalog.list',
         '/api/graph/ask',
         '/api/graph/ask-data',
         '/api/graph/catalog',

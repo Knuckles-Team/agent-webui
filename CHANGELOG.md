@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Container image** — the Docker image build is gone: the release workflow
+  no longer runs `publish-docker`, and `docker/` and `.dockerignore` no longer
+  exist. agent-webui ships only as a PyPI package (wheel and sdist) that Arbora
+  installs through its `webui` extra and serves in-process.
+
 ## [2.8.2] - 2026-10-24
 
 ### Fixed
