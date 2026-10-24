@@ -64,7 +64,8 @@
       "rollup_of": [
         "WEBUI-API-R003.1",
         "WEBUI-API-R003.2"
-      ]
+      ],
+      "priority": 0
     },
     {
       "id": "WEBUI-API-R003.1",
@@ -80,7 +81,8 @@
       "title": "Route-census data file and lint rule (remaining)",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [],
+      "priority": 0
     },
     {
       "id": "WEBUI-API-R004",
@@ -203,7 +205,8 @@
       "rollup_of": [
         "WEBUI-API-R011.1",
         "WEBUI-API-R011.2"
-      ]
+      ],
+      "priority": 0
     },
     {
       "id": "WEBUI-API-R005",
@@ -246,7 +249,8 @@
       "rollup_of": [
         "WEBUI-API-R011.2.1",
         "WEBUI-API-R011.2.2"
-      ]
+      ],
+      "priority": 0
     },
     {
       "id": "WEBUI-API-R011.2.1",
@@ -266,7 +270,16 @@
       "title": "Composed conversation identity qualification",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [],
+      "priority": 0
     }
+  ],
+  "frontier": [
+    "WEBUI-API-R003.2",
+    "WEBUI-API-R011.2.2"
+  ],
+  "unserved": [
+    "WEBUI-API-R003.2",
+    "WEBUI-API-R011.2.2"
   ]
 }
