@@ -486,3 +486,22 @@ The attended client uses the installed canonical fetch wrapper.
 A regression test covers initiation, finalization and revocation with session-bound CSRF.
 Safe readiness reads carry no token. Rotation replaces the token and session clearing removes it.
 This proves client forwarding only, not authenticated admission or native browser execution.
+
+### Canonical chat turn receipt consumer
+
+This bounded consumer check does not satisfy WEBUI-APPS-R004.3 or
+WEBUI-APPS-R004.8. Context-budget, cost and indexed-analysis acceptance remain
+open. No producer or full-session accounting acceptance is claimed.
+
+- `agent/agent_webui/__tests__/test_run_identity.py` checks exact receipts,
+  strict counters, outer identity and the actual Vercel stream.
+- `src/lib/__tests__/turn-usage.test.ts` checks caller-bound decoding, missing
+  values, valid zero, replay replacement and distinct tasks.
+- `src/lib/__tests__/chat-transport.test.ts` checks actual SDK send and reconnect
+  streams. Canonical start, metadata and finish chunks replace partial receipts
+  without retained counters or identity. Self-consistent run substitution clears
+  usage on the same message. Sequential send/reconnect, seeded history, same-run
+  refresh, new tasks and removed-message retirement preserve the presentation boundary.
+  Generic provider metadata stays unchanged.
+- `src/__tests__/Chat.conversation-identity.test.tsx` checks rendered counts,
+  stream persistence, replay invalidation and caller, tenant or session changes.

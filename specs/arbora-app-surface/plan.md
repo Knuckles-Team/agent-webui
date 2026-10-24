@@ -329,7 +329,7 @@ In a real browser, receive segments and corrections, finalize, then select local
 
 Input `WEBUI:11`; original record SHA-256 `b1708c96d6b9cadcb1c9f35cc5cb7dde4e60ed2cb1250598e55b9ce4cc66907e`.
 
-Source obligation: The web interface presents a searchable bookmark knowledge base with semantic filtering, an interactive mindmap and CSV or JSON export.
+Source obligation: The web interface presents a searchable bookmark knowledge base with semantic filtering and an interactive mindmap. It exports CSV or JSON.
 
 Existing owner anchors: SDK-SOURCE-INGEST-R005.7–.12; WEBUI-APPS-R001; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: Bookmark AppSurface and GraphCanvas.
 
@@ -745,3 +745,34 @@ Mounted tests check the selected Work branch and editor DOM across map presentat
 
 R049 owns this partial entry migration. R049.1.3 owns the retained Work source behavior.
 R045 and R049.1.2 remain open; these source receipts do not complete either requirement.
+
+### Canonical chat turn usage — 2026-10-24
+
+This bounded consumer slice does not complete WEBUI-APPS-R004.3 or
+WEBUI-APPS-R004.8. Their context-budget, cost and indexed-analysis acceptance
+remains open. Arbora returns `metadata.arbora.usage` from the caller-bound
+durable completion. Bind the receipt's `runId`, `taskId`, `contextId` and
+`scope: turn` to the returned task identity. Bind its presentation to the current
+conversation. Preserve the exact receipt through model and Vercel message metadata.
+
+The transport retains explicit run bindings across same-message replacement.
+Seed and prune correlation from committed, current-owner conversation history at
+stream entry. Absent messages and retired conversations cannot seed new state.
+A conflicting run clears usage without changing the returned outer identity.
+This temporary presentation correlation creates no accounting ledger or authorization.
+
+The transport adapter resets canonical metadata before the AI SDK deep merge.
+A later partial receipt cannot retain omitted counters. The five optional counts
+are requests, tool calls, input tokens, output tokens and total tokens.
+Each count is an integer from zero through the JavaScript safe-integer maximum.
+Reject unknown counters and malformed or mismatched receipts as a whole.
+
+Render known counts, including zero, once per admitted task/run.
+A later replay replaces the earlier presentation. Missing, denied or invalid
+usage clears prior counts. Never derive a total from input/output or accumulate
+a session total. Do not infer timing, throughput or cost for canonical Arbora
+turns. Generic provider estimates remain separate and exclude Arbora-tagged messages.
+
+Focused tests cover the decoder, Vercel stream, rendered Chat, replay and caller
+separation. They do not establish native producer, restart, context-budget or
+full-session acceptance.
