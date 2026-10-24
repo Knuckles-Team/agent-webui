@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-10-23
+
+### Added
+- **Agent-built dashboards** — dashboard panels and WebMCP tools let an agent
+  compose, preview and lay out live dashboards.
+- **Responsive semantic workspace** — Work, Explore and Operate workspaces with
+  shared registered navigation, a bounded command palette over loaded
+  destinations, and context and current-response task links.
+- **Query lenses** — scoped Explore query and validation lenses and an attended
+  query editor with tool actions.
+- **Work task lifecycle** — guarded task refresh and cancellation.
+
+### Changed
+- **Conversation identity** — chat turns use explicit conversation identity and
+  carry the run identity Arbora returns for the admitted task.
+- **Python support** — requires Python 3.12 or newer; CI runs 3.14.
+
 ## [2.6.3] - 2026-09-29
 
 ### Fixed
