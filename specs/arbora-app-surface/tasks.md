@@ -197,3 +197,8 @@ Unchecked tasks remain open. Definitions alone do not establish runtime delivery
 
 - [x] Validate hidden-document registration cleanup, late acknowledgements and fresh registrations on return. The 98 focused tests passed.
 - [ ] Keep native-browser qualification, full authority acceptance and in-flight cancellation open under R048.
+
+## R048 cooperative execution source contract
+
+- [x] Validate caller cancellation and registration retirement through the mounted provider and shared tool factory. All 108 focused tests passed.
+- [ ] Qualify native-browser scheduling and served authority independently. Cooperative cancellation does not prove rollback or stop uncooperative handlers.

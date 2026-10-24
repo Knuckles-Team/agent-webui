@@ -546,3 +546,13 @@ Hidden documents keep manual content mounted but expose no browser tool registra
 Visibility changes trigger existing registration cleanup and publish fresh registrations when the document becomes visible.
 The channel retains its existing visibility revocation behavior.
 This partial source repair does not qualify native browser support or complete R048.
+
+## R048 cooperative execution lifetime
+
+Browser tool execution receives cancellation from both its caller and its registration lifetime.
+The adapter links these signals for each call and detaches listeners when the call settles.
+The shared tool factory exposes execution options to cooperative handlers.
+Provider cleanup on route, identity or visibility changes aborts those running calls.
+Handlers must observe the signal before continuing asynchronous work.
+The adapter preserves returned outcomes and does not describe a completed dispatch as rolled back.
+Native browser scheduling, served authority and complete R048 acceptance remain open.

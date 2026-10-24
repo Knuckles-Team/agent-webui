@@ -7,7 +7,7 @@
  * tool names, lifecycle guarantees, and input semantics disagree silently.
  */
 import { DocumentModelContextAdapter } from './document-model-context'
-import type { WebMcpAdapter, WebMcpModelContextLike, WebMcpToolDefinition } from './types'
+import type { WebMcpAdapter, WebMcpExecutionOptions, WebMcpModelContextLike, WebMcpToolDefinition } from './types'
 
 export type WebMcpRegistrationStatus = 'pending' | 'active' | 'failed' | 'aborted' | 'unavailable'
 
@@ -73,6 +73,33 @@ function settleRegistrationFailure(
   if (status === 'failed') record.error = registrationError(error)
 }
 
+async function executeWithRegistrationSignal(
+  tool: WebMcpToolDefinition,
+  input: unknown,
+  options: WebMcpExecutionOptions,
+  registrationSignal: AbortSignal,
+): Promise<unknown> {
+  const controller = new AbortController()
+  const abort = () => {
+    controller.abort()
+  }
+  const sources = [registrationSignal, options.signal]
+  sources.forEach((signal) => {
+    signal.addEventListener('abort', abort, { once: true })
+  })
+  try {
+    if (sources.some((signal) => signal.aborted)) abort()
+    if (controller.signal.aborted) throw new Error('WebMCP tool execution was cancelled')
+    // Cancellation is cooperative. A result returned after dispatch still
+    // describes the handler's outcome; abort does not establish rollback.
+    return await tool.execute(input, { ...options, signal: controller.signal })
+  } finally {
+    sources.forEach((signal) => {
+      signal.removeEventListener('abort', abort)
+    })
+  }
+}
+
 function registerOneWebMcpTool(
   adapter: WebMcpAdapter,
   tool: WebMcpToolDefinition,
@@ -89,7 +116,7 @@ function registerOneWebMcpTool(
         if (state.cleaned || controller.signal.aborted || record.status !== 'active') {
           throw new Error('WebMCP registration is not active')
         }
-        return tool.execute(input, options)
+        return executeWithRegistrationSignal(tool, input, options, controller.signal)
       },
     }
     return Promise.resolve(adapter.registerTool(registeredTool, controller.signal)).then(
