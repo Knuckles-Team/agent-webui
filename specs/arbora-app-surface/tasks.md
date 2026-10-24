@@ -239,3 +239,9 @@ live-provider or auth acceptance.
 - [ ] WEBUI-APPS-R004: Await authoritative current-plan and run-metrics bindings; task text does not replace these fields.
 - [ ] WEBUI-APPS-R006.4: Await supported-harness discovery and indexed sessions; browser conversations do not replace this producer.
 - [ ] WEBUI-APPS-R050: Qualify the composed served-provider journey and actual authorization boundaries.
+
+### Work prompt authoring continuation
+
+- [x] WEBUI-APPS-R049.1.2: Compose the existing admin prompt editor as a Work lens and preserve investigation context.
+- [x] WEBUI-APPS-R049.1.3: Cover lens navigation, draft retention, owner retirement and explicit save with rendered source tests.
+- [ ] WEBUI-APPS-R049.1.2: Qualify served-provider and native-browser prompt authoring, full editor-tool parity, and remaining Work authoring destinations.
