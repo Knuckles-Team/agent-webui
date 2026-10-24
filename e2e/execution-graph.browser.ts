@@ -72,19 +72,24 @@ for (const viewport of [
     await expect(graph.getByRole('button', { name: /Message active child|Continue completed child/ })).toHaveCount(0)
     // The graph is taller than its nested scroll viewport. Element screenshots
     // would include clipped/blank regions rather than what a person can see.
-    for (const [name, target] of [
-      ['diagram', graph.getByRole('region', { name: /Scrollable dependency diagram/ })],
-      ['details', join.locator('..')],
+    const diagram = graph.getByRole('region', { name: /Scrollable dependency diagram/ })
+    for (const [name, target, focus] of [
+      ['diagram', diagram, diagram],
+      ['details', join.locator('..'), join],
     ] as const) {
-      await target.evaluate((element) =>
-        element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }),
+      await focus.focus()
+      // The workspace restores focused controls after two layout frames.
+      // Capture that same target only after its normal focus handling settles.
+      await page.evaluate(
+        () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
       )
-      await expect(target).toBeInViewport({ ratio: 1 })
+      await target.scrollIntoViewIfNeeded()
       await page.screenshot({
         path: test.info().outputPath(`flat-execution-${name}-${viewport.width}.png`),
         animations: 'disabled',
         caret: 'hide',
       })
+      await expect(target).toBeInViewport({ ratio: 1 })
     }
     refused = true
     await refresh.click()
