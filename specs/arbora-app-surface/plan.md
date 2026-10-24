@@ -514,3 +514,12 @@ The attended query tool slice adds local draft editing and review requests. It r
 Loaded Work and Operate command adapters reuse the existing command provider. They add no catalog fetch or backend operation. Work registers four bounded groups from its current reads. Operate registers confirmed fleet children and capabilities from loaded catalog pages. Failed discovery withdraws related commands. Native links and semantic selection use the same validated destination. Root commands remain available according to role. Missing or truncated leaves remain reachable through their existing workspace controls.
 
 The Work task lifecycle uses the existing task cancellation operation. Manual controls and a local review tool share the same selected task. The tool opens review only. A trusted browser confirmation sends the request. Admission changes retire reads and reviews. Selection changes retire review. A request that already reached Arbora can continue; the retired view ignores its completion. Refresh reads authoritative task state. No conversation-to-task association is inferred.
+
+## R048 retained registration callback repair
+
+Guard browser-facing tool callbacks with their acknowledged registration lifetime.
+A callback retained after cleanup, or from a pending or failed registration, must
+refuse dispatch before changing navigation state. Keep validation and role checks
+in the existing page tools and shared navigation dispatcher. This is a partial
+R048 source repair; native-browser qualification and the remaining authority and
+cancellation matrix stay open.

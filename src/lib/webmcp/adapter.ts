@@ -81,7 +81,18 @@ function registerOneWebMcpTool(
   state: RegistrationState,
 ): Promise<void> {
   try {
-    return Promise.resolve(adapter.registerTool(tool, controller.signal)).then(
+    const registeredTool: WebMcpToolDefinition = {
+      ...tool,
+      execute: async (input, options) => {
+        // Browser unregistration alone cannot invalidate a callback already
+        // retained by a caller. Refuse it before the shared action dispatch.
+        if (state.cleaned || controller.signal.aborted || record.status !== 'active') {
+          throw new Error('WebMCP registration is not active')
+        }
+        return tool.execute(input, options)
+      },
+    }
+    return Promise.resolve(adapter.registerTool(registeredTool, controller.signal)).then(
       () => {
         settleRegistrationSuccess(record, state, controller.signal)
       },

@@ -214,3 +214,14 @@ WEBUI-APPS-R049.1.8 binds `QueryEditorTools.test.tsx` and `ExploreQueryWorkspace
 WEBUI-APPS-R049.1.9 binds `LoadedWorkspaceCommands.test.tsx`. Check real mounted Work and Operate registrations, typed destinations, modified links and keyboard opening. Reject held handles after admission or loaded availability changes. Omit capabilities whose fleet parent is unconfirmed. Bound Work groups to 25 entries each and Operate groups to 50 each. Keep the whole catalog limit at 103 entries. Traces remain independent of conversation ownership. Nodes remain scoped to the selected trace. Real browser and provider checks remain separate.
 
 WEBUI-APPS-R049.1.3 also binds WorkTaskControls.test.tsx and the Work API adapter tests. Check manual and semantic review, trusted confirmation, same-tick duplicate requests, failed requests, terminal tasks, selection changes and late completion. Check admission changes against cached task reads. Browser fixtures must use real pointer confirmation; mocked responses do not prove provider cancellation.
+
+## R048 retained callback regression
+
+`src/lib/webmcp/__tests__/navigation-lifecycle.test.tsx` exercises the real
+document adapter, page navigation tool, shared dispatcher and rendered location
+observer with a structural document API fixture. Refuse pending, failed and
+retired registrations, including late acknowledgement after cleanup. Prove active
+callbacks still navigate a registered object leaf and retain role, path and
+execution-cancellation checks. A held callback after cleanup must not add history
+or change rendered location. This is source integration evidence, not native
+browser, actual Back/Forward, or served authority acceptance. R048 stays open.
