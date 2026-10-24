@@ -250,6 +250,10 @@ Both requirements retain their existing acceptance gaps.
 R049.1.2 readiness migration preserves the supported dashboard snapshot and its explicit reprobe action.
 Diagnostic HTTP 503 responses are distinct from unreadable, denied or unavailable transport responses.
 
+R049.1.2 supported readiness migration includes its compatibility address and distinct failure states.
+Catalog and readiness controls remain available within Operate without visiting legacy feature pages.
+Complete destination migration and native-control parity remain open.
+
 ## Cold-entry asset resolution
 
 R046 and R046.2.2 retain complete navigation acceptance. The production build
@@ -257,3 +261,5 @@ uses origin-root asset URLs. Direct workspace URLs do not resolve scripts
 and styles beneath the route directory. Explicit Vite deployment-base overrides
 remain supported for asset hosting. This repair alone does not qualify dynamic
 leaves, history, semantic zoom, provider behavior or complete redesign.
+
+Readiness alias retirement follows the supported dashboard contract. Unavailable graph `refresh.mode` and `principal` fields are explicitly retired.
