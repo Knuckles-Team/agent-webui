@@ -220,7 +220,11 @@ function ProposalReview({
 }) {
   return (
     <Dialog open={proposal !== null && !blocked}>
-      <DialogContent showCloseButton={false} aria-describedby="webmcp-proposal-description">
+      <DialogContent
+        showCloseButton={false}
+        aria-describedby="webmcp-proposal-description"
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto [overflow-wrap:anywhere]"
+      >
         <DialogHeader>
           <DialogTitle>Review agent browser request</DialogTitle>
           <DialogDescription id="webmcp-proposal-description">
@@ -228,7 +232,7 @@ function ProposalReview({
           </DialogDescription>
         </DialogHeader>
         {proposal && (
-          <dl>
+          <dl className="min-w-0">
             <dt>Tool</dt>
             <dd>
               {proposal.toolTitle} ({proposal.toolId})
@@ -239,7 +243,9 @@ function ProposalReview({
             <dd>{proposal.requesterRunRef}</dd>
             <dt>Exact arguments</dt>
             <dd>
-              <pre>{proposal.argumentsJson}</pre>
+              <pre className="max-h-[40dvh] overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere]" tabIndex={0}>
+                {proposal.argumentsJson}
+              </pre>
             </dd>
             <dt>Expires</dt>
             <dd>

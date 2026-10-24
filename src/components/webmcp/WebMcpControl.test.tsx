@@ -219,3 +219,25 @@ describe('agent proposal review surface', () => {
     expect(controlled.channel.arm).not.toHaveBeenCalled()
   })
 })
+
+it('preserves long proposal content in bounded, keyboard-scrollable review', () => {
+  const longProposal = {
+    ...PROPOSAL,
+    requesterAgent: 'a'.repeat(512),
+    requesterRunRef: 'r'.repeat(128),
+    argumentsJson: JSON.stringify({ target: 'x'.repeat(8000) }),
+  }
+  const controlled = fakeChannel({ ...IDLE, status: 'armed', pendingProposal: longProposal })
+  render(<WebMcpControl visible channel={controlled.channel} />)
+  const dialog = screen.getByRole('dialog', { name: 'Review agent browser request' })
+  expect(dialog).toHaveClass('max-h-[calc(100dvh-2rem)]', 'overflow-y-auto', '[overflow-wrap:anywhere]')
+  const args = screen.getByText(longProposal.argumentsJson)
+  expect(args.textContent).toBe(longProposal.argumentsJson)
+  expect(args).toHaveAttribute('tabindex', '0')
+  expect(args).toHaveClass('max-h-[40dvh]', 'overflow-y-auto', 'whitespace-pre-wrap')
+  expect(screen.getByText(longProposal.requesterAgent).textContent).toBe(longProposal.requesterAgent)
+  expect(screen.getByText(longProposal.requesterRunRef).textContent).toBe(longProposal.requesterRunRef)
+  expect(screen.getByRole('button', { name: 'Accept request' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Decline request' })).toBeInTheDocument()
+  expect(controlled.channel.respondProposal).not.toHaveBeenCalled()
+})
