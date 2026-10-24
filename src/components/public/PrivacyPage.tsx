@@ -9,12 +9,7 @@ export default function PrivacyPage() {
   const config = getSiteConfig()
   if (!route) return null
   return (
-    <PublicPageLayout
-      route={route}
-      eyebrow="Privacy"
-      title="Privacy policy"
-      description="The reviewed privacy policy for this deployment."
-    >
+    <PublicPageLayout route={route} eyebrow="Privacy" title="Privacy policy">
       <PrivacyConsentSettings />
       <LegalPageContent config={config} text={config.privacyPolicyText} />
     </PublicPageLayout>

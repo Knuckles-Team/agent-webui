@@ -35,16 +35,16 @@
 Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`, `uv run --all-extras pytest agent/agent_webui/__tests__`, and `pre-commit run --config .config/pre-commit.yaml --all-files`. Hosted CI provisions browser and API fixtures; no live deployment is required to accept an external PR. CCCC staged threshold is no new function above cyclomatic 10/cognitive 15 and no regression. Run configured jscpd and Dupehound if installed; do not claim an unconfigured threshold passed. KISS rejects duplicate route/app/renderer registries. Record package, Pages and browser artifact digests with exact commit in `tasks.md`.
 | WEBUI-APPS-R005.1 | src/lib/__tests__/nav-registry.test.ts | Nav entry declares a minimum role. |
 | WEBUI-APPS-R005.1.1 | src/lib/__tests__/nav-registry.test.ts | Registry role contract. |
-| WEBUI-APPS-R005.1.2 | Planned rendered sidebar and route-shell acceptance | Rendered role filtering. |
+| WEBUI-APPS-R005.1.2 | `src/components/__tests__/AppRoleVisibility.test.tsx` | Mount the real sidebar and router for reader and admin fixtures. Refuse a guessed admin URL before mounting its view. Preserve allowed reader navigation. Backend authorization and browser acceptance remain separate. |
 | WEBUI-APPS-R005.2 | src/components/views/__tests__/DashboardView.test.tsx | Layout saved per user. |
 | WEBUI-APPS-R005.3 | src/components/views/__tests__/DashboardConnectorTiles.test.tsx | Mount Operate through the browser adapter with HTTP fixtures. Check tiles without tools, reported state, zero/absent counters, filter and selection. Check loading, empty and refused refresh. Assert no connector data in browser storage. This is partial source presentation evidence. Complete catalog membership, connection state and live-provider acceptance remain open. |
 | WEBUI-APPS-R005.4 | src/components/__tests__/chat-session-sync.test.tsx | One chat session list. |
 | WEBUI-APPS-R005.5 | src/__tests__/routes/route-render.hostile.test.tsx | Every route renders. |
 | WEBUI-APPS-R005.5.1 | src/__tests__/routes/route-render.hostile.test.tsx | Census detects a throwing view. |
-| WEBUI-APPS-R005.5.2 | Planned complete route census without known-failure exemptions | Complete route render acceptance. |
+| WEBUI-APPS-R005.5.2 | `src/__tests__/routes/route-render.hostile.test.tsx` | Run every registry entry against the existing desktop and mobile fixture matrix. Reject any known-failure exemption. Keep the injected ErrorBoundary failure test. |
 | WEBUI-APPS-R005.6 | src/lib/__tests__/nav-registry.test.ts | Each view states its purpose. |
 | WEBUI-APPS-R005.6.1 | src/lib/__tests__/nav-registry.test.ts | Registry purpose copy. |
-| WEBUI-APPS-R005.6.2 | Planned rendered shell and own-heading purpose acceptance | Rendered purpose visibility. |
+| WEBUI-APPS-R005.6.2 | `src/components/__tests__/RoutePurpose.test.tsx` | List the registry and assert its purpose is visible through real shell paths. Keep existing page headings and descriptions. Mock feature bodies, not the purpose renderer. Qualify low-height chat geometry in the browser. Keep browser controls in document flow. Test disclosure without implicit arming and keep revoke accessible. Check pointer access to privacy dismissal and dashboard actions. |
 | WEBUI-APPS-R006.1 | src/lib/__tests__/goal-link.test.ts | Link type. |
 | WEBUI-APPS-R006.2 | src/components/views/__tests__/GoalPanel.test.tsx | Panel reads typed operations. |
 | WEBUI-APPS-R006.3 | src/components/views/__tests__/GoalPanel.test.tsx | Absent operation is honest. |

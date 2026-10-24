@@ -72,6 +72,7 @@ const queryClient = new QueryClient()
 const DASHBOARD_ROUTE = ROUTES.find((route) => route.id === 'observability.dashboard')
 if (!DASHBOARD_ROUTE) throw new Error('nav-registry: observability.dashboard route is missing')
 const DashboardElement = DASHBOARD_ROUTE.element
+const dashboardPurpose = DASHBOARD_ROUTE.blurb
 
 /**
  * Maps a RouteDef id to the pre-registry `view` identifier that page-context.tsx's
@@ -193,10 +194,9 @@ function routeOwnsHeading(route: RouteDef): boolean {
 }
 
 function renderRouteHeading(route: RouteDef): ReactNode {
-  if (routeOwnsHeading(route)) return null
   return (
     <>
-      <h1 className="text-2xl font-bold mb-1">{route.label}</h1>
+      {!routeOwnsHeading(route) && <h1 className="text-2xl font-bold mb-1">{route.label}</h1>}
       <p className="text-sm text-muted-foreground mb-4">{route.blurb}</p>
     </>
   )
@@ -208,7 +208,10 @@ function renderRouteBody(route: RouteDef, isObjectDetail: boolean, objectId: str
   if (isObjectDetail) {
     return (
       <Suspense fallback={<RouteLoadingFallback />}>
-        <ObjectView objectId={objectId} onNavigate={navigateToObjectId} />
+        <>
+          <p className="mb-4 text-sm text-muted-foreground">{route.blurb}</p>
+          <ObjectView objectId={objectId} onNavigate={navigateToObjectId} />
+        </>
       </Suspense>
     )
   }
@@ -258,7 +261,10 @@ function DashboardSurface({ isDashboard }: { isDashboard: boolean }) {
   return (
     <div className={cn('flex flex-col w-full h-full overflow-hidden', isDashboard ? 'block' : 'hidden')}>
       <Suspense fallback={<RouteLoadingFallback />}>
-        <DashboardElement />
+        <>
+          <p className="shrink-0 px-6 pt-3 text-sm text-muted-foreground">{dashboardPurpose}</p>
+          <DashboardElement />
+        </>
       </Suspense>
     </div>
   )
@@ -343,11 +349,9 @@ export function PrivateAppSurface({
             />
           )}
           <ConsentBanner placement="workspace" />
-          {isWorkspaceProof(route) && (
-            <div className="max-h-[35dvh] shrink-0 overflow-auto">
-              <WorkspaceWebMcpControl />
-            </div>
-          )}
+          <div className="max-h-[35dvh] shrink-0 overflow-auto">
+            <WorkspaceWebMcpControl collapsible={!isWorkspaceProof(route)} />
+          </div>
 
           {/* Legacy dashboard remains mounted only outside the redesigned workspace contexts */}
           {!isWorkspaceProof(route) && <DashboardSurface isDashboard={routeContentProps.isDashboard} />}
@@ -356,6 +360,7 @@ export function PrivateAppSurface({
             {/* One stable assistant instance across workspace contexts. */}
             <ChatPanel
               currentView={currentView}
+              purpose={routeContentProps.isChat ? route.blurb : undefined}
               isPrimary={routeContentProps.isChat || route.id === 'workspace.work-proof'}
             />
           </div>
@@ -420,6 +425,15 @@ function AppSurface({
  * Manages view state based on URL path and provides the necessary context
  * providers for theme, sidebar, MCP tools, and data fetching.
  */
+/** Public, unknown and signed-out pages use floating chrome; signed-in workspaces keep it in flow. */
+function isFloatingChrome(isPublicRoute: boolean, isNotFound: boolean, identityLoading: boolean, identity: Identity) {
+  return isPublicRoute || isNotFound || (!identityLoading && identity.needsSignIn)
+}
+
+function showsPublicConsent(routeId: string, floatingChrome: boolean) {
+  return routeId !== 'public.privacy' && floatingChrome
+}
+
 export default function App() {
   const {
     currentRoute,
@@ -443,6 +457,7 @@ export default function App() {
   const pageRoute = activeRoute ?? NOT_FOUND_ROUTE
   const pageMetadata = getRoutePageMetadata(pageRoute)
   const isPublicRoute = pageMetadata.visibility === 'public'
+  const usesFloatingChrome = isFloatingChrome(isPublicRoute, isNotFound, identityLoading, identity)
   const mcpCatalogEnabled = shouldEnableMcpCatalog({
     isPublicRoute,
     isNotFound,
@@ -465,15 +480,14 @@ export default function App() {
               <WebMcpProvider
                 identity={identity}
                 identityLoading={identityLoading}
-                controlPlacement={isWorkspaceProof(pageRoute) ? 'workspace' : 'floating'}
+                controlPlacement={usesFloatingChrome ? 'floating' : 'workspace'}
               >
                 <PageHead
                   route={pageRoute}
                   pathname={new URL(currentRoute, window.location.origin).pathname}
                   authMode={identity.raw?.mode}
                 />
-                {pageRoute.id !== 'public.privacy' &&
-                  (isPublicRoute || isNotFound || (!identityLoading && identity.needsSignIn)) && <ConsentBanner />}
+                {showsPublicConsent(pageRoute.id, usesFloatingChrome) && <ConsentBanner />}
                 <AppSurface
                   pageRoute={pageRoute}
                   isPublicRoute={isPublicRoute}

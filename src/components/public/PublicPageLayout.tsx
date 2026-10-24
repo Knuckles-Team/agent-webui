@@ -18,6 +18,19 @@ function publicRoute(id: string): RouteDef | null {
 }
 
 /** One accessible shell for 404, legal, contact, and confirmation pages. */
+function PageLead({ blurb, description }: { blurb: string; description?: string }) {
+  const lines = description && description !== blurb ? [blurb, description] : [blurb]
+  return (
+    <>
+      {lines.map((line) => (
+        <p key={line} className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
+          {line}
+        </p>
+      ))}
+    </>
+  )
+}
+
 export function PublicPageLayout({ route, eyebrow, title, description, children }: PublicPageLayoutProps) {
   const config = getSiteConfig()
   const privacy = publicRoute('public.privacy')
@@ -65,7 +78,7 @@ export function PublicPageLayout({ route, eyebrow, title, description, children 
         <article className="mx-auto max-w-3xl">
           {eyebrow && <p className="mb-3 text-sm font-medium uppercase tracking-wide text-primary">{eyebrow}</p>}
           <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{title}</h1>
-          {description && <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">{description}</p>}
+          <PageLead blurb={route.blurb} description={description} />
           {cta && (
             <a
               href={cta.target}

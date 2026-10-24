@@ -440,7 +440,9 @@
       "title": "Rendered role filtering",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "src/components/__tests__/AppRoleVisibility.test.tsx:1"
+      ]
     },
     {
       "id": "WEBUI-APPS-R005.2",
@@ -485,7 +487,7 @@
         "a390f7a0dabb"
       ],
       "verified_by": [
-        "src/__tests__/routes/route-render.hostile.test.tsx:176"
+        "src/__tests__/routes/route-render.hostile.test.tsx:182"
       ]
     },
     {
@@ -493,7 +495,10 @@
       "title": "Complete route render acceptance",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "src/__tests__/routes/route-render.hostile.test.tsx:129",
+        "src/__tests__/routes/route-render.hostile.test.tsx:176"
+      ]
     },
     {
       "id": "WEBUI-APPS-R005.6",
@@ -522,7 +527,13 @@
       "title": "Rendered purpose visibility",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "src/components/__tests__/AppRoleVisibility.test.tsx:79",
+        "src/components/__tests__/RoutePurpose.test.tsx:1",
+        "src/components/__tests__/RoutePurpose.test.tsx:63",
+        "src/components/webmcp/WebMcpControl.test.tsx:144",
+        "src/components/workspace/__tests__/ExploreShell.test.tsx:140"
+      ]
     },
     {
       "id": "WEBUI-APPS-R006",
