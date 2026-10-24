@@ -231,13 +231,16 @@
     {
       "id": "WEBUI-APPS-R039",
       "title": "Package, import and environment naming stay on the component identity",
-      "delivery_state": "LANDED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
         "19e4264b5f66",
         "82a4f84c98e6",
+        "8e2b6e0db400",
         "dd43c178542b"
       ],
-      "verified_by": []
+      "verified_by": [
+        "tests/test_release_concurrency.py:29"
+      ]
     },
     {
       "id": "WEBUI-APPS-R040",
