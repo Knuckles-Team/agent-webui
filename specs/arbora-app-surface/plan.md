@@ -523,3 +523,18 @@ refuse dispatch before changing navigation state. Keep validation and role check
 in the existing page tools and shared navigation dispatcher. This is a partial
 R048 source repair; native-browser qualification and the remaining authority and
 cancellation matrix stay open.
+### Connector tile composition amendment
+
+The Operate connector panel adds partial presentation for WEBUI-APPS-R005.3 under the
+R049 workspace migration. Reuse the caller-visible `fleet.status` inventory
+that backs the existing ecosystem services adapter. Each returned child gets
+a tile, including children with no loaded capability descriptions. Show the
+reported process state and optional mounted-tool, in-flight, queue and restart
+counters without inferring connectivity or execution permission. Missing
+counters read “Not available”; zero remains zero. Selection uses the existing
+Operate dispatcher and preserves the filter and capability inspector. The panel never
+requests, persists or renders connector configuration or credentials.
+Failed refresh withdraws the old tiles; an empty inventory and a filter with
+no matches remain distinct. These tests prove presentation over returned fleet children.
+They do not prove complete connector catalog membership or connection state.
+R005.3 and full migration and installed-provider acceptance remain open.

@@ -454,7 +454,9 @@
       "title": "Connector tiles from the catalog",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "src/components/views/__tests__/DashboardConnectorTiles.test.tsx:1"
+      ]
     },
     {
       "id": "WEBUI-APPS-R005.4",
