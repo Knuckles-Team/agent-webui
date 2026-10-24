@@ -73,13 +73,20 @@
     {
       "id": "WEBUI-DESIGN-R004",
       "title": "Responsive layout covers 320px mobile through desktop",
-      "delivery_state": "SPECIFIED",
+      "delivery_state": "VERIFIED",
       "landed_in": [
+        "12b5f5624953",
         "660d19fa4d36",
+        "93401c34a695",
+        "ac86f2de9817",
         "cb7ca4afa907"
       ],
       "verified_by": [
-        "e2e/accessibility.spec.ts:17"
+        "e2e/accessibility.spec.ts:17",
+        "e2e/canopy-glass.browser.ts:2",
+        "e2e/execution-graph.browser.ts:2",
+        "e2e/native-chat.browser.ts:2",
+        "e2e/workspace-viewport.browser.ts:1"
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R004.1",
@@ -202,8 +209,10 @@
     {
       "id": "WEBUI-DESIGN-R004.2",
       "title": "Resize, fold and visual viewport continuity",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "d18ec8c78341"
+      ],
       "verified_by": [
         "e2e/native-chat.browser.ts:2",
         "e2e/workspace-viewport.browser.ts:1",

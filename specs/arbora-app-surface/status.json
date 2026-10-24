@@ -487,8 +487,10 @@
     {
       "id": "WEBUI-APPS-R005.4",
       "title": "One chat session list",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "d18ec8c78341"
+      ],
       "verified_by": [
         "e2e/native-chat.browser.ts:1",
         "src/__tests__/Chat.conversation-identity.test.tsx:697",
@@ -2012,7 +2014,8 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "93401c34a695",
-        "ac86f2de9817"
+        "ac86f2de9817",
+        "d18ec8c78341"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:4",
