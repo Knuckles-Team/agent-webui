@@ -206,8 +206,10 @@
     {
       "id": "WEBUI-DESIGN-R011",
       "title": "Repeatable documentation screenshots",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "1cac40d60bc3"
+      ],
       "verified_by": [
         "e2e/documentation-screenshots.browser.ts:1",
         "scripts/documentation-screenshots.test.mjs:1"
