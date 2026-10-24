@@ -296,7 +296,13 @@ function RouteContentSurface({
 }: RouteContentSurfaceProps) {
   if (isChat || isDashboard) return null
   // Compatibility entries never mount their retired standalone body, including while identity loads.
-  if (route.redirects && !routeAccessDenied) return <RouteLoadingFallback />
+  if (route.redirects && !routeAccessDenied)
+    return (
+      <div className="workspace-route-content flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-3 sm:p-5">
+        {renderRouteHeading(route)}
+        <RouteLoadingFallback />
+      </div>
+    )
 
   const body = routeAccessDenied ? (
     renderRouteAccessDenied(route, identity)
