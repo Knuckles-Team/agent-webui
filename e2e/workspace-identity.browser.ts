@@ -291,10 +291,14 @@ async function checkDesktopShell(page: Page, size: { width: number; height: numb
   await expect(handle).toHaveAttribute('aria-valuenow', '12')
   await page.keyboard.press('End')
   await expect(handle).toHaveAttribute('aria-valuenow', '22')
+  // End changes layout. Let the locator wait for a stable, actionable handle
+  // before starting the raw pointer drag, rather than using a stale rectangle.
+  await handle.hover()
   const start = await handle.boundingBox()
-  await page.mouse.move(start!.x + 22, start!.y + 22)
+  const x = start!.x + start!.width / 2
+  const y = start!.y + start!.height / 2
   await page.mouse.down()
-  await page.mouse.move(start!.x - 106, start!.y + 22, { steps: 8 })
+  await page.mouse.move(x - 128, y, { steps: 8 })
   await page.mouse.up()
   await expect(handle).toHaveAttribute('aria-valuenow', '14')
   expect(await page.evaluate(() => localStorage.getItem('agent-webui.workspace-map-width'))).toBe('14')

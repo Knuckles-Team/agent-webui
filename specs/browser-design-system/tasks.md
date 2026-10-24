@@ -146,3 +146,12 @@ Its light and dark identity journeys passed. Glass failed the native route descr
 An alpha-aware token regression reproduced the insufficient glass muted-text contrast locally before the token change.
 The repair brightens only the glass muted-text token; dark and light palettes remain unchanged.
 Rendered confirmation of this repair remains pending. No whole-theme or full accessibility acceptance follows from this focused evidence.
+
+
+## Hosted drag actionability
+
+The hosted run on `db91e9ad7aecdc25ca85c2c6d56b134aea455a4c` passed glass identity and native text readability.
+Dark identity and all three palette cancellation cases also passed.
+Light stopped at the pointer-resize assertion: the expected 14-rem width remained 22 rem.
+The fixture now waits for a stable, actionable separator after keyboard resizing before beginning the raw drag.
+It retains the same 14-rem result and preference-persistence assertions. Fresh full-matrix confirmation remains pending.
