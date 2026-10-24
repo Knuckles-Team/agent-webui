@@ -539,6 +539,7 @@
       "title": "Each view states its purpose",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "93401c34a695",
         "a390f7a0dabb",
         "af4bf7721747"
       ],
@@ -570,6 +571,7 @@
       "title": "Rendered purpose visibility",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "93401c34a695",
         "af4bf7721747"
       ],
       "verified_by": [
@@ -2004,6 +2006,7 @@
       "title": "Measured ground-up redesign acceptance",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "93401c34a695",
         "ac86f2de9817"
       ],
       "verified_by": [
@@ -2200,6 +2203,7 @@
       "title": "Shared shell and Explore presentation slice",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "93401c34a695",
         "ac86f2de9817"
       ],
       "verified_by": [
