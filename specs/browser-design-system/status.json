@@ -43,9 +43,9 @@
       "landed_in": [
         "2c9874c2a559",
         "2d3f1b884e39",
-        "316bd5a470fb",
         "46b60b8fbd48",
-        "a4c402f68f1b"
+        "a4c402f68f1b",
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
@@ -164,7 +164,7 @@
       "title": "Purposeful density and Arbora visual hierarchy",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "316bd5a470fb"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
@@ -182,7 +182,7 @@
       "title": "Full mobile and arbitrary-aspect feature parity",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "316bd5a470fb"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
@@ -240,7 +240,7 @@
       "title": "Canopy Glass material and density",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "316bd5a470fb"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
@@ -255,7 +255,7 @@
       "title": "Fully expanded responsive shell",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "316bd5a470fb"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
@@ -267,7 +267,7 @@
       "title": "Meaningful interruptible motion",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "316bd5a470fb"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:3",

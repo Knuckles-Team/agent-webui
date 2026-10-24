@@ -2004,7 +2004,7 @@
       "title": "Measured ground-up redesign acceptance",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "316bd5a470fb"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:4",
@@ -2199,7 +2199,7 @@
       "title": "Shared shell and Explore presentation slice",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "316bd5a470fb"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:4",
