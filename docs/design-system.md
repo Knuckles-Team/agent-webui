@@ -29,6 +29,12 @@ Color is never the only signal for a state; see [State tokens](#state-tokens-sta
 | Destructive text on Background | `oklch(0.58 0.24 27)` | `oklch(0.70 0.19 22)` | 4.5:1 |
 | Ring (focus indicator) on Background | `oklch(0.52 0.16 260)` | `oklch(0.62 0.16 260)` | 3:1 |
 
+### Glass muted text
+
+Glass uses `oklch(0.70 0.02 260)` for muted text over its translucent background.
+The alpha-aware token audit composites the page over white and requires 4.5:1 contrast.
+Opaque dark-theme values remain unchanged. Browser identity checks also measure native task text in light, dark and glass.
+
 ## Typography
 
 The body font is Inter, loaded in `src/index.css` with a system-UI fallback
