@@ -319,3 +319,16 @@ missing parent has no navigation control.
 The trace-inspection scenario in e2e/workspace-task-lifecycle.spec.ts drives the mounted app in Chromium with synthetic API responses.
 It checks actual browser Back, parent selection, refusal and retry. These fixtures do not prove served provider behavior,
 native WebMCP or the complete mobile geometry matrix.
+
+WEBUI-APPS-R049.1.3 task inspection uses work-task-inspection.test.ts and the mounted WorkWorkspace suite.
+Check supported text output, absent output, explicit producer refusal, malformed references and unsupported parts.
+Reject duplicate artifact identities and output exceeding the rendering bounds.
+Render untrusted text without HTML execution or inferred links.
+Failed task refresh must withdraw output and references.
+
+The conversation-task-output scenario in e2e/workspace-task-lifecycle.spec.ts drives one mounted Chat instance.
+Send through the existing chat transport with synthetic admitted-task metadata.
+Inspect the returned task, output and references, then select an independent trace and node.
+Preserve the follow-up draft through navigation, browser Back, denial and retry.
+Capture desktop, portrait and short-landscape screenshots.
+These tests prove browser composition with synthetic responses, not live-provider execution or the complete migration.

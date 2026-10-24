@@ -1,6 +1,7 @@
 // spec: WEBUI-APPS-R049.1.3
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { workApi } from '../work-workspace'
+import { ApiError } from '../api-validation'
+import { workApi, retryWorkTaskRead } from '../work-workspace'
 afterEach(() => vi.unstubAllGlobals())
 describe('Work existing contract adapters', () => {
   it('accepts minimal served task rows and nested status without inventing a legacy session shape', async () => {
@@ -68,4 +69,12 @@ it('rejects malformed cancellation IDs before any request and preserves provider
   expect(() => workApi.cancelTask('')).toThrow()
   expect(fetch).not.toHaveBeenCalled()
   await expect(workApi.cancelTask('task-a')).rejects.toThrow('403')
+})
+
+// spec: WEBUI-APPS-R049.1.3
+it('does not retry explicit task refusal but bounds transient retries', function checkTaskRefusalRetries() {
+  for (const status of [401, 403, 404, 501]) expect(retryWorkTaskRead(0, new ApiError(status, 'refused'))).toBe(false)
+  expect(retryWorkTaskRead(0, new ApiError(503, 'temporarily unavailable'))).toBe(true)
+  expect(retryWorkTaskRead(0, new Error('network'))).toBe(true)
+  expect(retryWorkTaskRead(3, new Error('network'))).toBe(false)
 })
