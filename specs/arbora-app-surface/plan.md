@@ -927,6 +927,39 @@ material, expanded-header, motion and fallback behavior. This is a staged theme 
 R045–R050 retain every broader obligation. Qualify remaining graph, editor, run,
 administration and authentication surfaces through their existing owners.
 
+
+## Native workspace assistant amendment — 2026-10-24
+
+Extend WEBUI-APPS-R005.4, R049.1.3 and R049.2 within the existing shared shell.
+Replace the floating chat launcher, backdrop and off-canvas drawer with one
+visible in-flow assistant. Reuse ChatPanel, Chat, the owner-scoped conversation
+store, canonical transport and page-context envelope. Retain transcript,
+composer, attachments, model/tool controls, streaming, approvals and task links.
+Use a bounded side dock only when the available task width fits it.
+Otherwise, stack a compact visible composer and real status without occlusion. The
+transcript and additional composer options expand explicitly at narrow widths
+without replacing their state. Expansion and focus controls are local presentation
+changes, not new authority or a second conversation. The task receives most
+available desktop width rather than a mandatory equal split. Delete the viewport exclusion and bottom padding reserved for the launcher.
+
+Preserve the mounted assistant and unsent draft through navigation and resize.
+The existing Chat admission boundary retires protected state on identity loss
+or owner change. Selection context follows the existing publisher. It does not
+imply task ownership, a chat target change or permission to execute a tool.
+Source tests cover real Chat retention, current context on send and owner
+retirement. Authored browser journeys cover geometry, keyboard, touch and
+short/narrow layouts separately from actual execution of those journeys.
+R045–R050 and WEBUI-DESIGN-R004.1/R004.2 retain full co-navigation, native WebMCP,
+mobile/device, all-route migration and installed-provider acceptance.
+
+Critical compact-state controls remain outside optional message tools: the
+existing Agent mode selector, SWE mode, live session and Stop controls. Pending
+approval renderers mark their actual review state. The shell exposes
+Review required approval, which only expands and focuses that same UI.
+No approval decision, execution path or provider is added. Clearing the existing
+review or retiring its owner deletes the cue. Hidden focus on disclosure or
+container resize moves to the persistent composer without remounting Chat.
+
 ### Hosted Explore focus correction — 2026-10-24
 
 R049.2.1 focus belongs to the active evidence journey: closing detail returns to
@@ -946,6 +979,28 @@ sizes. Never weaken the viewport ratio or replace the equivalent dependency list
 to accommodate the new header. Read admission, lifecycle honesty and graph
 semantics remain unchanged.
 
+
+### Hosted native assistant qualification
+
+The first draft passed hosted typecheck and full lint on c8bd060, composed with base 954a227.
+The identity journey failed its initial narrow Operate action hit test.
+That result does not yet distinguish occlusion from missing keyboard navigation.
+Preserve initial geometry and failure captures. Reach each action with native Tab navigation, then retain the unchanged hit test.
+The advancing base also changed generated design evidence. Regenerate the composed history receipt without hand-editing status.
+Full native browser acceptance remains open.
+
+The next hosted identity pass confirms native keyboard access at narrow widths.
+Initial pixels retain the full header, task scrollport and compact composer without launcher clearance.
+Compose the Work focus-inset correction using the route's existing identity, not its retired shell depth.
+Keep full evidence viewport assertions and focused-control margins distinct.
+Write native browser captures to retained output paths; attachment buffers alone do not persist with the list reporter.
+
+The native browser pass exposed compact composer clipping with enlarged text.
+Give the compact assistant its intrinsic height and let the outer boundary scroll.
+Do not change expanded transcript scrolling or hide active execution controls.
+Keep ordinary wheel reachability and all four painted-control hit tests.
+Use the rendered markdown destination's button role for the resize focus precondition.
+Pending-approval review and fresh-entry focus passed; remaining browser cases still need qualification.
 
 ### Acceptance rollup correction — 2026-10-24
 

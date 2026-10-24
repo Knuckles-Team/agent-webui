@@ -16,6 +16,8 @@
     "WEBUI-DESIGN-R002.1",
     "WEBUI-DESIGN-R004.1",
     "WEBUI-DESIGN-R004.2",
+    "WEBUI-DESIGN-R004.2.1",
+    "WEBUI-DESIGN-R004.2.2",
     "WEBUI-DESIGN-R005.1",
     "WEBUI-DESIGN-R010",
     "WEBUI-DESIGN-R011",
@@ -67,7 +69,7 @@
         "cb7ca4afa907"
       ],
       "verified_by": [
-        "e2e/accessibility.spec.ts:19"
+        "e2e/accessibility.spec.ts:17"
       ]
     },
     {
@@ -75,11 +77,14 @@
       "title": "Responsive layout covers 320px mobile through desktop",
       "delivery_state": "SPECIFIED",
       "landed_in": [
+        "12b5f5624953",
+        "47885260902d",
         "660d19fa4d36",
-        "cb7ca4afa907"
+        "93401c34a695",
+        "ac86f2de9817"
       ],
       "verified_by": [
-        "e2e/accessibility.spec.ts:19"
+        "e2e/accessibility.spec.ts:17"
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R004.1",
@@ -170,7 +175,7 @@
       ],
       "verified_by": [
         "e2e/workspace-density.spec.ts:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:156",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:164",
         "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:1"
       ],
       "rollup_of": [
@@ -201,13 +206,34 @@
       "id": "WEBUI-DESIGN-R004.2",
       "title": "Resize, fold and visual viewport continuity",
       "delivery_state": "SPECIFIED",
+      "landed_in": [
+        "d18ec8c78341"
+      ],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-DESIGN-R004.2.1",
+        "WEBUI-DESIGN-R004.2.2"
+      ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R004.2.1",
+      "title": "Bounded workspace viewport continuity",
+      "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [
+        "e2e/native-chat.browser.ts:2",
         "e2e/workspace-viewport.browser.ts:1",
         "e2e/workspace-zoom.browser.ts:1",
         "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:71",
         "src/components/workspace/__tests__/WorkspaceViewport.test.tsx:1"
       ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R004.2.2",
+      "title": "Complete resize and device continuity acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
     },
     {
       "id": "WEBUI-DESIGN-R005.1",

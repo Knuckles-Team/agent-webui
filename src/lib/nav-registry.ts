@@ -176,7 +176,7 @@ export const ROUTES: readonly RouteDef[] = [
     icon: MessageCircle,
     minRole: 'reader',
     mobile: 'full',
-    // ChatPanel is a persistent, prop-driven singleton (full-page on /chat, drawer
+    // ChatPanel is a persistent, prop-driven singleton (full-page on /chat, native dock
     // elsewhere) mounted once at the App shell rather than swapped in by route — see
     // App.tsx. This element exists so Chat is still a first-class registry entry for
     // the sidebar/docs/role metadata; the router does not use it to mount the page.

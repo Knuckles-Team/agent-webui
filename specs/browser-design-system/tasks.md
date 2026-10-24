@@ -74,7 +74,7 @@ not establish authenticated service acceptance.
 
 ## Browser zoom and keyboard continuation
 
-- [x] Reserve scroll range and focus clearance for the floating assistant trigger in Explore and Operate.
+- [x] Reserve scroll range and focus clearance for the former floating assistant trigger in Explore and Operate. The native-assistant continuation supersedes that exclusion with normal document flow.
 - [ ] Complete WEBUI-DESIGN-R004.2 acceptance across all workspace journeys and native devices.
 
 The native Chromium zoom regression reproduces a partially obscured Run Query
@@ -196,6 +196,15 @@ source/browser results must be recorded separately when available. Earlier hoste
 screenshots and compact-header receipts remain historical, not Canopy Glass
 acceptance. No broader completion follows from the shared-shell/Explore slice.
 
+## Viewport continuity evidence partition
+
+- [x] WEBUI-DESIGN-R004.2.1: Retain the existing bounded viewport and query source evidence.
+- [ ] WEBUI-DESIGN-R004.2.1: Qualify compact native chat after the enlarged-text clipping repair; retain actual browser captures.
+- [ ] WEBUI-DESIGN-R004.2.2: Complete every remaining parent obligation with exact-candidate browser and native-device evidence.
+
+R004.2 remains open until both children meet their complete criteria.
+The residual child retains fold, native keyboard, safe-area, stream, graph and all-surface continuity acceptance.
+Do not infer that authored test bindings complete those journeys.
 
 ## Retained acceptance ledger correction — 2026-10-24
 

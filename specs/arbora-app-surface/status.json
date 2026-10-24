@@ -488,9 +488,16 @@
     {
       "id": "WEBUI-APPS-R005.4",
       "title": "One chat session list",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
-      "verified_by": []
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "d18ec8c78341"
+      ],
+      "verified_by": [
+        "e2e/native-chat.browser.ts:1",
+        "src/__tests__/Chat.conversation-identity.test.tsx:697",
+        "src/components/__tests__/ChatApprovalPresence.test.tsx:1",
+        "src/components/__tests__/ChatPanel.test.tsx:1"
+      ]
     },
     {
       "id": "WEBUI-APPS-R005.5",
@@ -549,7 +556,7 @@
         "src/components/__tests__/RoutePurpose.test.tsx:1",
         "src/components/__tests__/RoutePurpose.test.tsx:64",
         "src/components/webmcp/WebMcpControl.test.tsx:146",
-        "src/components/workspace/__tests__/ExploreShell.test.tsx:140"
+        "src/components/workspace/__tests__/ExploreShell.test.tsx:139"
       ],
       "rollup_of": [
         "WEBUI-APPS-R005.6.1",
@@ -580,7 +587,7 @@
         "src/components/__tests__/RoutePurpose.test.tsx:1",
         "src/components/__tests__/RoutePurpose.test.tsx:64",
         "src/components/webmcp/WebMcpControl.test.tsx:146",
-        "src/components/workspace/__tests__/ExploreShell.test.tsx:140"
+        "src/components/workspace/__tests__/ExploreShell.test.tsx:139"
       ]
     },
     {
@@ -2008,7 +2015,8 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [
         "93401c34a695",
-        "ac86f2de9817"
+        "ac86f2de9817",
+        "d18ec8c78341"
       ],
       "verified_by": [],
       "rollup_of": [
@@ -2036,9 +2044,9 @@
       "landed_in": [],
       "verified_by": [
         "e2e/workspace-catalog.browser.ts:17",
-        "e2e/workspace-task-lifecycle.spec.ts:391",
+        "e2e/workspace-task-lifecycle.spec.ts:396",
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:156",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:164",
         "src/components/views/__tests__/ArboraReadinessView.test.tsx:1"
       ]
     },
@@ -2054,11 +2062,11 @@
         "b95cabd555b2"
       ],
       "verified_by": [
+        "e2e/native-chat.browser.ts:1",
         "e2e/workspace-task-lifecycle.spec.ts:1",
         "e2e/workspace-task-lifecycle.spec.ts:132",
-        "e2e/workspace-task-lifecycle.spec.ts:263",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
-        "src/components/workspace/__tests__/ExploreShell.test.tsx:2"
+        "e2e/workspace-task-lifecycle.spec.ts:265",
+        "src/__tests__/Chat.conversation-identity.test.tsx:697"
       ]
     },
     {

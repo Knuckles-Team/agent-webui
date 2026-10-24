@@ -196,6 +196,13 @@ Original wide and narrow whole-card visibility checks remain unchanged.
 All viewport cases must expose every details field through keyboard scrolling.
 Oversized low-height and enlarged-text cards require complete reachability, not simultaneous visibility.
 
+### Retain the full viewport continuity obligation
+
+R004.2 now separates bounded source continuity from complete device and surface acceptance.
+R004.2.1 owns the retained implementation and current workspace tests.
+R004.2.2 preserves every unfulfilled parent criterion, including native keyboard and fold behavior.
+The canonical generator must leave R004.2 and its responsive ancestor open while that child is unspecified by implementation.
+Preserve every acceptance criterion. Regenerate status with the canonical tool.
 
 ### Acceptance rollup correction — 2026-10-24
 

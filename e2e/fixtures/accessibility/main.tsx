@@ -60,8 +60,14 @@ function Fixture() {
   return (
     <PageContextProvider route={primary ? '/chat' : '/atlas'} view={primary ? 'chat' : 'atlas'}>
       <button onClick={() => setPrimary((value) => !value)}>Switch view</button>
-      <FixtureContent />
-      <ChatPanel currentView={primary ? 'chat' : 'atlas'} isPrimary={primary} />
+      <div className="workspace-chat-boundary">
+        <div className="workspace-chat-layout" data-primary={primary}>
+          <div className="workspace-context-content" hidden={primary}>
+            <FixtureContent />
+          </div>
+          <ChatPanel currentView={primary ? 'chat' : 'atlas'} isPrimary={primary} />
+        </div>
+      </div>
     </PageContextProvider>
   )
 }

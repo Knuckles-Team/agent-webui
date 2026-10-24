@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R004.2
+// spec: WEBUI-DESIGN-R004.2.1
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WorkspaceViewport } from '../WorkspaceViewport'
@@ -66,6 +66,7 @@ it('leaves other surfaces alone and supports browsers without VisualViewport', (
     vi.runAllTimers()
   })
   expect(reveal).not.toHaveBeenCalled()
+  expect(container.firstElementChild).toHaveClass('overflow-auto')
   rerender(
     <WorkspaceViewport enabled>
       <input aria-label="Draft" />

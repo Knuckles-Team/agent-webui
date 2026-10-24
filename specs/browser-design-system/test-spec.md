@@ -235,7 +235,7 @@ The hosted fixture must capture the dark security warning and disabled send cont
 In both forced-color palettes, check the visible Arbora word uses CanvasText on Canvas.
 Assert the brand link and its text color, contrast and actual screenshot appearance.
 
-Preserve the task's bottom scroll clearance for the fixed assistant launcher.
+Preserve keyboard focus and scroll reachability beside the in-flow native assistant.
 At short heights, keyboard-focus and hit-test the final relationship action.
 Check 200% text enlargement separately from the existing native 200% browser-zoom journey.
 Enlarged navigation must wrap without local or document overflow. These checks do not accept all-route accessibility.
@@ -258,6 +258,18 @@ heading is focused and in the viewport. Close from that visible detail and asser
 the retained search is focused and visible. Do not first click a lower inspector
 control: Playwright scrolls it and mask missing application focus reveal.
 
+## Viewport continuity evidence partition
+
+WEBUI-DESIGN-R004.2.1 binds the existing viewport, query and native-assistant tests.
+Preserve their draft, identity, focus, wheel-scroll and real-control hit assertions.
+A compact assistant must not compress its composer into a hidden nested scrollport.
+Keep actual candidate screenshots and failed cases visible until qualification passes.
+
+WEBUI-DESIGN-R004.2.2 requires the full parent matrix, not another source-only fixture.
+Exercise native keyboards, fold and orientation changes, safe areas and visual viewports.
+Include interrupted streams and graph navigation across every applicable surface.
+Check selection, history, drafts, progress and focus, plus readable 200-percent browser zoom.
+Record exact revisions, device/browser conditions, results and remaining gaps.
 
 ## Retained acceptance verification
 

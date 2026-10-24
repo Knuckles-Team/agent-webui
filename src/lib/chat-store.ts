@@ -4,7 +4,7 @@
  * (id, first message, timestamp) and each conversation's message history.
  *
  * Before this module existed, the nav sidebar's "Active Chats" list
- * (`app-sidebar.tsx`) and the floating chat launcher (`ChatPanel.tsx` →
+ * (`app-sidebar.tsx`) and the workspace assistant (`ChatPanel.tsx` →
  * `Chat.tsx`) each read/wrote the same raw `localStorage` keys independently,
  * with no shared read model — an operator-reported visible bug where the two
  * surfaces could show different session lists. Every read and write now goes
@@ -178,7 +178,7 @@ function entriesForUser(snapshot: ConversationSnapshot, userKey: string): Conver
 }
 
 /**
- * The ONE hook the nav "Active Chats" list and the floating chat launcher both
+ * The ONE hook the nav "Active Chats" list and the workspace assistant both
  * call. Merges `userKey`'s local index with the server-side conversation list
  * (`GET /api/chats`, already scoped to the authenticated caller),
  * local entries winning only where the server has not (yet) recorded that id.

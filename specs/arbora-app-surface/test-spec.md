@@ -600,6 +600,25 @@ R048/R049.1.2/R049.2/R050 keep their complete census, dynamic-leaf, native-tool,
 authority, migration, measured-redesign and served-provider obligations. Record
 native-browser, manual assistive-technology and physical-device gaps explicitly.
 
+## Native assistant source and browser separation
+
+WEBUI-APPS-R005.4/R049.1.3: ChatPanel.test.tsx checks a visible named native
+region without a launcher or backdrop. It checks retained Chat, bounded context,
+explicit expansion/focus and nested Escape handling. Narrow browser fixtures check a compact visible composer/status and bounded height.
+They check explicit transcript/message-option disclosures. ExploreShell.test.tsx checks
+the same dock position across Work, Explore, Operate and retained private routes.
+Chat.conversation-identity.test.tsx uses real Chat and transport.
+It checks draft retention, current context on send and owner retirement through the dock.
+
+WEBUI-APPS-R049.1.3 and WEBUI-DESIGN-R004.2.1: native-chat.browser.ts exercises the
+actual app with synthetic server fixtures. Check absent fixed overlays, dominant
+desktop task width, keyboard/touch composer access, expansion, repeated context
+changes, resize and short viewports. Execution must be recorded on the exact
+candidate; authored checks alone do not establish browser acceptance.
+
+The existing canonical Chat suites retain attachment, tool, usage, SWE, history
+and admission coverage. No native WebMCP, all-leaf semantic navigation or live
+provider completion is inferred from these source tests.
 
 ## Retained acceptance verification
 
