@@ -104,3 +104,71 @@ It runs at narrow width and native 200-percent zoom with normal and reduced moti
 Edge hit tests include the fixed assistant trigger and its animated halo.
 The outer workspace scrollport reserves focus clearance when the persistent frame is active.
 This supplements the existing four-viewport continuity journey, including short landscape.
+
+## Scoped workspace identity evidence
+
+Run `pnpm exec playwright test --config e2e/workspace-identity.config.ts`.
+Assert the actual light, dark or glass root class before testing each theme.
+Capture desktop and narrow layouts with a loaded selected capability.
+Check rendered shell text contrast at 4.5:1 or greater, including the hovered current context.
+Check that selected controls remain visible without frame overflow.
+Run the persistent-map browser matrix for keyboard, history, reduced motion and native 200-percent zoom continuity.
+The synthetic captures cover the owned shell, not a global theme audit or complete migration.
+R002.1 and the broader design acceptance remain open.
+
+Fresh 320-by-740 captures occur before focus or scroll, with the map initially closed.
+Check at least 340 pixels of initial task height and visible header targets of at least 44 pixels.
+Check initial visible readiness controls, then keyboard-reached fleet controls and bottom-scroll controls.
+New main readiness content precedes the fleet filter; it is not forced above the fold.
+Assert that the workspace viewport ends above the launcher's maximum halo extent.
+Check assistant open/close layout and focus restoration, and full-height primary Work.
+Expanded map controls retain native-zoom and reduced-motion coverage in the persistent browser matrix.
+This evidence covers initial and tested focus/scroll states, not all provider content or manual accessibility.
+
+The compact header reuses the exact README PNG and checks that the browser loads its pixels.
+Desktop checks cover one-row height, keyboard min/max rail sizing, pointer drag and persisted width.
+Check reduced-motion animation removal and opaque forced-colors/reduced-transparency fallbacks.
+Hit-test command-dialog close and assistant close controls above the shell header.
+Unit tests cover retired portal slots, retained task identity and malformed or unavailable preference storage.
+These checks do not establish live WebMCP, manual screen-reader, provider or complete migration acceptance.
+
+
+## Native task contrast regression
+
+Extend the existing identity journey under WEBUI-DESIGN-R002 and WEBUI-DESIGN-R002.1.
+Measure native Operate headings, body text, labels, inputs, links and enabled buttons beside the shell.
+Require at least six native task samples and a 4.5:1 contrast ratio for every sample.
+Run light, dark and glass at the existing desktop and narrow widths.
+This planned check does not establish browser acceptance or repair the reported glass contrast gap.
+
+## Theme class retirement
+
+`ThemeProvider.test.tsx` mounts the provider with a persisted glass preference.
+Four cases switch repeatedly to light, dark, system-light and system-dark, then return to glass.
+Each case requires exactly one theme class, persistent selection and preservation of unrelated root classes.
+These mounted tests prove class retirement, not rendered palette contrast.
+
+## Palette focus return
+
+`WorkspacePaletteFocus.test.tsx` mounts the real Radix dialog and header disclosure.
+Mock only layout rectangles because jsdom does not render responsive geometry.
+Require native task focus after shortcut Escape and Close.
+Require visible More after a desktop opener becomes hidden.
+Compact-trigger cancellation must preserve the deliberately open disclosure and its visible trigger. Removing the opener must leave a reachable focus target.
+Selection must preserve focus assigned by the native destination.
+The existing identity browser fixture adds light, dark and glass cancellation cases at 390 and 1440 pixels.
+Those cases assert focus after shortcut, compact-trigger and desktop-to-narrow cancellation.
+Cancellation preserves each disclosure state rather than reopening a closed menu.
+Mounted proof does not replace this pending rendered check or resolve native glass text contrast.
+
+The PR-only `workspace-browser` CI job runs the existing focused identity configuration on Ubuntu Chromium.
+It uses locked frontend dependencies, read-only repository permission and synthetic fixtures without live credentials.
+The job includes native task readability assertions rather than excluding the known glass gap.
+Its eventual rendered result must be recorded separately from local mounted test results.
+
+
+## Translucent glass muted text
+
+The token audit composites the glass page background over white before checking muted-text contrast at 4.5:1.
+It reuses the existing OKLCH conversion and contrast helpers rather than treating the background as opaque.
+The hosted identity journey remains the rendered check for native Operate descriptions and controls in each theme.

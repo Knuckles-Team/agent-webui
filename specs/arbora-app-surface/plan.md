@@ -601,6 +601,15 @@ Fleet load/unload require authenticated MCP sessions and are not HTTP actions.
 Legacy broker topic/message requests do not match its advertised queue/publish contract.
 Readiness diagnosis uses the supported dashboard collector rather than those unavailable journeys.
 
+### Supported Operate migration acceptance
+
+Consolidate catalog inspection and readiness diagnosis through their existing Operate controls.
+Retire the standalone readiness layout only after its refresh and evidence behavior passes in Operate.
+Map the legacy readiness address through a typed compatibility adapter with reader access and replacement history.
+Focus the readiness heading on arrival without creating a Back-navigation loop.
+Preserve missing-route, access-denied, invalid-response and transport-failure distinctions before retiring the legacy view.
+Keep integration package descriptors separate from connector identities; their missing contract prevents that alias migration.
+
 ## Cold-entry asset resolution amendment
 
 Fix nested workspace entry in the existing Vite configuration. Keep the static
@@ -651,6 +660,15 @@ Component and synthetic browser fixtures qualify presentation only. Full migrati
 Task reads do not retry explicit 401, 403, 404 or 501 responses.
 Transient failures retain bounded retries. The caller can request another read explicitly.
 This avoids keeping cached output visible during retry backoff after an explicit refusal.
+
+### Fleet discovery host admission
+
+WEBUI-APPS-R049.1.4 classifies only the canonical fleet status and catalog-list
+POSTs as host-level reads. Arbora declares both `Effect.READ` and requires
+`mcp:discover`; that downstream policy remains authoritative. Neighboring fleet
+calls, tool load/unload, unknown POST paths and other mutation methods retain
+the write floor. This repairs transport classification, not caller grants or provider
+acceptance.
 
 ### Work conversation lifecycle
 

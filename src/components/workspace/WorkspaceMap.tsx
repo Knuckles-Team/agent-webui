@@ -39,9 +39,13 @@ function Breadcrumbs({
 }) {
   return (
     <nav aria-label="Selected workspace path">
+      <span className="workspace-frame-eyebrow">Selected path</span>
       <ol className="workspace-map-breadcrumbs">
-        {path.map(({ command }) => (
+        {path.map(({ command }, index) => (
           <li key={command.href}>
+            <span className="workspace-path-step" aria-hidden="true">
+              {index + 1}
+            </span>
             <Destination command={command} current={current} onSelect={onSelect} />
           </li>
         ))}

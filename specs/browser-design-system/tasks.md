@@ -116,3 +116,42 @@ Rendered captures use synthetic fleet data. The desktop capture is
 The narrow capture is `branches-320x740.png`, SHA-256
 `31e22b9af6b865d0b056c13e8a4ab15161cbafe1e38328172122c9d5f4873ad3`.
 The browser test writes these files into its configured output directory.
+
+
+## Glass class retirement
+
+- [x] Add glass to the provider theme type and retire its root class when selection changes.
+- [x] Exercise repeated light, dark and both system-preference transitions with four mounted regression cases.
+- [ ] Resolve the reported native glass task contrast gap with rendered regression evidence.
+
+All four mounted cases failed before class cleanup and passed after it.
+This result does not prove native task contrast or complete WEBUI-DESIGN-R002 acceptance.
+
+## Palette cancellation focus
+
+- [x] Reproduce shortcut Escape, shortcut Close and desktop-to-narrow hidden-trigger failures in mounted Radix tests.
+- [x] Restore a reachable opener or visible More summary without reopening the compact disclosure.
+- [x] Cover removed opener and native destination focus preservation in mounted tests.
+- [x] Run the focused three-theme rendered cancellation cases on a supported browser runner.
+
+The three original mounted cases failed before the repair and passed afterward.
+All six new mounted cases and thirteen existing command tests passed locally.
+This evidence leaves native glass text contrast and broader design acceptance open.
+
+
+## Hosted palette and native contrast evidence
+
+The Ubuntu Chromium job on source `07138071486168669dbc7887591a08a4eaec630e` passed all three palette cancellation cases.
+Its light and dark identity journeys passed. Glass failed the native route description at 4.3300:1 against a 4.5:1 target.
+An alpha-aware token regression reproduced the insufficient glass muted-text contrast locally before the token change.
+The repair brightens only the glass muted-text token; dark and light palettes remain unchanged.
+Rendered confirmation of this repair remains pending. No whole-theme or full accessibility acceptance follows from this focused evidence.
+
+
+## Hosted drag actionability
+
+The hosted run on `db91e9ad7aecdc25ca85c2c6d56b134aea455a4c` passed glass identity and native text readability.
+Dark identity and all three palette cancellation cases also passed.
+Light stopped at the pointer-resize assertion: the expected 14-rem width remained 22 rem.
+The fixture now waits for a stable, actionable separator after keyboard resizing before beginning the raw drag.
+It retains the same 14-rem result and preference-persistence assertions. Fresh full-matrix confirmation remains pending.
