@@ -13,6 +13,33 @@ describe('experimental WebMCP adapter', () => {
     expect(detectWebMcpAdapter({} as Document)).toBeNull()
   })
 
+  it('isolates native names across replacement registrations while preserving semantic IDs', async () => {
+    const native = new Map<string, WebMcpToolDefinition>()
+    const adapter = detectWebMcpAdapter({
+      modelContext: {
+        registerTool(tool: WebMcpToolDefinition, { signal }: { signal: AbortSignal }) {
+          native.set(tool.name, tool)
+          signal.addEventListener('abort', () => native.delete(tool.name), { once: true })
+        },
+      },
+    } as unknown as Document)!
+    const execute = vi.fn(async () => ({ ok: true }))
+    const definition = { name: 'agent-webui.test', description: 'test', inputSchema: { type: 'object' }, execute }
+    const first = registerWebMcpTools(adapter, [definition])
+    await first.acknowledged
+    const [oldName] = native.keys()
+    first()
+    const replacement = registerWebMcpTools(adapter, [definition])
+    const snapshot = await replacement.acknowledged
+    const [newName] = native.keys()
+    expect(newName).not.toBe(oldName)
+    expect(native.get(oldName)).toBeUndefined()
+    expect(snapshot.activeToolNames).toEqual(['agent-webui.test'])
+    await native.get(newName)!.execute({}, executionOptions())
+    expect(execute).toHaveBeenCalledOnce()
+    replacement()
+  })
+
   it('passes the registration signal and aborts it during cleanup', async () => {
     const registerTool = vi.fn((_signal: AbortSignal) => {
       return Promise.resolve()

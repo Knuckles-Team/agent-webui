@@ -546,3 +546,17 @@ Hidden documents keep manual content mounted but expose no browser tool registra
 Visibility changes trigger existing registration cleanup and publish fresh registrations when the document becomes visible.
 The channel retains its existing visibility revocation behavior.
 This partial source repair does not qualify native browser support or complete R048.
+
+## R048 cooperative execution lifetime
+
+Browser tool execution receives cancellation from both its caller and its registration lifetime.
+The adapter links these signals for each call and detaches listeners when the call settles.
+The shared tool factory exposes execution options to cooperative handlers.
+Provider cleanup on route, identity or visibility changes aborts those running calls.
+Handlers must observe the signal before continuing asynchronous work.
+The adapter preserves returned outcomes and does not describe a completed dispatch as rolled back.
+Native browser scheduling, served authority and complete R048 acceptance remain open.
+
+### R048 native replacement routing
+
+Chromium 156 experimental WebMCP resolved a retained native Tool reference to a new same-name registration. Each native registration now has a unique routing name; the application registry retains the semantic tool ID. This prevents stale native references from selecting replacement callbacks. The rendered route, Back/Forward, deep-link and restoration matrix uses native discovery with synthetic backend responses. Authenticated served authority acceptance remains open; R048 is not complete.

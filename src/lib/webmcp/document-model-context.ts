@@ -25,7 +25,13 @@ export class DocumentModelContextAdapter implements WebMcpAdapter {
     // return void despite the draft's Promise<void> contract.
     try {
       const { capability: _catalogMetadata, ...browserTool } = tool
-      return Promise.resolve(this.modelContext.registerTool(browserTool, { signal })).then(() => undefined)
+      // Some native implementations resolve retained Tool objects by name.
+      // Never reuse that routing identity across registration lifetimes.
+      // The application registry keeps the original semantic tool ID.
+      const name = `${browserTool.name}__${crypto.randomUUID()}`
+      return Promise.resolve(this.modelContext.registerTool({ ...browserTool, name }, { signal })).then(
+        () => undefined,
+      )
     } catch (error) {
       const cause = error instanceof Error ? error : new Error('Unknown WebMCP registration failure')
       return Promise.reject(cause)

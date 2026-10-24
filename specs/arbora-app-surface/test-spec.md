@@ -233,3 +233,16 @@ Check initially hidden documents, visible-to-hidden cleanup, late acknowledgemen
 Manual content stays mounted. Hidden documents expose no attended control.
 Registration signals must abort when the document hides.
 The fixture does not prove native browser support, real visibility scheduling, or full R048 acceptance.
+
+## R048 execution lifetime matrix
+
+`src/lib/webmcp/__tests__/execution-lifetime.test.tsx` exercises the mounted provider, document adapter and shared tool factory.
+The structural document API fixture covers route, identity, visibility and unmount retirement during cooperative execution.
+Check caller isolation, pre-cancelled refusal, listener cleanup and preservation of completed outcomes.
+These tests supplement existing registration, navigation, validation, remote confirmation and cancellation suites.
+They do not establish native-browser scheduling, backend cancellation, or authority for served effects.
+R048 remains open until its native-browser and served authority acceptance passes.
+
+### R048 native replacement routing
+
+Chromium 156 experimental WebMCP resolved a retained native Tool reference to a new same-name registration. Each native registration now has a unique routing name; the application registry retains the semantic tool ID. This prevents stale native references from selecting replacement callbacks. The rendered route, Back/Forward, deep-link and restoration matrix uses native discovery with synthetic backend responses. Authenticated served authority acceptance remains open; R048 is not complete.

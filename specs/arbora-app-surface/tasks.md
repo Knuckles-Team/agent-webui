@@ -197,3 +197,12 @@ Unchecked tasks remain open. Definitions alone do not establish runtime delivery
 
 - [x] Validate hidden-document registration cleanup, late acknowledgements and fresh registrations on return. The 98 focused tests passed.
 - [ ] Keep native-browser qualification, full authority acceptance and in-flight cancellation open under R048.
+
+## R048 cooperative execution source contract
+
+- [x] Validate caller cancellation and registration retirement through the mounted provider and shared tool factory. All 108 focused tests passed.
+- [ ] Qualify native-browser scheduling and served authority independently. Cooperative cancellation does not prove rollback or stop uncooperative handlers.
+
+### R048 native replacement routing
+
+Chromium 156 experimental WebMCP resolved a retained native Tool reference to a new same-name registration. Each native registration now has a unique routing name; the application registry retains the semantic tool ID. This prevents stale native references from selecting replacement callbacks. The rendered route, Back/Forward, deep-link and restoration matrix uses native discovery with synthetic backend responses. Authenticated served authority acceptance remains open; R048 is not complete.

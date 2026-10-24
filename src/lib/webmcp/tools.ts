@@ -27,7 +27,7 @@ import {
   type AtlasSelectionInput,
 } from './contracts'
 import { createValidatedExecutor, parseBoundedWebMcpOutput } from './validation'
-import type { WebMcpJsonSchema, WebMcpToolDefinition } from './types'
+import type { WebMcpExecutionOptions, WebMcpJsonSchema, WebMcpToolDefinition } from './types'
 
 const WEBMCP_LOCAL_TOOL_VERSION = '1.0.0'
 const WEBMCP_LOCAL_TOOL_SOURCE = 'agent-webui:src/lib/webmcp/tools.ts'
@@ -166,7 +166,7 @@ export function makeTool<Input, Output>(options: {
   jsonSchema: WebMcpJsonSchema
   readOnly: boolean
   source?: string
-  execute: (input: Input) => Output | PromiseLike<Output>
+  execute: (input: Input, options: WebMcpExecutionOptions) => Output | PromiseLike<Output>
 }): WebMcpToolDefinition {
   const mutationClass = options.readOnly ? 'read' : 'local-ui-mutation'
   return {
