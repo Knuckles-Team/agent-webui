@@ -609,3 +609,29 @@ the default origin root and an explicit asset prefix. Drive the production
 bundle through the installed Arbora application composer and WebUI static mount.
 Use synthetic identity/data only; retain the full R046.2.2 and R050 acceptance
 obligations. No additional requirement decomposition is introduced.
+
+### Work trace inspection continuation
+
+Extend WEBUI-APPS-R049.1.3 within the existing Work surface.
+Refresh the selected trace through its existing waterfall adapter.
+Return from a node to its trace.
+Follow a recorded parent only when that parent exists in the loaded trace.
+Preserve conversation and independent task selection in all destinations.
+Failed detail refresh withdraws stale evidence and node controls.
+Retry restores only validated matching detail.
+
+Mounted components and synthetic Chromium history tests qualify this bounded interaction.
+Served-provider acceptance remains open.
+This does not provide a conversation/task/trace join, subagent identity, plan state or unified harness discovery.
+
+Chat owns streaming, local conversation history, approval/elicitation and ask/plan/code input modes.
+CurrentResponseTaskLink uses the explicit response task identifier to enter Work.
+Work uses the existing enhanced sessions facade for agents.tasks.list/get/cancel.
+It uses the traces search/waterfall adapter for independent inspection.
+SessionsView expects legacy title/turn-count/string-status fields.
+That model differs from the facade's task model.
+Its reply/delete console remains outside this migration.
+ConsoleConfirmView retains its direct plan-reference URL and human review boundary.
+Chat's plan mode and routing-plan activity do not provide an authoritative current-run plan snapshot.
+Richer metrics, goal/workflow editing, IDE authoring and harness discovery remain migration obligations.
+This continuation preserves their legacy routes.

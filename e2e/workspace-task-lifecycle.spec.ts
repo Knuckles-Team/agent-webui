@@ -70,3 +70,61 @@ for (const viewport of [
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   })
 }
+
+test('trace inspection preserves Work context through parent, history and refresh', async ({ page }) => {
+  let refuseDetail = false
+  await page.route('**/auth/session', (route) =>
+    route.fulfill({
+      json: {
+        authenticated: true,
+        subject: 'trace-user',
+        tenant: 'trace-tenant',
+        webui_role: 'user',
+        roles: ['kg:read'],
+      },
+    }),
+  )
+  await page.route('**/api/**', async function serveTraceFixture(route) {
+    const path = new URL(route.request().url()).pathname
+    if (path.startsWith('/api/configure')) return route.fulfill({ json: { models: [], builtinTools: [] } })
+    if (path === '/api/enhanced/models') return route.fulfill({ json: { models: [], default_id: '' } })
+    if (path === '/api/chats') return route.fulfill({ json: [] })
+    if (path === '/api/enhanced/sessions') return route.fulfill({ json: [{ id: 'task-a' }] })
+    if (path === '/api/enhanced/sessions/task-a')
+      return route.fulfill({ json: { id: 'task-a', status: { state: 'completed' } } })
+    if (path.endsWith('/traces')) {
+      const body = route.request().postDataJSON() as { action: string }
+      if (body.action === 'waterfall' && refuseDetail)
+        return route.fulfill({ status: 403, json: { detail: 'Denied' } })
+      const result =
+        body.action === 'search'
+          ? [{ id: 'trace-a', name: 'Recorded trace' }]
+          : {
+              trace: { id: 'trace-a' },
+              nodes: [
+                { id: 'child', parentId: 'parent', name: 'Child' },
+                { id: 'parent', name: 'Parent' },
+              ],
+            }
+      return route.fulfill({ json: { status: 'success', result: { surface: 'traces', action: body.action, result } } })
+    }
+    return route.fulfill({ status: 501, json: { detail: 'Unavailable in this trace fixture' } })
+  })
+  await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+  await page.goto('/workspace/work?task=task-a&run=trace-a&node=child')
+  await page.getByRole('button', { name: 'Inspect recorded parent' }).click()
+  await expect(page).toHaveURL(/task=task-a&run=trace-a&node=parent$/)
+  await page.goBack()
+  await expect(page).toHaveURL(/node=child$/)
+  await expect(page.getByRole('button', { name: 'Inspect recorded parent' })).toBeVisible()
+  await page.getByRole('button', { name: 'Back to trace' }).click()
+  await expect(page).toHaveURL(/task=task-a&run=trace-a$/)
+  refuseDetail = true
+  await page.getByRole('button', { name: 'Refresh selected trace' }).click()
+  await expect(page.getByText(/Selected trace could not be loaded/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Child', exact: true })).toHaveCount(0)
+  refuseDetail = false
+  await page.getByRole('button', { name: 'Retry detail' }).click()
+  await expect(page.getByRole('button', { name: 'Child', exact: true })).toBeVisible()
+  await expect(page.getByText('Status: completed', { exact: true })).toBeVisible()
+})
