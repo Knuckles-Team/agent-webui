@@ -66,3 +66,10 @@ The capability inventory is a preservation contract, not the proposed page inven
 WEBUI-APPS-R049.1.1 is the bounded source proof for retained, read-only Explore investigation. WEBUI-APPS-R049.1.2 retains complete contextual migration and rendered acceptance. Work and Operate remain planned until delivered. The new opt-in route does not migrate old URLs or certify real providers. R049.2 still requires the measured redesign outcome.
 
 WEBUI-APPS-R049.1.3 defines the narrow Work source composition. It retains conversation selection and the existing Chat instance beside independent task/trace read surfaces. It does not complete correlated run investigation or invent missing producer links. R049.1.2 retains full migration and installed-browser acceptance.
+
+## Nested execution inspection and targeted interaction
+
+R049.1.2 retains complete migration acceptance, including producer-bound execution navigation beyond the independent Work source slice.
+R049.1.3 remains evidence for independent task and trace inspection, not a subagent association or chat target.
+R049.1.10 through R049.1.12 define new targeted actions through one backend contract.
+The browser consumes hierarchy, dependencies, public records and capabilities; it does not schedule agents or infer control targets.

@@ -536,3 +536,30 @@ Missing fixtures and version/hash mismatches fail, rather than count as a skip.
 The test-only internal fixture imports do not add application dependencies.
 The issuer/session seam is synthetic; installed-wheel, live-issuer and native
 browser acceptance remain open. This evidence does not promote R004.4.
+
+### Nested execution explorer and targeted controls
+
+All cases below remain planned; source widgets and screenshots do not establish served execution behavior.
+R049.1.2 retains every original migration criterion alongside this explorer matrix.
+R049.1.3 retains its existing source tests and does not establish subagent acceptance.
+
+| Requirement | Planned proving test | Required evidence |
+|---|---|---|
+| WEBUI-APPS-R049.1.2 | `WorkWorkspace.test.tsx::nested_execution_navigation` | Distinct hierarchy/dependency edges, three execution levels, stable locators, breadcrumbs and selection without chat retargeting. |
+| WEBUI-APPS-R049.1.2 | `e2e/execution-explorer-served.spec.ts::nested_graph_journey` | Real parent/child/grandchild, fan-out/fan-in, public folds, reconnect, denial, cancellation and two-principal isolation. |
+| WEBUI-APPS-R049.1.10 | `WorkExecutionControls.test.tsx::active_child_target` | Explicit target, retained root draft, disabled capability, stale selection, duplicate submit and unknown outcome. |
+| WEBUI-APPS-R049.1.11 | `WorkExecutionControls.test.tsx::completed_child_continuation` | Separate action, returned continuation identity, completed history, lifecycle race and unsupported producer. |
+| WEBUI-APPS-R049.1.12 | `e2e/execution-explorer-served.spec.ts::targeted_controls` | Actual chosen-child delivery, continuation, cancellation acknowledgement, revocation and reconciliation without duplicate effects. |
+
+The real producer fixture must spawn three execution levels and two parallel children with an explicit fan-in dependency.
+Inspect every level through the mounted Work route and follow actual browser Back/Forward, reload and deep links.
+Check keyboard-only and touch navigation at 360 CSS pixels and 200-percent zoom with no hidden control subset.
+Check focus restoration, retained drafts, late responses after navigation and duplicate events after reconnect.
+Public summaries, tool arguments/results and transcripts must remain separately labelled and scoped to the chosen node.
+Private reasoning and another principal's records must never appear, including after a successful read followed by denial.
+Message one active child and prove its parent and siblings receive no message.
+Complete the child and use the distinct continuation action; inspect the returned identity and retained history relationship.
+Revoke capability or complete the child during review and check zero unauthorized effects.
+Cancel only the admitted target and compare visible state with the producer's acknowledgement and eventual outcome.
+Record producer/consumer versions, schema digest, source revisions, topology identities and replay cursors.
+Synthetic route tests, span waterfalls and documentation screenshots must remain labelled as presentation evidence only.

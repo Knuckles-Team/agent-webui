@@ -214,7 +214,10 @@
     "WEBUI-APPS-R046.2.2",
     "WEBUI-APPS-R049.1.7",
     "WEBUI-APPS-R049.1.8",
-    "WEBUI-APPS-R049.1.9"
+    "WEBUI-APPS-R049.1.9",
+    "WEBUI-APPS-R049.1.10",
+    "WEBUI-APPS-R049.1.11",
+    "WEBUI-APPS-R049.1.12"
   ],
   "requirements": [
     {
@@ -1987,7 +1990,10 @@
         "WEBUI-APPS-R049.1.6",
         "WEBUI-APPS-R049.1.7",
         "WEBUI-APPS-R049.1.8",
-        "WEBUI-APPS-R049.1.9"
+        "WEBUI-APPS-R049.1.9",
+        "WEBUI-APPS-R049.1.10",
+        "WEBUI-APPS-R049.1.11",
+        "WEBUI-APPS-R049.1.12"
       ]
     },
     {
@@ -2140,6 +2146,27 @@
       "verified_by": [
         "src/components/workspace/__tests__/LoadedWorkspaceCommands.test.tsx:2"
       ]
+    },
+    {
+      "id": "WEBUI-APPS-R049.1.10",
+      "title": "Message an active child explicitly",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R049.1.11",
+      "title": "Continue a completed child separately",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R049.1.12",
+      "title": "Prove served targeted interaction",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
     }
   ]
 }

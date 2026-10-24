@@ -30,11 +30,11 @@ acceptance criteria.
 
 ## Run harness surface (WEBUI-APPS-R004)
 
-Data flow: Observability run view (`ObservabilityView.tsx:602`) → `gatewayPost` (`gateway.ts:129`) → arbora `runs.get` / `runs.metrics` → harness block beside the DAG.
+Data flow: Observability run view (`ObservabilityView.tsx:602`) → `gatewayPost` (`gateway.ts:129`) → arbora `runs.get` / `runs.metrics` → harness block beside the trace waterfall.
 
 Types and fields (names from the design brief): `harness_config` (`context_policy` with `soft_threshold`, `hard_threshold`, `recent_window_fraction`; `plan_scaffold`; `action_space`), `peakContextTokens`, `contextBudgetTokens`, `costUsd`, `terminationReason` (`final_answer` | `context_overflow` | `stuck` | `step_budget` | `error`), and the run's plan state.
 
-Attach point: the run list and DAG panel in `src/components/views/ObservabilityView.tsx` (`loadRuns` :602, `loadDag` :619, `RunRow` :41), which calls `gatewayPost` (`src/lib/gateway.ts:129`) on `/traces`; a new harness block renders beside the selected run's DAG.
+Attach point: the run list and trace waterfall in `src/components/views/ObservabilityView.tsx` (`loadRuns` :602, `loadDag` :619, `RunRow` :41). It calls `gatewayPost` (`src/lib/gateway.ts:129`) on `/traces`. The new harness block renders beside the selected trace's waterfall.
 
 Failure behaviour: a refused or absent operation yields "not available". The client invents no value and shows no zero for an absent number. Each termination reason has its own label; `context_overflow` and `stuck` carry their own text.
 
@@ -157,7 +157,7 @@ Use generated proposal identity, prompt revision, agent identity, progress state
 
 Show each optimization proposal beside its exact source runs and recorded progress. Preserve pending review and propose-only state. Never promote a prompt from this view.
 
-Extend src/components/views/ObservabilityView.tsx beside the existing run DAG. Resolve proposal and trace references through typed Arbora reads. The existing runs.get and runs.metrics operations alone do not return the missing join.
+Extend src/components/views/ObservabilityView.tsx beside the existing trace waterfall. Resolve proposal and trace references through typed Arbora reads. The existing runs.get and runs.metrics operations alone do not return the missing join.
 
 Missing proposal provenance, hidden traces or incompatible producer revisions show unavailable. Never infer progress from trace count or substitute WEBUI-DECIDE-R001 coverage.
 
@@ -800,3 +800,74 @@ Classify only the canonical `Effect.READ` POST as a host read; retain
 authentication, CSRF and downstream caller policy. Do not grant write access
 to compensate for a read transport. This bounded slice adds no editing,
 metrics, harness configuration, trace association or provider acceptance.
+
+### 2026-10-24: Nested execution explorer in Work
+
+This extends R049.1.2 without narrowing its complete migration and served-provider obligations.
+R049.1.3 retains its independent task/trace source evidence and explicit refusal to infer subagents.
+R004.4 keeps the current-plan view read-only and bound to the selected task's authoritative run identifier.
+An independent trace selection must not become that run binding.
+The existing `parentId` trace waterfall shows nesting, not the agent orchestration dependency DAG.
+Node selection currently does not retarget Chat.
+
+Depends-on: [Execution projections](https://github.com/Knuckles-Team/arbora/blob/main/specs/hosted-api-operations/spec.md), [Served child controls](https://github.com/Knuckles-Team/arbora/blob/main/specs/dependency-ordered-release/spec.md)
+
+R049.1.2 consumes `ARBORA-OPS-R021.4.8` and `ARBORA-OPS-R021.4.9` through `WEBUI-API-R011.3`.
+R049.1.10 and R049.1.11 consume `ARBORA-RELEASE-R003.4.12` and `ARBORA-RELEASE-R003.4.13` respectively.
+These upstream requirements do not establish current installed-provider availability.
+Do not invent operation names or browser-only protocol variants before the released schema exists.
+
+#### Shared identity and navigation
+
+The root request `task_id` identifies a WorkItem/A2A task; event `task_id` identifies a run-local step.
+A producer-issued node key is `(run_id, node_kind, local_id)`, not an interchangeable task or conversation identifier.
+The producer provides owner, conversation and control-target bindings separately.
+Existing shared child `run_id` values do not prove unique execution identity or a child mailbox.
+Trace spans, labels, timestamps and similar identifiers must not create association edges.
+
+Extend `WorkWorkspace.tsx:42` in the existing workspace component directory and `src/lib/work-workspace.ts:95`.
+Reuse their typed navigation helpers rather than adding a fourth context.
+Native links, command search, manual selection and attended WebMCP must use the same validated destination.
+Deep links contain opaque root/node references, never transcripts, credentials or capability secrets.
+Reauthorize every reopened destination; invalid or unauthorized nodes must not reveal cached details.
+Keep original conversation, task and independent trace selection distinct from the explorer selection.
+
+Render `spawned_child` hierarchy edges and `depends_on` dependency edges with distinct labels and accessible descriptions.
+Breadcrumbs follow recorded hierarchy; dependency navigation keeps a separate return path.
+A fan-in node may have more than one dependency without acquiring invented spawn parents.
+Selecting a graph node opens authorized details and does not change the Chat target.
+An explicit target action must show the intended child before sending.
+Keep the root conversation draft intact while inspecting or interacting with a child.
+
+Snapshots carry schema version, covered cursor, completeness and per-run cursor maps for nested runs.
+Apply only bound updates and discard stale requests after owner, selection or generation changes.
+Recover replay gaps through the producer's resnapshot path; never invent global ordering across runs.
+Use bounded pagination and viewport rendering, with visible partial-scope labels.
+Distinguish available-empty, partial, unavailable, denied and failed results.
+
+#### Public records and accessible interaction
+
+Use the existing Chat parts and inspector components for public summaries, tool activity and transcript records.
+Label these categories separately; never show private reasoning or unknown fields.
+Preserve explicit expansion choice through streaming, reconnect and replay for the same node and event identity.
+A missing transcript capability means unavailable history, not an empty successful conversation.
+A denied refresh must clear protected records and controls, even after earlier success.
+
+Provide a searchable list or adjacency view with every graph action available by keyboard and touch.
+Support parent return, selectable nodes and visible focus without relying on color, canvas gestures or hover.
+At narrow widths and 200-percent zoom, use stacked panes or a drawer without losing actions or the return path.
+Actual browser Back/Forward, reload and deep-link navigation must restore only reauthorized selections.
+Closing an inspector returns focus to its invoking node and must not submit a message.
+
+#### Control boundaries
+
+`can_read_events`, `can_read_transcript`, `can_message_active` and `can_continue_completed` default to false.
+Backend authorization remains required even when the current capability projection activates a control.
+`Message active child` and `Continue completed child` have separate labels, target bindings and lifecycle conditions.
+Never pass graph or span identifiers into the existing root-message path.
+Continuation returns an authoritative new execution identity and history relationship; it does not rewrite the completed child.
+Retire previews after selection, owner, lifecycle or capability changes.
+Unsupported controls make zero effect requests and show the producer's bounded unavailable reason.
+A lost response remains unknown; reconnect reconciles the original request without automatic resend.
+Cancellation uses only its exact authorized target and reports acknowledgement separately from eventual terminal state.
+Drawn descendants do not imply permission to cancel a subtree.

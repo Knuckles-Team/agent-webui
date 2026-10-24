@@ -24,7 +24,8 @@
     "WEBUI-API-R011.1",
     "WEBUI-API-R011.2",
     "WEBUI-API-R011.2.1",
-    "WEBUI-API-R011.2.2"
+    "WEBUI-API-R011.2.2",
+    "WEBUI-API-R011.3"
   ],
   "requirements": [
     {
@@ -202,7 +203,8 @@
       ],
       "rollup_of": [
         "WEBUI-API-R011.1",
-        "WEBUI-API-R011.2"
+        "WEBUI-API-R011.2",
+        "WEBUI-API-R011.3"
       ]
     },
     {
@@ -264,6 +266,13 @@
     {
       "id": "WEBUI-API-R011.2.2",
       "title": "Composed conversation identity qualification",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-API-R011.3",
+      "title": "Adapt the shared public execution contract",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
