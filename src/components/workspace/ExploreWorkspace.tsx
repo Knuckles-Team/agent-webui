@@ -1,3 +1,5 @@
+import { ArrowUpRight, ChevronRight, FileText, FolderSearch, X } from 'lucide-react'
+import './ExploreWorkspace.css'
 import { conversationOwnerKey } from '@/lib/chat-store'
 import { parseExploreLensState } from '@/lib/explore-lens-state'
 import { useWorkspaceCommands } from './WorkspaceCommands'
@@ -15,8 +17,8 @@ import { makeTool } from '@/lib/webmcp/tools'
 import type { ObjectSetResult } from '@/components/views/ObjectExplorerView'
 import type { OntologyObject } from '@/components/views/ObjectView'
 
-const button =
-  'min-h-11 rounded-md border px-3 py-2 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary'
+const button = 'explore-control'
+const revealNavigationFocus = () => true
 
 function useDestination(location: string) {
   try {
@@ -30,9 +32,11 @@ function useDestination(location: string) {
 export default function ExploreWorkspace({
   active = true,
   showHeading = true,
+  revealFocus = revealNavigationFocus,
 }: {
   active?: boolean
   showHeading?: boolean
+  revealFocus?: () => boolean
 }) {
   const { identity, loading: identityLoading } = useIdentity()
   const canRead = active && !identityLoading && !identity.needsSignIn && roleAtLeast(identity.role, 'user')
@@ -49,7 +53,7 @@ export default function ExploreWorkspace({
   const heading = useRef<HTMLHeadingElement>(null)
   const searchInput = useRef<HTMLInputElement>(null)
   const collection = useRef<HTMLDetailsElement>(null)
-  const previous = useRef(location)
+  const previous = useRef<string | null>(null)
   const results = useQuery<ObjectSetResult>({
     queryKey: ['explore-workspace-search', identity.userKey, identity.raw?.tenant, query],
     queryFn: () => api.ontologySearch({ query, filters: [] }),
@@ -90,12 +94,17 @@ export default function ExploreWorkspace({
   )
   usePageContextPublisher(conversationContext)
   useEffect(() => {
-    if (previous.current !== location && heading.current) {
-      if (state.entity) heading.current.focus({ preventScroll: true })
-      else searchInput.current?.focus({ preventScroll: true })
-      previous.current = location
+    if (!canRead) {
+      previous.current = null
+      return
     }
-  }, [location, state.entity])
+    if (previous.current === location) return
+    const target = state.entity ? heading.current : searchInput.current
+    if (!target) return
+    previous.current = location
+    // Do not steal focus on fresh entry. Native navigation focus reveals the task.
+    if (revealFocus()) target.focus()
+  }, [canRead, location, state.entity, revealFocus])
   const transition = (next: ExploreState) => {
     try {
       navigateExplore({ ...next, query: next.query ?? state.query }, identity.role)
@@ -171,7 +180,10 @@ export default function ExploreWorkspace({
   if (identityLoading) return <p role="status">Checking workspace access…</p>
   if (!canRead) return <p role="alert">Explore is not available for the current identity.</p>
   return (
-    <section aria-label="Explore workspace" className="workspace-surface flex min-h-0 min-w-0 flex-col gap-3">
+    <section
+      aria-label="Explore workspace"
+      className="workspace-surface explore-workspace flex min-h-0 min-w-0 flex-col gap-3"
+    >
       {showHeading && <h1 className="text-xl font-semibold">Explore</h1>}
       <nav aria-label="Evidence scope" className="flex flex-wrap items-center gap-2 text-sm">
         <button
@@ -194,13 +206,14 @@ export default function ExploreWorkspace({
         )}
       </nav>
       {(destinationError ?? navigationError) && <p role="alert">{destinationError ?? navigationError}</p>}
-      <div className="workspace-panels">
-        <details ref={collection} open aria-label="Evidence collection" className="min-w-0 rounded-lg border p-3">
+      <div className="workspace-panels explore-panels" data-selected={Boolean(state.entity)}>
+        <details ref={collection} open aria-label="Evidence collection" className="explore-collection">
           <summary className="workspace-pane-toggle">
+            <FolderSearch size={18} aria-hidden="true" />
             <h2 className="inline font-semibold">Evidence collection</h2>
           </summary>
           <form
-            className="flex flex-wrap gap-2"
+            className="explore-search"
             onSubmit={(event) => {
               event.preventDefault()
               if (started && draft === query) void results.refetch()
@@ -211,7 +224,8 @@ export default function ExploreWorkspace({
               Find evidence
               <input
                 ref={searchInput}
-                className="mt-1 min-h-11 w-full rounded border bg-background px-3"
+                className="explore-search-input"
+                placeholder="Search evidence, entities and source notes"
                 maxLength={4096}
                 value={draft}
                 onChange={(event) => {
@@ -242,11 +256,11 @@ export default function ExploreWorkspace({
           {results.data?.objects.length === 0 && (
             <p className="py-3 text-sm">No matching evidence. Try a different query.</p>
           )}
-          <ul className="max-h-[55dvh] space-y-1 overflow-auto">
+          <ul className="explore-records" aria-label="Evidence results">
             {results.data?.objects.map((row) => (
               <li key={row.id}>
                 <a
-                  className={`${button} block break-words ${state.entity === row.id ? 'bg-accent' : ''}`}
+                  className="explore-record"
                   href={exploreHref({ entity: row.id, tool: 'overview', query: state.query })}
                   onClick={(event) => {
                     if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.button === 0) {
@@ -256,60 +270,75 @@ export default function ExploreWorkspace({
                   }}
                   aria-current={state.entity === row.id ? 'true' : undefined}
                 >
-                  <span className="block font-medium">{row.title ?? row.id}</span>
-                  <span className="text-xs text-muted-foreground">{row.type}</span>
+                  <span className="explore-record-icon" aria-hidden="true">
+                    <FileText size={18} />
+                  </span>
+                  <span className="explore-record-label">
+                    <span className="block font-medium">{row.title ?? row.id}</span>
+                    <span className="text-xs text-muted-foreground">{row.type}</span>
+                  </span>
+                  <ChevronRight size={16} aria-hidden="true" className="explore-record-arrow" />
                 </a>
               </li>
             ))}
           </ul>
         </details>
-        <section aria-label="Selected evidence" className="min-w-0 rounded-lg border p-3">
-          <h2 ref={heading} tabIndex={-1} className="break-words text-lg font-semibold">
-            {state.entity ? (object.data?.title ?? state.entity) : 'Your evidence stays in context'}
-          </h2>
-          {!state.entity && (
-            <p className="mt-3 text-sm text-muted-foreground">
-              Choose a result to inspect its properties, relationships and history here. Conversation and run state
-              remain in the same workspace.
-            </p>
-          )}
-          {state.entity && (
-            <>
-              <div role="group" aria-label="Evidence tools" className="my-3 flex flex-wrap gap-2">
-                {EXPLORE_TOOLS.map((tool) => (
-                  <button
-                    key={tool}
-                    className={button}
-                    aria-pressed={state.tool === tool}
-                    onClick={() => {
-                      transition({ entity: state.entity, tool })
-                    }}
-                  >
-                    {tool}
-                  </button>
-                ))}
+        {state.entity && (
+          <section aria-label="Selected evidence" className="explore-inspector">
+            <div className="explore-inspector-heading">
+              <div className="min-w-0">
+                <span className="explore-eyebrow">{object.data?.object_type ?? 'Selected evidence'}</span>
+                <h2 ref={heading} tabIndex={-1} className="break-words text-lg font-semibold">
+                  {object.data?.title ?? state.entity}
+                </h2>
               </div>
-              {object.isFetching && <p role="status">Loading evidence…</p>}
-              {object.isError && (
-                <p role="alert">This evidence could not be loaded. It may be unavailable or not permitted.</p>
-              )}
-              {object.data && (
-                <EvidenceDetails
-                  object={object.data}
-                  tool={state.tool}
-                  onSelect={(entity) => {
-                    transition({ entity, tool: 'overview' })
-                  }}
-                />
-              )}
-            </>
-          )}
-        </section>
+              <button
+                className="explore-control explore-close"
+                aria-label="Close evidence details"
+                onClick={() => {
+                  if (collection.current) collection.current.open = true
+                  transition({ entity: null, tool: 'overview' })
+                }}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            {state.entity && (
+              <>
+                <div role="group" aria-label="Evidence tools" className="my-3 flex flex-wrap gap-2">
+                  {EXPLORE_TOOLS.map((tool) => (
+                    <button
+                      key={tool}
+                      className={button}
+                      aria-pressed={state.tool === tool}
+                      onClick={() => {
+                        transition({ entity: state.entity, tool })
+                      }}
+                    >
+                      {tool}
+                    </button>
+                  ))}
+                </div>
+                {object.isFetching && <p role="status">Loading evidence…</p>}
+                {object.isError && (
+                  <p role="alert">This evidence could not be loaded. It may be unavailable or not permitted.</p>
+                )}
+                {object.data && (
+                  <div key={`${object.data.id}:${state.tool}`} className="explore-detail-content">
+                    <EvidenceDetails
+                      object={object.data}
+                      tool={state.tool}
+                      onSelect={(entity) => {
+                        transition({ entity, tool: 'overview' })
+                      }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        )}
       </div>
-      <p className="text-xs text-muted-foreground">
-        First redesigned read-only journey. Editing, advanced queries and the other contexts remain migration work; no
-        provider or execution capability is implied.
-      </p>
     </section>
   )
 }
@@ -325,7 +354,7 @@ function EvidenceDetails({
 }) {
   if (tool === 'relationships')
     return (
-      <ul className="space-y-2">
+      <ul className="explore-relations">
         {object.links.length === 0 && <li>No relationships are available.</li>}
         {object.links.map((link, index) => (
           <li key={`${link.link_type}-${link.target_id}-${index}`}>
@@ -338,7 +367,8 @@ function EvidenceDetails({
               <span className="text-xs text-muted-foreground">
                 {link.link_type} {link.direction === 'in' ? '←' : '→'}{' '}
               </span>
-              {link.target_title ?? link.target_id}
+              <span>{link.target_title ?? link.target_id}</span>
+              <ArrowUpRight size={16} aria-hidden="true" />
             </button>
           </li>
         ))}
@@ -346,10 +376,10 @@ function EvidenceDetails({
     )
   if (tool === 'history')
     return (
-      <ol className="space-y-2">
+      <ol className="explore-history">
         {object.history.length === 0 && <li>No recorded edits.</li>}
         {object.history.map((edit) => (
-          <li key={edit.edit_id} className="rounded border p-3 text-sm">
+          <li key={edit.edit_id} className="explore-history-record">
             <p className="break-words">
               {edit.kind} {edit.target}
             </p>
@@ -360,10 +390,10 @@ function EvidenceDetails({
       </ol>
     )
   return (
-    <dl className="space-y-2">
+    <dl className="explore-properties">
       {object.properties.length === 0 && <div>No properties are available.</div>}
       {object.properties.map((property) => (
-        <div key={property.name} className="rounded border p-3">
+        <div key={property.name} className="explore-property">
           <dt className="text-xs text-muted-foreground">{property.title ?? property.name}</dt>
           <dd className="break-all text-sm">
             {typeof property.value === 'string' ? property.value : JSON.stringify(property.value)}

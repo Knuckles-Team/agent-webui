@@ -196,31 +196,31 @@ export interface ThemeTokens {
 // stylesheet isn't attached (jsdom unit tests, SSR, first paint) — keep in
 // sync with index.css if those tokens change.
 const FALLBACK_LIGHT: ThemeTokens = {
-  background: 'oklch(0.988 0.002 280)',
-  foreground: 'oklch(0.145 0.012 265)',
-  card: 'oklch(1 0 0)',
-  cardForeground: 'oklch(0.145 0.012 265)',
-  mutedForeground: 'oklch(0.50 0.02 280)',
-  border: 'oklch(0.91 0.005 280)',
-  chart1: 'oklch(0.65 0.22 41)',
-  chart2: 'oklch(0.60 0.12 185)',
-  chart3: 'oklch(0.40 0.07 227)',
-  chart4: 'oklch(0.83 0.19 84)',
-  chart5: 'oklch(0.77 0.19 70)',
+  background: '#e9ede5',
+  foreground: '#1f2a24',
+  card: '#f7f8f2',
+  cardForeground: '#1f2a24',
+  mutedForeground: '#59665c',
+  border: '#c5cfc1',
+  chart1: '#3e634f',
+  chart2: '#2a5c75',
+  chart3: '#78520a',
+  chart4: '#963f37',
+  chart5: '#655946',
 }
 
 const FALLBACK_DARK: ThemeTokens = {
-  background: 'oklch(0.13 0.02 260)',
-  foreground: 'oklch(0.96 0.005 260)',
-  card: 'oklch(0.17 0.015 260)',
-  cardForeground: 'oklch(0.96 0.005 260)',
-  mutedForeground: 'oklch(0.64 0.02 260)',
-  border: 'oklch(1 0 0 / 8%)',
-  chart1: 'oklch(0.49 0.24 264)',
-  chart2: 'oklch(0.70 0.17 162)',
-  chart3: 'oklch(0.77 0.19 70)',
-  chart4: 'oklch(0.63 0.27 304)',
-  chart5: 'oklch(0.71 0.15 164)',
+  background: '#121c17',
+  foreground: '#f1f5eb',
+  card: '#1c2a22',
+  cardForeground: '#f1f5eb',
+  mutedForeground: '#aabaa5',
+  border: '#405344',
+  chart1: '#adc99f',
+  chart2: '#a8d3e8',
+  chart3: '#edd08a',
+  chart4: '#f0b0a6',
+  chart5: '#d6c8ae',
 }
 
 const CSS_VAR_BY_KEY: Record<keyof ThemeTokens, string> = {

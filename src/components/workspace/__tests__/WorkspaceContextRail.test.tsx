@@ -90,3 +90,12 @@ describe('anchored workspace context rail', () => {
     expect(window.location.pathname).toBe('/workspace/operate')
   })
 })
+
+// spec: WEBUI-DESIGN-R004.1.1
+it('keeps primary navigation inline instead of placing it behind a compact disclosure', () => {
+  render(<WorkspaceContextRail role="user" active="explore" />)
+  const navigation = screen.getByRole('navigation', { name: 'Primary workspace contexts' })
+  expect(navigation.closest('.workspace-header-disclosure')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'More workspace controls' })).not.toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Privacy' })).toBeInTheDocument()
+})

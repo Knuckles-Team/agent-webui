@@ -1,3 +1,4 @@
+import { Search } from 'lucide-react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -266,8 +267,10 @@ function OwnedPalette({ context }: { context: CommandContext }) {
       }}
     >
       <DialogTrigger asChild>
-        <button ref={trigger} className="min-h-11 rounded border px-3 text-sm">
+        <button ref={trigger} className="workspace-command-trigger min-h-11 rounded border px-3 text-sm">
+          <Search size={16} aria-hidden="true" />
           Find destination
+          <kbd aria-hidden="true">Ctrl / ⌘ K</kbd>
         </button>
       </DialogTrigger>
       <DialogContent

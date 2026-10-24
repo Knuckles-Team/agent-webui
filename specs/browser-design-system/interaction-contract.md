@@ -1,22 +1,40 @@
 # Browser interaction contract
 
 Use the existing `src/components/ui/` primitives and `src/index.css` theme tokens.
-This contract describes the repaired chat drawer, Atlas filter rows and schema
-form. It does not certify all routes or all WCAG criteria.
+This contract covers the shared shell and Canopy Glass continuation. It also covers the repaired chat drawer, Atlas filter rows and schema form. It does not certify
+all routes or all WCAG criteria.
 
 ## Tokens and review targets
 
-These values come from `src/index.css`; update this table when those tokens change.
-Values are OKLCH. Measure the rendered foreground/background combination, including
-opacity and overlays, before claiming contrast compliance.
+`src/index.css` remains the numeric source for native light, dark and glass
+tokens; `WorkspaceFrame.css` owns shell-specific aliases. Do not import a proposal
+file as a runtime token API or duplicate values in a separate theme system.
+Measure actual composited foreground/background pairs, including hover, selection,
+input placeholders and overlays, before claiming contrast compliance.
 
-| Purpose | Light | Dark |
+| Purpose / token | Light and glass | Dark |
 |---|---|---|
-| Background | `0.988 0.002 280` | `0.13 0.02 260` |
-| Foreground | `0.145 0.012 265` | `0.96 0.005 260` |
-| Muted text | `0.50 0.02 280` | `0.64 0.02 260` |
-| Primary / focus ring | `0.52 0.16 260` | `0.62 0.16 260` |
-| Destructive text | `0.58 0.24 27` | `0.70 0.19 22` |
+| Canvas `--background` | `#E9EDE5` | `#121C17` |
+| Native text `--foreground` | `#1F2A24` | `#F1F5EB` |
+| Reading `--card` | `#F7F8F2` | `#1C2A22` |
+| Raised `--popover`, `--surface-raised` | `#FFFFFF` | `#27372D` |
+| Secondary `--secondary`, `--muted` | `#E6EBE1` | `#16231C` |
+| Secondary text `--secondary-foreground`, `--text-secondary` | `#46544A` | `#D0DBCB` |
+| Muted text `--muted-foreground` | `#59665C` | `#AABAA5` |
+| Action `--primary` | `#3E634F` | `#ADC99F` |
+| On action `--primary-foreground` | `#FFFFFF` | `#16251A` |
+| Selection `--accent` | `#DDE9D8` | `#314A35` |
+| On selection `--accent-foreground` | `#274C36` | `#E4EEDC` |
+| Meaningful boundary `--input` | `#738170` | `#829680` |
+| Focus `--ring` | `#245F70` | `#9ACFE1` |
+| Failure `--destructive` | `#963F37` | `#F0B0A6` |
+| Shell fill `--shell-alpha` | `92%` | `90%` |
+
+These are the default source values, not a rendered acceptance receipt. Card and
+popover text use the native foreground; shell fill composites the card surface,
+not text. Glass inherits the light palette with translucent chrome only. Custom
+accent overrides need separate contrast review. Do not use the decorative border
+as the only meaningful control boundary.
 
 Normal text targets 4.5:1 contrast; large text and meaningful control boundaries
 or focus indicators target 3:1 against adjacent colors. Color alone cannot convey
@@ -47,10 +65,62 @@ spacing utilities remain the source of density; keep primary actions visible at
 Run `corepack pnpm exec playwright test --config e2e/accessibility.config.ts`.
 The fixture imports the actual three components and substitutes only the networked
 Chat content with a labeled input. It blocks non-loopback requests, including the
-existing external font import. This is component integration evidence, not proof
-of streaming chat, a complete Atlas query/result journey, permission enforcement,
-or operational execution. Those journeys and manual assistive-technology review
+existing external font import. This is component integration evidence. It does not prove streaming chat, a complete Atlas query/result journey, permission enforcement or operational execution. Those journeys and manual assistive-technology review
 remain acceptance work in [tasks.md](tasks.md).
 
 The changes introduce no dependency, UI primitive, telemetry client or externally
 copied guidance. Screenshot review and measured contrast are still required.
+
+## Canopy Glass composition and density
+
+WEBUI-DESIGN-R002.1.1/R004.1.1 and WEBUI-APPS-R049.2.1 apply to one shared
+full-width header, not an additional shell. Work/Explore/Operate, current context, command/search entry and main actions stay visible and labelled. The header wraps into useful rows. Never shrink them to an icon-only capsule or place main
+navigation behind More. Secondary appearance utilities may use a disclosure.
+Keep the existing logo, route semantics and same-origin font; the material
+language is new, not a replacement identity.
+
+Use one useful resizable map and give all remaining space to the main task.
+Without a selected record, Explore uses the available working width rather than
+an empty inspector. Selected detail renders actual properties, relationships and
+history. On narrow screens stack or focus panes with named return controls and
+preserve query, selection and focus. No decorative status cards, invented counts
+or always-empty rails. Bounded prose width is intentional readability, not wasted
+space; dense lists and meaningful splits may use the rest.
+
+Retain compact, comfortable and touch usability. Compact spacing must not shrink
+required text below 12 CSS px: `--text-tiny` is `0.75rem`. Working text normally
+uses 13–14 px, readable line height and wrapping. `--radius: 0.75rem` yields
+8–16 px derived corners. Use a 4 px spacing rhythm and minimum rather than fixed
+content heights. Compact controls/two-line records use `2.25rem`/`3.25rem`
+(36px/52px); comfortable uses `2.75rem`/`4rem` (44px/64px). Coarse-pointer records
+use 64px and controls retain a 44px floor in both density modes. Never meet a
+visible-row target by clipping labels or focus. At 1440×900, evaluate about 20 single-line or 11 two-line records after
+local chrome; record actual results and allow user enlargement to reduce counts.
+
+Glass belongs to chrome, not every nested panel. Use background alpha only, never
+container opacity over text. Keep at most two visible blur layers and no nested
+backdrop blur. Unsupported blur, reduced transparency, opaque preference and
+forced colors remove effects without changing capability. Forced colors use
+system surfaces, text, selection and focus rather than preserving branded paint.
+
+## Canopy Glass motion and preferences
+
+WEBUI-DESIGN-R005.2 builds on the existing reduced-motion contract. Runtime tokens
+are `--motion-fast: 110ms`, `--motion-context: 180ms`, `--motion-panel: 220ms`
+and `--motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1)`. A genuine data update
+may highlight once for at most 600 ms and keeps its textual state afterward.
+These are source durations and design limits, not measured performance results.
+Do not move reading text, animate full-screen blur, or use perpetual shimmer,
+ambient drift and fake activity. Further semantic-zoom choreography remains R005.1 acceptance work.
+
+New input immediately interrupts or retargets motion. Navigation and state do not
+wait for transitionend; cancel/close and newer selection cannot be undone by a
+late callback. System reduced motion applies from the first render and overrides
+expressive appearance. The in-app reduction control can only reduce effects;
+state, keyboard focus and status announcements remain present. Persist bounded
+appearance preferences through the existing provider, with safe storage fallback.
+It exposes theme, compact/comfortable density, system/reduce motion and
+glass/opaque transparency choices through the existing `useTheme` context.
+The root data attributes apply effects without changing navigation or identity.
+Live-update buffering/pause, stable selection under streaming, and full-route
+motion review remain mandatory broader rollout work, not inferred from this slice.

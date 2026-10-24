@@ -10,21 +10,16 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import {
-  contrastRatio,
-  cssColorToHex,
-  oklchToRgb,
-  parseOklch,
-  rgbToHex,
-} from '@/components/knowledge-graph/theme-colors'
+import { contrastRatio, cssColorToHex } from '@/components/knowledge-graph/theme-colors'
 
 const CSS_PATH = resolve(import.meta.dirname, '../index.css')
 const CSS_SOURCE = readFileSync(CSS_PATH, 'utf-8')
+const DOC_SOURCE = readFileSync(resolve(import.meta.dirname, '../../docs/design-system.md'), 'utf-8').toLowerCase()
 
 /** Pull the flat `--name: value;` declarations out of one top-level selector block. */
 function readThemeBlock(css: string, selector: string): Record<string, string> {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(css)
+  const match = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(css.replace(/\/\*[^]*?\*\//g, ''))
   const tokens: Record<string, string> = {}
   if (!match) return tokens
   for (const declaration of match[1].split(';')) {
@@ -42,28 +37,34 @@ const DARK = readThemeBlock(CSS_SOURCE, '.dark')
 // Mirrors the "Color tokens" table in docs/design-system.md. A change to
 // either this table or index.css without updating the other fails here.
 const DOCUMENTED_COLOR: Record<string, { light: string; dark: string }> = {
-  '--background': { light: 'oklch(0.988 0.002 280)', dark: 'oklch(0.13 0.02 260)' },
-  '--foreground': { light: 'oklch(0.145 0.012 265)', dark: 'oklch(0.96 0.005 260)' },
-  '--primary': { light: 'oklch(0.52 0.16 260)', dark: 'oklch(0.62 0.16 260)' },
-  '--primary-foreground': { light: 'oklch(0.98 0.005 260)', dark: 'oklch(0.10 0.015 260)' },
-  '--secondary': { light: 'oklch(0.96 0.004 280)', dark: 'oklch(0.22 0.015 260)' },
-  '--secondary-foreground': { light: 'oklch(0.22 0.01 280)', dark: 'oklch(0.96 0.005 260)' },
-  '--muted-foreground': { light: 'oklch(0.50 0.02 280)', dark: 'oklch(0.64 0.02 260)' },
-  '--accent': { light: 'oklch(0.95 0.04 260)', dark: 'oklch(0.20 0.04 260)' },
-  '--accent-foreground': { light: 'oklch(0.22 0.01 280)', dark: 'oklch(0.96 0.005 260)' },
-  '--destructive': { light: 'oklch(0.58 0.24 27)', dark: 'oklch(0.70 0.19 22)' },
-  '--ring': { light: 'oklch(0.52 0.16 260)', dark: 'oklch(0.62 0.16 260)' },
+  '--background': { light: '#E9EDE5', dark: '#121C17' },
+  '--foreground': { light: '#1F2A24', dark: '#F1F5EB' },
+  '--card': { light: '#F7F8F2', dark: '#1C2A22' },
+  '--primary': { light: '#3E634F', dark: '#ADC99F' },
+  '--primary-foreground': { light: '#FFFFFF', dark: '#16251A' },
+  '--secondary': { light: '#E6EBE1', dark: '#16231C' },
+  '--secondary-foreground': { light: '#46544A', dark: '#D0DBCB' },
+  '--muted-foreground': { light: '#59665C', dark: '#AABAA5' },
+  '--accent': { light: '#DDE9D8', dark: '#314A35' },
+  '--accent-foreground': { light: '#274C36', dark: '#E4EEDC' },
+  '--destructive': { light: '#963F37', dark: '#F0B0A6' },
+  '--destructive-foreground': { light: '#FFFFFF', dark: '#381914' },
+  '--ring': { light: '#245F70', dark: '#9ACFE1' },
+  '--input': { light: '#738170', dark: '#829680' },
 }
 
 describe('design-system token audit (WEBUI-DESIGN-R002)', () => {
   // spec: WEBUI-DESIGN-R002
   it.each(Object.entries(DOCUMENTED_COLOR))('%s matches docs/design-system.md in :root and .dark', (name, doc) => {
-    expect(LIGHT[name]).toBe(doc.light)
-    expect(DARK[name]).toBe(doc.dark)
+    expect(DOC_SOURCE).toContain(doc.light.toLowerCase())
+    expect(DOC_SOURCE).toContain(doc.dark.toLowerCase())
+    expect(LIGHT[name].toLowerCase()).toBe(doc.light.toLowerCase())
+    expect(DARK[name].toLowerCase()).toBe(doc.dark.toLowerCase())
   })
 
-  it('defines the one spacing/density primitive (--radius) documented in docs/design-system.md', () => {
-    expect(LIGHT['--radius']).toBe('0.625rem')
+  it('defines the shared radius and readable metadata floor', () => {
+    expect(LIGHT['--radius']).toBe('0.75rem')
+    expect(CSS_SOURCE).toContain('--text-tiny: 0.75rem;')
   })
 
   it('keeps the global focus-visible outline on the --ring token', () => {
@@ -95,6 +96,15 @@ function contrastCases(theme: 'light' | 'dark'): ContrastCase[] {
     { name: 'muted-foreground/background', fg: t('--muted-foreground'), bg: t('--background'), target: 4.5 },
     { name: 'accent-foreground/accent', fg: t('--accent-foreground'), bg: t('--accent'), target: 4.5 },
     { name: 'destructive/background', fg: t('--destructive'), bg: t('--background'), target: 4.5 },
+    {
+      name: 'destructive-foreground/destructive',
+      fg: t('--destructive-foreground'),
+      bg: t('--destructive'),
+      target: 4.5,
+    },
+    { name: 'muted/card', fg: t('--muted-foreground'), bg: t('--card'), target: 4.5 },
+    { name: 'muted/selection', fg: t('--muted-foreground'), bg: t('--accent'), target: 4.5 },
+    { name: 'input/card', fg: t('--input'), bg: t('--card'), target: 3 },
     { name: 'ring/background (focus indicator)', fg: t('--ring'), bg: t('--background'), target: 3 },
   ]
 }
@@ -107,18 +117,77 @@ describe.each(['light', 'dark'] as const)('%s theme contrast targets (WEBUI-DESI
   })
 })
 
-// spec: WEBUI-DESIGN-R002
-it('keeps glass muted text readable on the translucent page over a white backdrop', () => {
+// spec: WEBUI-DESIGN-R002.1.1
+it.each(['light', 'dark'] as const)('protects %s shell labels even over black and white backdrops', (theme) => {
+  const tokens = theme === 'dark' ? DARK : LIGHT
+  const alpha = Number.parseFloat(tokens['--shell-alpha']) / 100
+  expect(alpha).toBeGreaterThanOrEqual(0.9)
+  for (const backdrop of [0, 255]) {
+    const surface = tokens['--card']
+      .slice(1)
+      .match(/../g)!
+      .map((channel) => parseInt(channel, 16))
+    const composite =
+      '#' +
+      surface
+        .map((channel) =>
+          Math.round(channel * alpha + backdrop * (1 - alpha))
+            .toString(16)
+            .padStart(2, '0'),
+        )
+        .join('')
+    for (const text of ['--foreground', '--muted-foreground'])
+      expect(contrastRatio(tokens[text], composite)).toBeGreaterThanOrEqual(4.5)
+  }
+})
+
+it('uses the same solid reading palette for glass instead of alpha text surfaces', () => {
   const glass = readThemeBlock(CSS_SOURCE, '.glass')
-  const background = parseOklch(glass['--background'])!
-  const rgb = oklchToRgb(background.l, background.c, background.h)
-  const alpha = Number(/\/\s*([\d.]+)%/.exec(glass['--background'])?.[1]) / 100
-  expect(alpha).toBeGreaterThan(0)
-  expect(alpha).toBeLessThanOrEqual(1)
-  const composite = rgbToHex({
-    r: Math.round(rgb.r * alpha + 255 * (1 - alpha)),
-    g: Math.round(rgb.g * alpha + 255 * (1 - alpha)),
-    b: Math.round(rgb.b * alpha + 255 * (1 - alpha)),
-  })
-  expect(contrastRatio(cssColorToHex(glass['--muted-foreground'], '#000000'), composite)).toBeGreaterThanOrEqual(4.5)
+  expect(glass['--shell-alpha']).toBe('92%')
+  expect(glass['--card']).toBeUndefined()
+  expect(glass['--background']).toBeUndefined()
+  expect(CSS_SOURCE).not.toContain('.glass body')
+})
+
+// spec: WEBUI-DESIGN-R002.1.1
+it.each(['components/AuthModeBanner.tsx', 'components/ui/badge.tsx', 'components/views/SchedulingView.tsx'])(
+  '%s pairs semantic action fills with their matching foreground',
+  (path) => {
+    const source = readFileSync(resolve(import.meta.dirname, '..', path), 'utf-8')
+    expect(source).not.toMatch(/bg-(?:primary|destructive)(?![\w/-])[^"'`\n]*text-white/)
+    expect(source).toMatch(/text-(?:primary|destructive)-foreground/)
+  },
+)
+
+function compositeHex(foreground: string, background: string, alpha: number) {
+  const channels = (hex: string) =>
+    hex
+      .slice(1)
+      .match(/../g)!
+      .map((channel) => parseInt(channel, 16))
+  const back = channels(background)
+  return (
+    '#' +
+    channels(foreground)
+      .map((channel, index) =>
+        Math.round(channel * alpha + back[index] * (1 - alpha))
+          .toString(16)
+          .padStart(2, '0'),
+      )
+      .join('')
+  )
+}
+
+// spec: WEBUI-DESIGN-R002.1.1
+it.each(['light', 'dark'] as const)('keeps %s semantic fill text readable at rest, hover and disabled', (theme) => {
+  const tokens = theme === 'dark' ? DARK : LIGHT
+  for (const fill of ['primary', 'destructive']) {
+    for (const backdrop of ['--background', '--card', '--surface-raised', '--accent']) {
+      for (const alpha of [1, 0.9]) {
+        const background = compositeHex(tokens[`--${fill}`], tokens[backdrop], alpha)
+        expect(contrastRatio(tokens[`--${fill}-foreground`], background)).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  }
+  expect(contrastRatio(tokens['--muted-foreground'], tokens['--muted'])).toBeGreaterThanOrEqual(4.5)
 })

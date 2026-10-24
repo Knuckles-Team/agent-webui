@@ -298,3 +298,18 @@ They also cover refusal of stale or invalid catalog identities.
 | ID | Requirement | Verification |
 |---|---|---|
 | `WEBUI-APPS-R049.1.13` | **Flat dependency view source slice.** Extend the existing selected Work task with a read-only flat dependency diagram and equivalent keyboard-accessible list. Use only its explicit Arbora run binding and root task ID. Render producer-declared edges and observed evidence, with incomplete lifecycle and unobserved labels. Withdraw stale data on refresh, selection, identity change or denied access. Keep node labels plain text and never retarget Chat. | Source fixtures in `WorkExecutionGraph.test.tsx` and `execution-graph.test.ts` cover bound reads, fan-out/fan-in, hostile labels, cancellation and refusal. This source-only row excludes actual browser rendering, installed producers and nested execution, which remain under R049.1.2. |
+
+## Canopy Glass presentation continuation
+
+| ID | Requirement | Verification |
+|---|---|---|
+| `WEBUI-APPS-R049.2.1` | **Shared shell and Explore presentation slice.** Apply Canopy Glass through the existing shared workspace and retained Explore collection/detail journey. Keep one full-width expanded header, useful resizable map, dominant center and optional real selected-evidence detail. Preserve native links, existing routes, identity admission, retained chat/query state and validated manual/WebMCP dispatch. Do not add a second router, fabricated evidence or backend authority. | Planned: rendered shell/Explore tests for query, selection, detail tools, return, errors, cancellation focus and responsive continuity. Native history/tool checks remain distinct from mounted fixtures. This bounded slice does not close R049.2, complete migration under R049.1.2, or served acceptance under R050. |
+
+
+## Retained measured redesign acceptance
+
+The original R049.2 requirement remains unchanged.
+
+| ID | Requirement | Verification |
+|---|---|---|
+| `WEBUI-APPS-R049.2.2` | **Remaining measured redesign acceptance.** Complete every original R049.2 obligation beyond the bounded shell/Explore source slice. Include complete Work/Operate composition and identical-fixture before/after tasks. Record navigation counts, scrolling distances, all-leaf search and actual layout evidence. Preserve keyboard, touch and native WebMCP qualification. Do not clip content or hide features to improve measurements. | Planned: publish baseline/redesigned task results and complete native interaction evidence under the original R049.2 acceptance criteria. Scoped presentation tests cannot close this row. |

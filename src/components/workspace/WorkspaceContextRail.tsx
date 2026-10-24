@@ -1,5 +1,5 @@
 import arboraLogo from '../../../docs/assets/brands/agent-webui-logo-v1.png'
-import { WorkspaceHeaderDisclosure } from './WorkspaceHeaderDisclosure'
+import { WorkspaceAppearance } from './WorkspaceAppearance'
 import { WorkspaceCommandPalette } from './WorkspaceCommands'
 import { useEffect, useState } from 'react'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
@@ -31,7 +31,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
     return exploreLensHref(!roleAtLeast(role, 'maintainer') ? { ...state, lens: 'evidence' } : state)
   })()
   return (
-    <header className="workspace-context-rail shrink-0 border-b bg-background px-3 py-2">
+    <header className="workspace-context-rail shrink-0">
       <div className="workspace-header-row">
         <a
           id="workspace-home"
@@ -47,11 +47,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
           <img src={arboraLogo} alt="Arbora" className="workspace-brand-logo" />
           <span aria-hidden="true">Arbora</span>
         </a>
-        <WorkspaceHeaderDisclosure
-          id="workspace-context-options"
-          label={`Workspace context: ${active}`}
-          caption={active}
-        >
+        <div className="workspace-context-navigation">
           <nav aria-label="Primary workspace contexts" className="flex flex-wrap gap-1">
             {(['work', 'explore', 'operate'] as const).map((context) => (
               <a
@@ -77,15 +73,18 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
               </a>
             ))}
           </nav>
-        </WorkspaceHeaderDisclosure>
+        </div>
         <div id="workspace-map-toggle-slot" />
-        <WorkspaceHeaderDisclosure id="workspace-more-options" label="More workspace controls" caption="More">
+        <div className="workspace-command-entry">
           <WorkspaceCommandPalette />
-          <div id="workspace-frame-tools-slot" />
+        </div>
+        <div id="workspace-frame-tools-slot" />
+        <div className="workspace-header-utilities">
+          <WorkspaceAppearance />
           <a className="inline-flex min-h-11 items-center text-sm underline" href="/privacy">
             Privacy
           </a>
-        </WorkspaceHeaderDisclosure>
+        </div>
       </div>
     </header>
   )

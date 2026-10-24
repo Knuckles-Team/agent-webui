@@ -35,6 +35,8 @@ for (const theme of ['light', 'dark', 'glass']) {
             '.workspace-context-rail nav a[aria-current]',
             '.workspace-map-node',
             '.workspace-map-context p',
+            '.workspace-command-trigger',
+            '.workspace-appearance summary',
             '.workspace-frame-eyebrow',
             '.workspace-frame-actions button',
             '.workspace-task-surface .workspace-route-content :is(h1, h2, h3, p, label, input, a, button:not(:disabled))',
@@ -92,7 +94,6 @@ for (const theme of ['light', 'dark', 'glass']) {
     await page.setViewportSize({ width: 390, height: 844 })
     await prepareIdentity(page, theme)
     const task = page.getByRole('region', { name: 'Current workspace task' })
-    const more = page.getByRole('button', { name: 'More workspace controls' })
     const dialog = page.getByRole('dialog')
     await expect(task.getByRole('heading', { name: 'Search', exact: true })).toBeVisible()
     for (const close of ['Escape', 'Close']) {
@@ -103,24 +104,19 @@ for (const theme of ['light', 'dark', 'glass']) {
       else await dialog.getByRole('button', { name: 'Close destination search' }).click()
       await expect(dialog).not.toBeVisible()
       await expect(task).toBeFocused()
-      await expect(more).toHaveAttribute('aria-expanded', 'false')
     }
-    await more.click()
     const find = page.getByRole('button', { name: 'Find destination' })
+    await expect(find).toBeVisible()
     await find.click()
     await page.keyboard.press('Escape')
     await expect(find).toBeFocused()
-    await expect(more).toHaveAttribute('aria-expanded', 'true')
-    await page.keyboard.press('Escape')
-    await expect(more).toBeFocused()
-    await expect(more).toHaveAttribute('aria-expanded', 'false')
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.getByRole('button', { name: 'Find destination' }).click()
     await expect(dialog).toBeVisible()
     await page.setViewportSize({ width: 390, height: 844 })
     await page.keyboard.press('Escape')
-    await expect(more).toBeFocused()
-    await expect(more).toHaveAttribute('aria-expanded', 'false')
+    await expect(find).toBeFocused()
+    await expect(find).toBeInViewport()
   })
 }
 
@@ -337,16 +333,18 @@ async function closeContext(page: Page) {
 }
 
 async function checkCompactFocus(page: Page) {
-  await openContext(page)
   const current = page.locator('.workspace-context-rail nav a[aria-current]')
+  await expect(current).toBeVisible()
   await tabTo(page, current)
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('button', { name: /^Workspace context:/ })).toBeFocused()
-  const more = page.getByRole('button', { name: 'More workspace controls' })
-  await tabTo(page, more)
+  await expect(current).toBeFocused()
+  const focus = page.getByRole('button', { name: 'Focus current task' })
+  await tabTo(page, focus)
   await page.keyboard.press('Enter')
-  await tabTo(page, page.getByRole('button', { name: 'Focus current task' }))
+  await expect(page.getByRole('region', { name: 'Current workspace task' })).toBeFocused()
+  const find = page.getByRole('button', { name: 'Find destination' })
+  await tabTo(page, find)
+  await page.keyboard.press('Enter')
   await page.keyboard.press('Escape')
-  await expect(more).toBeFocused()
-  await expect(more).toHaveAttribute('aria-expanded', 'false')
+  await expect(find).toBeFocused()
 }

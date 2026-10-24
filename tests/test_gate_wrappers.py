@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
+import unittest
 from pathlib import Path
 from types import ModuleType
 
@@ -67,3 +69,59 @@ def test_workspace_policy_gate_never_fails_without_a_workspace(
     monkeypatch.setenv('CI', 'true')
     args = ['--gate', 'lane', '--workspace-only', '--script', 'scripts/x.py']
     assert gate.main(args) == 0
+
+
+class DesignAcceptanceLedgerTests(unittest.TestCase):
+    """Guard metadata scope, not acceptance of the features named by its rows."""
+
+    def rows(self, spec):
+        data = json.loads(
+            (SCRIPTS.parent / 'specs' / spec / 'status.json').read_text()
+        )
+        self.assertEqual(data['delivery_state'], 'SPECIFIED')
+        return {row['id']: row for row in data['requirements']}
+
+    def test_design_ancestors_keep_retained_acceptance_open(self):
+        rows = self.rows('browser-design-system')
+        prefix = 'WEBUI-' + 'DESIGN-'
+        for number in ('R002', 'R002.1', 'R004', 'R004.1', 'R004.2', 'R010'):
+            with self.subTest(number=number):
+                self.assertEqual(rows[prefix + number]['delivery_state'], 'SPECIFIED')
+        for parent, child in (
+            ('R002', 'R002.1'),
+            ('R002.1', 'R002.1.2'),
+            ('R004', 'R004.1'),
+            ('R004.1', 'R004.1.2'),
+        ):
+            self.assertIn(prefix + child, rows[prefix + parent]['rollup_of'])
+        for number in ('R002.1.2', 'R004.1.2'):
+            with self.subTest(number=number):
+                row = rows[prefix + number]
+                self.assertEqual(row['delivery_state'], 'SPECIFIED')
+                self.assertEqual(row['landed_in'], [])
+                self.assertEqual(row['verified_by'], [])
+
+    def test_measured_redesign_ancestors_keep_acceptance_open(self):
+        rows = self.rows('arbora-app-surface')
+        prefix = 'WEBUI-' + 'APPS-'
+        for number in ('R049', 'R049.2', 'R049.2.2'):
+            with self.subTest(number=number):
+                self.assertEqual(rows[prefix + number]['delivery_state'], 'SPECIFIED')
+        for parent, child in (('R049', 'R049.2'), ('R049.2', 'R049.2.2')):
+            self.assertIn(prefix + child, rows[prefix + parent]['rollup_of'])
+        remainder = rows[prefix + 'R049.2.2']
+        self.assertEqual(remainder['landed_in'], [])
+        self.assertEqual(remainder['verified_by'], [])
+
+    def test_qualified_source_children_keep_their_delivery_evidence(self):
+        for spec, owner, numbers in (
+            ('browser-design-system', 'DESIGN', ('R002.1.1', 'R004.1.1', 'R005.2')),
+            ('arbora-app-surface', 'APPS', ('R049.2.1',)),
+        ):
+            rows = self.rows(spec)
+            for number in numbers:
+                with self.subTest(owner=owner, number=number):
+                    row = rows[f'WEBUI-{owner}-{number}']
+                    self.assertEqual(row['delivery_state'], 'VERIFIED')
+                    self.assertTrue(row['landed_in'])
+                    self.assertTrue(row['verified_by'])

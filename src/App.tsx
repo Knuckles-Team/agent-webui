@@ -202,7 +202,7 @@ function renderRouteHeading(route: RouteDef): ReactNode {
   return (
     <>
       {!routeOwnsHeading(route) && <h1 className="text-2xl font-bold mb-1">{route.label}</h1>}
-      <p className="text-sm text-muted-foreground mb-4">{route.blurb}</p>
+      <p className={`text-sm text-muted-foreground ${isWorkspaceProof(route) ? 'mb-2' : 'mb-4'}`}>{route.blurb}</p>
     </>
   )
 }

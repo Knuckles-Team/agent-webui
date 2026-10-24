@@ -18,7 +18,12 @@
     "WEBUI-DESIGN-R004.2",
     "WEBUI-DESIGN-R005.1",
     "WEBUI-DESIGN-R010",
-    "WEBUI-DESIGN-R011"
+    "WEBUI-DESIGN-R011",
+    "WEBUI-DESIGN-R002.1.1",
+    "WEBUI-DESIGN-R004.1.1",
+    "WEBUI-DESIGN-R005.2",
+    "WEBUI-DESIGN-R002.1.2",
+    "WEBUI-DESIGN-R004.1.2"
   ],
   "requirements": [
     {
@@ -38,15 +43,15 @@
       "title": "Design tokens documented with contrast targets",
       "delivery_state": "SPECIFIED",
       "landed_in": [
+        "12b5f5624953",
         "2c9874c2a559",
         "2d3f1b884e39",
         "46b60b8fbd48",
-        "a4c402f68f1b"
+        "93401c34a695"
       ],
       "verified_by": [
-        "src/__tests__/design-tokens.test.ts:103",
-        "src/__tests__/design-tokens.test.ts:110",
-        "src/__tests__/design-tokens.test.ts:59",
+        "src/__tests__/design-tokens.test.ts:113",
+        "src/__tests__/design-tokens.test.ts:57",
         "src/components/__tests__/ThemeProvider.test.tsx:1"
       ],
       "rollup_of": [
@@ -91,10 +96,11 @@
         "a4c402f68f1b"
       ],
       "verified_by": [
-        "src/__tests__/design-tokens.test.ts:73"
+        "src/__tests__/design-tokens.test.ts:74"
       ],
       "rollup_of": [
-        "WEBUI-DESIGN-R005.1"
+        "WEBUI-DESIGN-R005.1",
+        "WEBUI-DESIGN-R005.2"
       ]
     },
     {
@@ -157,20 +163,38 @@
       "id": "WEBUI-DESIGN-R002.1",
       "title": "Purposeful density and Arbora visual hierarchy",
       "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "landed_in": [
+        "12b5f5624953",
+        "93401c34a695",
+        "ac86f2de9817"
+      ],
       "verified_by": [
         "e2e/workspace-density.spec.ts:1",
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:156",
         "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:1"
+      ],
+      "rollup_of": [
+        "WEBUI-DESIGN-R002.1.1",
+        "WEBUI-DESIGN-R002.1.2"
       ]
     },
     {
       "id": "WEBUI-DESIGN-R004.1",
       "title": "Full mobile and arbitrary-aspect feature parity",
       "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "landed_in": [
+        "12b5f5624953",
+        "19b439519a22",
+        "47885260902d",
+        "93401c34a695",
+        "ac86f2de9817"
+      ],
       "verified_by": [
         "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:93"
+      ],
+      "rollup_of": [
+        "WEBUI-DESIGN-R004.1.1",
+        "WEBUI-DESIGN-R004.1.2"
       ]
     },
     {
@@ -214,6 +238,68 @@
         "e2e/documentation-screenshots.browser.ts:1",
         "scripts/documentation-screenshots.test.mjs:1"
       ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R002.1.1",
+      "title": "Canopy Glass material and density",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "12b5f5624953",
+        "93401c34a695",
+        "ac86f2de9817",
+        "ec837ceabe6b"
+      ],
+      "verified_by": [
+        "e2e/canopy-glass.browser.ts:1",
+        "src/__tests__/design-tokens.test.ts:120",
+        "src/__tests__/design-tokens.test.ts:152",
+        "src/__tests__/design-tokens.test.ts:181",
+        "src/components/__tests__/ThemeProvider.test.tsx:158"
+      ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R004.1.1",
+      "title": "Fully expanded responsive shell",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "12b5f5624953",
+        "19b439519a22",
+        "47885260902d",
+        "93401c34a695",
+        "ac86f2de9817"
+      ],
+      "verified_by": [
+        "e2e/canopy-glass.browser.ts:2",
+        "e2e/execution-graph.browser.ts:2",
+        "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:94",
+        "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:160"
+      ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R005.2",
+      "title": "Meaningful interruptible motion",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "ac86f2de9817"
+      ],
+      "verified_by": [
+        "e2e/canopy-glass.browser.ts:3",
+        "src/components/__tests__/ThemeProvider.test.tsx:89"
+      ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R002.1.2",
+      "title": "Remaining density and hierarchy acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-DESIGN-R004.1.2",
+      "title": "Remaining full-route responsive parity acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
     }
   ]
 }

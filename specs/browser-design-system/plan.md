@@ -18,7 +18,7 @@ Run `pnpm install --frozen-lockfile`, `uv venv --python 3.12`, `uv pip install -
 
 ## Free-scaling workspace design
 
-WEBUI-DESIGN-R002.1/R004.1/R004.2/R005.1/R010 extend the current token, accessibility and responsive owners. A single focused pane on small screens retains persistent context and a visible pane switcher; larger screens progressively add related panes. Container/visual viewport constraints, content size and pointer capability determine layout, not a whitelist of device names. Test representative CSS dimensions and generated intermediate sizes; do not invent Galaxy Fold hardware specifications. Internal wide-data regions are labelled and keyboard-scrollable. Every editor, chart, admin action and leaf remains reachable.
+WEBUI-DESIGN-R002.1/R004.1/R004.2/R005.1/R010 extend the current token, accessibility and responsive owners. A single focused pane on small screens retains persistent context and a visible pane switcher. Larger screens progressively add related panes. Container/visual viewport constraints, content size and pointer capability determine layout, not a whitelist of device names. Test representative CSS dimensions and generated intermediate sizes; do not invent Galaxy Fold hardware specifications. Internal wide-data regions are labelled and keyboard-scrollable. Every editor, chart, admin action and leaf remains reachable.
 
 Prefer compact native DOM controls and the existing primitives. Coarse-pointer 44 px targets can coexist with compact desktop 32–36 px targets when accessibility requirements allow. Suggested motion ranges are feedback 120 ms, panel 180–240 ms and semantic transition 240–320 ms, subordinate to measured budgets and reduced-motion preferences. Animations use transform/opacity where appropriate, are cancellable, and never become an essential information channel. No perpetual background decoration or continuous idle requestAnimationFrame. Respect CSP nonces and same-origin font requirements.
 
@@ -58,30 +58,64 @@ and all existing controls during viewport changes. Narrow layouts stack the map
 and task surface with explicit focus controls. This bounded shell does not
 migrate legacy pages or prove all dynamic leaves and installed providers.
 
-## Scoped Arbora workspace identity
+## Canopy Glass workspace continuation — 2026-10-24
 
-Use local shell tokens for the existing R002.1 hierarchy requirement.
-Ivory surfaces, sage toolbar tones and forest selection distinguish the light workspace.
-Dark and glass themes use deep green surfaces and pale sage selection.
-Bark-colored relationship strokes show only the existing loaded branches.
-The context rail, map controls and selected paths share this vocabulary.
-Keep task content, assistant styling, global theme tokens and legacy pages unchanged.
-Preserve readable type, target sizes, focus clearance and responsive capability access.
-Use the exact README-referenced PNG brand asset without redrawing or tracing it.
-Keep motion limited to short map reveal and control feedback, with a reduced-motion alternative.
+WEBUI-DESIGN-R002.1.1/R004.1.1/R005.2 extend the existing token, responsive
+and motion owners. WEBUI-APPS-R049.2.1 owns the bounded shared-shell and
+Explore list/detail implementation. This supersedes the earlier compact-header
+presentation, not its retained state, map resizing, authority or focus contracts.
 
-Initially narrow workspaces disclose the map on request and retain that choice across resize.
-Keep all map, list, filter and breadcrumb controls available through the keyboard.
-Order the selected path by its actual loaded ancestry, with numbered steps and small indentation.
-Reserve a narrow launcher dock outside the task scroll viewport while the assistant trigger is enabled.
-Keep primary Work at full height and preserve assistant open/close focus behavior.
-One context row hosts map and focus controls through owned slots, without a second toolbar.
-Compact context and More disclosures retain keyboard access on narrow screens.
-A default 14-rem map rail resizes between 12 and 22 rem while preserving center space.
-Pointer and keyboard resizing persist a bounded presentation preference, not navigation state.
-Natural translucent shell surfaces use modest blur, with opaque reduced-transparency and forced-colors alternatives.
-Keep native task palettes and shared assistant components unchanged.
+Extend `src/index.css`, `WorkspaceFrame.css`, the current `ThemeProvider` and
+existing workspace components; do not create another theme provider, router,
+primitive library or data layer. The design is original: reference imagery informs
+material and hierarchy, not copied artwork, component markup or runtime APIs.
+Use the repository's existing Arbora logo without tracing or replacing it and
+keep same-origin Inter. Light and glass use calm ivory/sage; dark uses deep green.
+Keep shell translucency separate from opaque native reading surfaces. No new
+public asset, package or telemetry is required by this slice.
 
+The topbar fills the workspace width, with visibly labelled Work, Explore and
+Operate, current context, command/search entry and main actions. It expands into
+rows rather than a centered capsule or hidden main-navigation menu. Appearance
+and secondary utilities may use a disclosure; primary navigation and search may
+not. Retain a keyboard/pointer-resizable map, its bounded persisted width and
+explicit narrow-layout access. Give released space to the task center, not an
+empty rail or fixed-width outer gutter. A selected evidence record can open useful
+detail; no selection must not reserve a placeholder inspector. Long prose remains
+bounded for reading while lists and graphs use available width.
+
+Persist compact/comfortable and reduced-motion/opaque appearance choices through
+the existing provider. Handle invalid or unavailable storage safely. Coarse-pointer
+minimums win over compact spacing; a system reduction request wins over expressive
+preferences. Retire previous theme classes on change and preserve unrelated root
+classes. Narrow reflow does not remount Chat, discard query drafts, restart streams
+or change navigation authority. Keep native links, modified clicks and the shared
+manual/WebMCP destination dispatchers.
+
+Use short transition tokens for actual state changes. Commit state immediately;
+retarget repeated input instead of queueing full animations or stale completion
+callbacks. Limit blur to shell chrome, at most two visible, nonnested layers.
+Unsupported blur, reduced transparency, opaque preference and forced colors retain
+the same text, states and controls. No moving wallpaper, perpetual shimmer,
+ornamental graph activity, fake progress or idle animation loop.
+
+### Rollout and acceptance boundary
+
+First qualify the shared shell and existing Explore search → selection →
+properties/relationships/history → collection journey. Reuse actual returned
+metadata and readable list rows. Do not fabricate evidence, confidence, activity
+or backend relationships to fill space. Keep empty, denied and failed states
+honest and actionable. Subsequent graph, editor, run, administration, authentication
+and remaining route work stays under R002/R003/R004/R005/R006 and
+WEBUI-APPS-R049.1.2/R049.2; this slice cannot complete the redesign.
+
+R010 retains declared device/browser/network/fixture provenance and all existing
+budgets. Qualify 10,000 evidence records, a 2,000-node/5,000-edge graph and a
+10-event-per-second run stream as initial evaluation fixtures, not supported-load
+claims. Measure desktop and constrained-touch journeys; keep virtualization, LOD,
+worker, cancellation, bounded-cache and idle-memory work open until proved. A
+bounded screenshot or mounted test neither establishes field percentiles nor
+accepts performance, all-route mobile parity or manual accessibility.
 
 ## Glass theme transitions
 
@@ -95,7 +129,8 @@ These tests do not establish native task contrast or explain the reported glass 
 
 Under WEBUI-DESIGN-R005.1, capture the actual focused opener when the modal opens.
 On cancellation, restore a connected, visible, enabled opener or the visible command trigger.
-If responsive layout hides both, focus the enclosing More summary without reopening its disclosure.
+The expanded header keeps the command trigger reachable through reflow.
+If an opener is removed, choose a connected, visible fallback without opening a utility disclosure.
 Native selection and URL navigation retain destination-owned focus rather than restoring stale context.
 
 ## Documentation screenshot refresh — 2026-10-24
@@ -109,3 +144,63 @@ Update stable documentation paths only after the complete capture succeeds.
 A read-only CI job publishes review artifacts, never repository writes.
 Human review precedes committing refreshed images. The six documentation views
 are not full responsive, provider, accessibility or design-system acceptance.
+
+## Hosted Canopy feedback — 2026-10-24
+
+R004.1.1 preserves a useful task region after narrow reflow: only the automatic
+wide-screen map default collapses at narrow widths. Explicit Map/Focus map choices
+and focused map controls remain available in a bounded scrollable region. Capture
+top-entry and focused-task states separately; scrolling the task into view is not
+evidence that the top header is clipped. The floating chat launcher's reserved
+band remains a separate native-chat composition obligation until replaced.
+
+R002.1.1 treats the stored `glass` theme as a compatibility alias for light. Show Canopy
+light for either stored value, not two identical palette choices. Keep the existing
+independent Glass framing/Opaque framing material control.
+Assert effective classes, surface transparency and motion preferences in browsers.
+
+### Work diagram scrollport integration
+
+R004.1.1 must reveal an entire focused diagram scrollport. The expanded header
+exposed clipping in the legacy equal-row Work composition. Size containment on
+the graph-bearing route measures its actual grid/flex allocation. Cap only the
+diagram viewport against that task height and the screen, retaining the existing
+20rem maximum. An intrinsic 16rem block-size fallback prevents collapse in auto-height
+embeddings. Keep internal pan, the equivalent dependency list and outer
+workspace scrolling when content exceeds the screen. This is a bounded
+integration correction, not native-chat composition acceptance.
+
+### Forced-color selection readability
+
+R002.1.1 must preserve readable selected labels under forced colors. Hosted pixels
+exposed white text backplates over selected navigation labels. Use system Canvas
+and CanvasText for selected content, with Highlight borders and existing weight
+to mark selection. Keep automatic forced-color adjustment and recapture both
+light and dark system palettes. Computed contrast alone cannot detect backplate
+painting defects; actual screenshot review remains required.
+
+### Work focus clearance correction (2026-10-24)
+
+Hosted geometry isolated the remaining graph clipping to false launcher clearance.
+Work already places chat in flow, but inherited a six-rem bottom scroll inset.
+Native focus centered the diagram above its task scrollport edge.
+Remove that inset only for Work; retain clearance where the floating launcher exists.
+Require full diagram visibility after native focus, before browser-test reveal.
+Keep responsive sizing, keyboard pan, and the equivalent dependency list unchanged.
+
+The follow-up geometry check confirmed full native diagram visibility.
+A nearly full-height details card still intersected the one-rem scroll inset.
+Work now applies that clearance to focused controls through scroll margins instead.
+Its unobstructed scrollport can show physically fitting content edge to edge.
+Original wide and narrow whole-card visibility checks remain unchanged.
+All viewport cases must expose every details field through keyboard scrolling.
+Oversized low-height and enlarged-text cards require complete reachability, not simultaneous visibility.
+
+
+### Acceptance rollup correction — 2026-10-24
+
+The source-delivery children did not exhaust their original parent acceptance criteria.
+Explicit retained-acceptance children now preserve those obligations in canonical generated rollups.
+Parent requirement text and qualified child evidence remain unchanged.
+Regenerate every spec status and audit ancestor states after source and receipt commits.
+The metadata regression must not create feature-acceptance bindings for retained work.

@@ -167,7 +167,7 @@ function DependencyDiagram({ snapshot }: { snapshot: ExecutionGraphSnapshot }) {
       role="region"
       aria-label="Scrollable dependency diagram; equivalent step details below"
       tabIndex={0}
-      className="max-h-80 max-w-full overflow-auto rounded border bg-background/60 focus-visible:outline-2 focus-visible:outline-ring"
+      className="work-execution-diagram max-h-80 max-w-full overflow-auto rounded border bg-background/60 focus-visible:outline-2 focus-visible:outline-ring"
     >
       <svg aria-hidden="true" width={width} height={height} className="block text-primary">
         <defs>

@@ -48,17 +48,15 @@ Run each relevant journey with loading, empty, stale, denied, unavailable, valid
 ## Workspace density regression
 
 `e2e/workspace-density.spec.ts` drives the rendered Explore route with synthetic
-identity and unavailable-service fixtures. It checks a retained unsent query,
-keyboard disclosure focus, no pane overflow, one/two-column geometry, and the
-100rem maximum surface width at 320×740, 740×320, 1024×768, 1440×900,
-2560×720 and 587×913. A 480px container inside a 1440px viewport proves the
+identity and unavailable-service fixtures. Its earlier baseline checks a retained unsent query, keyboard disclosure focus, pane overflow and one/two-column geometry. That baseline enforced a 100rem maximum surface width at 320×740, 740×320, 1024×768, 1440×900, 2560×720 and 587×913. A 480px container inside a 1440px viewport proves the
 layout depends on available workspace width. Screenshots and geometry are test
 attachments. This is density evidence, not all-route parity, real-service
 acceptance, screen-reader certification or semantic-zoom acceptance.
 
 Run with `corepack pnpm exec playwright test --config e2e/workspace-layout.config.ts
 e2e/workspace-density.spec.ts`. Existing Work, Explore and Operate rendered unit
-suites cover retained actions and service states. No extra spec child is created.
+suites cover retained actions and service states. The Canopy Glass children below
+replace the maximum-width assumption for working lists, not bounded reading prose.
 
 ## Partial viewport continuity regression
 
@@ -125,8 +123,9 @@ Check assistant open/close layout and focus restoration, and full-height primary
 Expanded map controls retain native-zoom and reduced-motion coverage in the persistent browser matrix.
 This evidence covers initial and tested focus/scroll states, not all provider content or manual accessibility.
 
-The compact header reuses the exact README PNG and checks that the browser loads its pixels.
-Desktop checks cover one-row height, keyboard min/max rail sizing, pointer drag and persisted width.
+The earlier compact-header baseline used the README PNG and one-row desktop geometry.
+Canopy Glass supersedes that layout. Check the existing brand artwork loads and full-width header controls stay visible as rows wrap. The center must use released space.
+Retain keyboard min/max rail sizing, pointer drag and persisted width checks.
 Check reduced-motion animation removal and opaque forced-colors/reduced-transparency fallbacks.
 Hit-test command-dialog close and assistant close controls above the shell header.
 Unit tests cover retired portal slots, retained task identity and malformed or unavailable preference storage.
@@ -153,12 +152,13 @@ These mounted tests prove class retirement, not rendered palette contrast.
 `WorkspacePaletteFocus.test.tsx` mounts the real Radix dialog and header disclosure.
 Mock only layout rectangles because jsdom does not render responsive geometry.
 Require native task focus after shortcut Escape and Close.
-Require visible More after a desktop opener becomes hidden.
-Compact-trigger cancellation must preserve the deliberately open disclosure and its visible trigger. Removing the opener must leave a reachable focus target.
+Require the visible command trigger after the original opener is removed or becomes hidden.
+The expanded header must not require reopening More for command access.
+A secondary utility disclosure retains its own explicit open state.
 Selection must preserve focus assigned by the native destination.
 The existing identity browser fixture adds light, dark and glass cancellation cases at 390 and 1440 pixels.
-Those cases assert focus after shortcut, compact-trigger and desktop-to-narrow cancellation.
-Cancellation preserves each disclosure state rather than reopening a closed menu.
+Extend those cases for shortcut, always-visible command trigger and desktop-to-narrow cancellation.
+Cancellation preserves explicit utility disclosure state rather than opening a closed menu.
 Mounted proof does not replace this pending rendered check or resolve native glass text contrast.
 
 The PR-only `workspace-browser` CI job runs the existing focused identity configuration on Ubuntu Chromium.
@@ -183,3 +183,88 @@ They reject external and unknown API requests. Inspect all six PNGs.
 The provenance binds the source revision, viewport, theme, fixed synthetic fixture
 and browser version to each image digest. Hosted artifacts must contain the
 PNG files, not only attachment bodies. Full design acceptance remains open.
+
+## Canopy Glass bounded-slice qualification
+
+The following matrix is planned, not a receipt. Extend the existing provider,
+workspace component and browser suites before claiming any listed result.
+
+| Requirement | Proof seam | Required checks |
+|---|---|---|
+| WEBUI-DESIGN-R002.1.1 | `design-tokens.test.ts`, `ThemeProvider.test.tsx`, rendered identity/Explore journeys | Check light/dark/glass native and composited contrast. Cover hover/selected/focus states, opaque reading surfaces and original logo. Test compact/comfortable persistence and invalid/blocked storage fallback. |
+| WEBUI-DESIGN-R004.1.1 | `WorkspaceContextRail.test.tsx`, `WorkspaceFrame.test.tsx`, rendered identity/density journeys | Use one full-width header. Keep labelled contexts, current context, search and main actions visible without opening More. Reject capsule/max-width working gutters, overflow and duplicate navigation. Check useful map resizing and optional selected detail. |
+| WEBUI-DESIGN-R005.2 | Provider/frame/palette tests and actual rendered motion checks | Check system reduced motion from first render and in-app reduction precedence. Exercise immediate state on repeated input and close/cancel during transition. Reject stale callback focus and idle decoration. Retain all text. |
+| WEBUI-APPS-R049.2.1 | `ExploreWorkspace.test.tsx`, shell/query/palette suites and rendered Explore journey | Retain query/results through each detail tool. Cover return, real Back/Forward and resize. Reject placeholder inspectors and auth/tool authority changes. |
+
+Cover 320×740, 390×844, 844×390, 768×1024, 1024×768, 1440×900,
+1920×1080, 2560×720 and generated intermediate dimensions. Include a constrained
+container, low-height viewport, actual 200-percent browser zoom, 200-percent text
+enlargement and 400-percent zoom/reflow. Do not replace these with CSS transforms.
+Inspect initial paint before focus/scroll and resize during draft editing, pending
+responses and selection. Main navigation stays visible; narrow map disclosure is
+allowed. Preserve safe-area/visual-viewport and focus clearance above the assistant.
+Record physical keyboard/fold/touch gaps separately from synthetic viewport tests.
+
+Inspect all theme/density combinations, coarse-pointer 44 px targets, unsupported
+blur, opaque preference, reduced transparency and forced colors. Contrast targets
+remain 4.5:1 for normal text and 3:1 for meaningful boundaries/focus. Check actual
+compositing, not just token values. Capture and review real rendered shell, list,
+selected detail, errors and keyboard focus. Image provenance names exact source,
+fixture, viewport and browser; old documentation captures are not new theme proof.
+
+R010 performance acceptance stays open. Before traces, declare device/browser,
+network, fixture and measurement method. Initial evaluation loads are 10,000
+records, 2,000 graph nodes/5,000 edges and 10 stream events/second. Exercise scroll,
+select, resize, navigation and reduced effects on desktop and constrained touch.
+Retain p75 INP ≤200 ms, LCP ≤2.5 s, CLS ≤0.1, p95 visible local feedback ≤100 ms
+and p95 frame interval ≤16.7 ms on the declared 60 Hz reference. Report unsupported
+metrics; lab samples are not field p75. Check bounded memory, cancellation, idle
+work and blur costs. Scoped fixtures do not prove these loads or broader budgets.
+
+Manual screen-reader and full-route state/accessibility review remain open. Live-update pause, stable selection and graph/editor/run/administration/authentication rollout need separate evidence. All-leaf WebMCP equivalence and composed provider qualification remain open.
+No result in this bounded matrix alone accepts the full redesign.
+
+
+### Cross-view semantic fill safety
+
+The Canopy palette also changes existing semantic-fill consumers outside Explore.
+Cover the unsecured-install warning, destructive Badge, calendar marker and shared disabled controls.
+Check paired foregrounds at rest and over 90% hover fills on each reading surface.
+Disabled controls retain their disabled semantics and use solid muted text/background pairs, not reduced text opacity.
+The hosted fixture must capture the dark security warning and disabled send control.
+In both forced-color palettes, check the visible Arbora word uses CanvasText on Canvas.
+Assert the brand link and its text color, contrast and actual screenshot appearance.
+
+Preserve the task's bottom scroll clearance for the fixed assistant launcher.
+At short heights, keyboard-focus and hit-test the final relationship action.
+Check 200% text enlargement separately from the existing native 200% browser-zoom journey.
+Enlarged navigation must wrap without local or document overflow. These checks do not accept all-route accessibility.
+
+### Hosted feedback regressions
+
+Repeat the integrated Explore composition under StrictMode, including close and
+reselection, rather than qualifying only the inner evidence component. Browser
+coverage must retain the same focus assertions. Use accessible combobox names
+for appearance controls. Capture fresh narrow entry, top-entry after resize,
+explicitly expanded map and focused selected evidence separately. Assert the
+header starts at the viewport top in entry captures. Automatic narrow map
+collapse must leave visible task content. Explicit map expansion must stay
+keyboard reachable without consuming the entire short viewport. The legacy
+glass class must resolve the same light palette. Opaque and reduced-motion
+assertions independently prove material and behavior rather than filename labels.
+
+Narrow evidence interaction must click an actual result, then assert the selected
+heading is focused and in the viewport. Close from that visible detail and assert
+the retained search is focused and visible. Do not first click a lower inspector
+control: Playwright scrolls it and mask missing application focus reveal.
+
+
+## Retained acceptance verification
+
+WEBUI-DESIGN-R002.1.2 retains the original density/hierarchy verification matrix and outstanding token/contrast review.
+WEBUI-DESIGN-R004.1.2 retains the complete registered-route/action and dynamic-leaf matrix from R004.1.
+Run the outstanding journeys with actual keyboard, touch, state and viewport coverage before claiming their acceptance.
+The scoped Canopy shell, evidence and Work diagram fixtures do not replace those journeys.
+
+The gate-wrapper metadata tests keep broad ancestor rollups open and preserve qualified source receipts.
+Those data-only guards do not establish product acceptance.

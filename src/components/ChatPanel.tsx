@@ -60,11 +60,11 @@ function fabClassName(isOpen: boolean, isPrimary: boolean): string {
   return cn(
     'fixed bottom-6 right-6 z-50 flex items-center justify-center',
     'w-14 h-14 rounded-full shadow-2xl',
-    'bg-gradient-to-br from-violet-600 to-indigo-700',
-    'text-white hover:scale-110 active:scale-95',
-    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500',
+    'bg-primary text-primary-foreground border border-input',
+    'hover:brightness-105',
+    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
     'transition-all duration-300 ease-out motion-reduce:transition-none',
-    'hover:shadow-violet-500/40 hover:shadow-lg',
+    'hover:shadow-lg',
     (isOpen || isPrimary) && 'scale-0 pointer-events-none opacity-0',
   )
 }
@@ -96,11 +96,6 @@ function ChatFab({
       aria-controls="agent-chat-drawer"
     >
       <MessageCircle className="w-6 h-6" />
-      <span
-        className={cn('absolute inset-0 rounded-full', 'bg-violet-500/30 animate-ping motion-reduce:animate-none')}
-        aria-hidden="true"
-        style={{ animationDuration: '3s' }}
-      />
     </button>
   )
 }

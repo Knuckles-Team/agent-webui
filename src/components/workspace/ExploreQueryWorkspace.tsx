@@ -22,6 +22,11 @@ import { QueryEditorTools } from './QueryEditorTools'
 export default function ExploreQueryWorkspace() {
   const { identity, loading } = useIdentity()
   const location = useWorkspaceLocation()
+  const focusNavigation = useRef({ previous: location, navigated: false })
+  useLayoutEffect(() => {
+    if (focusNavigation.current.previous !== location) focusNavigation.current.navigated = true
+    focusNavigation.current.previous = location
+  }, [location])
   let state: ExploreLensState
   try {
     state = parseExploreLensState(location)
@@ -43,10 +48,19 @@ export default function ExploreQueryWorkspace() {
       key={JSON.stringify([conversationOwnerKey(identity), identity.role, state.entity, state.query])}
       state={state}
       role={identity.role}
+      revealFocus={() => focusNavigation.current.navigated}
     />
   )
 }
-function OwnedExplore({ state, role }: { state: ExploreLensState; role: Role }) {
+function OwnedExplore({
+  state,
+  role,
+  revealFocus,
+}: {
+  state: ExploreLensState
+  role: Role
+  revealFocus: () => boolean
+}) {
   const controller = useQueryValidationLens()
   const available = roleAtLeast(role, 'maintainer') ? EXPLORE_LENSES : (['evidence'] as const)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -60,8 +74,11 @@ function OwnedExplore({ state, role }: { state: ExploreLensState; role: Role }) 
     }
   }, [])
   useLayoutEffect(() => {
-    if (state.lens !== 'evidence') controller.setMode(state.lens === 'query' ? 'sparql' : 'shacl')
-    heading.current?.focus({ preventScroll: true })
+    // Evidence owns its selection/search focus, including StrictMode remounts.
+    if (state.lens !== 'evidence') {
+      controller.setMode(state.lens === 'query' ? 'sparql' : 'shacl')
+      heading.current?.focus({ preventScroll: true })
+    }
   }, [state.lens, controller.setMode])
   const select = (lens: ExploreLensState['lens']) => {
     if (!active.current || live.current !== state) throw new Error('Explore lens context is stale')
@@ -104,28 +121,30 @@ function OwnedExplore({ state, role }: { state: ExploreLensState; role: Role }) 
   }
   return (
     <section aria-label="Explore workspace lenses" className="workspace-surface min-w-0 space-y-3">
-      <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
-        Explore
-      </h1>
-      <nav aria-label="Explore lenses" className="flex flex-wrap gap-2">
-        {available.map((lens) => (
-          <a
-            key={lens}
-            href={exploreLensHref({ ...state, lens })}
-            aria-current={state.lens === lens ? 'page' : undefined}
-            className="inline-flex min-h-11 items-center rounded border px-3 capitalize"
-            onClick={(event) => {
-              if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
-              event.preventDefault()
-              select(lens)
-            }}
-          >
-            {lens}
-          </a>
-        ))}
-      </nav>
+      <div className="explore-lens-header">
+        <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
+          Explore
+        </h1>
+        <nav aria-label="Explore lenses" className="flex flex-wrap gap-2">
+          {available.map((lens) => (
+            <a
+              key={lens}
+              href={exploreLensHref({ ...state, lens })}
+              aria-current={state.lens === lens ? 'page' : undefined}
+              className="inline-flex min-h-11 items-center rounded border px-3 capitalize"
+              onClick={(event) => {
+                if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+                event.preventDefault()
+                select(lens)
+              }}
+            >
+              {lens}
+            </a>
+          ))}
+        </nav>
+      </div>
       <div hidden={state.lens !== 'evidence'}>
-        <EvidenceWorkspace showHeading={false} active={state.lens === 'evidence'} />
+        <EvidenceWorkspace showHeading={false} active={state.lens === 'evidence'} revealFocus={revealFocus} />
       </div>
       {state.lens !== 'evidence' && <QueryValidationLens controller={displayed} />}
       {state.lens !== 'evidence' && (

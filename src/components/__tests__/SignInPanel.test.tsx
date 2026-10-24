@@ -145,6 +145,8 @@ describe('AuthModeBanner', () => {
     const demo = identity({ mode: 'none', banner: 'Unauthenticated demo mode' })
     const { unmount } = renderWithProviders(<AuthModeBanner identity={demo} />)
     expect(screen.getByTestId('auth-mode-banner')).toHaveTextContent('Unauthenticated demo mode')
+    expect(screen.getByTestId('auth-mode-banner')).toHaveClass('bg-destructive', 'text-destructive-foreground')
+    expect(screen.getByTestId('auth-mode-banner')).not.toHaveClass('text-white')
     unmount()
     renderWithProviders(<AuthModeBanner identity={identity({ mode: 'local', banner: null })} />)
     expect(screen.queryByTestId('auth-mode-banner')).toBeNull()

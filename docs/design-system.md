@@ -1,61 +1,115 @@
 # Browser design system
 
-Arbora builds every browser surface from one set of tokens, primitives and
-interaction rules rather than inventing new ones per view. This page documents
+Arbora shares one set of tokens, primitives and interaction rules across browser surfaces. Each view extends this common system. This page documents
 the current tokens sourced from [`src/index.css`](https://github.com/Knuckles-Team/agent-webui/blob/main/src/index.css)
 and the `src/components/ui/` primitives that consume them, including the
-contrast targets a new surface must meet. A token audit test
-(`src/__tests__/design-tokens.test.ts`) checks this page's values against the
-live stylesheet and computes the real contrast ratio for every pairing below,
-so this document cannot silently drift from the source of truth.
+contrast targets a new surface must meet. The token audit
+(`src/__tests__/design-tokens.test.ts`) mirrors the documented defaults and checks
+stylesheet values and contrast pairs. Source checks do not replace rendered
+contrast, screenshot or assistive-technology review.
 
 ## Color tokens
 
-Values are [OKLCH](https://developer.mozilla.org/en-US/docs/Web/CSS/color_value/oklch);
-`:root` defines the light theme and `.dark` overrides it (a `.glass` theme
-layers translucency on the dark palette for optional use). Normal text targets
+Canopy Glass uses the sRGB hex defaults below. `:root` defines the light
+sage/ivory palette; `.dark` overrides it with deep green. `.glass` inherits the
+light palette as a compatibility alias. The appearance picker shows Canopy light
+for either stored value, not a duplicate palette option. Glass framing/Opaque
+framing independently controls shell translucency, never reading surfaces.
+Existing custom accent hues remain an optional override through the current
+provider, with theme-specific lightness and bounded chroma. Legacy blue has ambiguous provenance: it may have been saved automatically or chosen explicitly.
+Without a choice marker, it uses Canopy defaults while retaining the stored base color.
+New explicit choices receive a marker; nondefault saved hues also remain custom.
+Chat submission and the favicon use the same effective action accent.
+The provider reports the effective choice and its default/custom mode, not the ambiguous stored blue as active.
+Custom palettes still require rendered contrast review. Normal text targets
 **4.5:1** contrast against its background; large text, icons and meaningful
-control boundaries or focus indicators target **3:1** — per
+control boundaries or focus indicators target **3:1**, per
 [WCAG 2.2 success criteria 1.4.3 and 1.4.11](https://www.w3.org/TR/WCAG22/).
 Color is never the only signal for a state; see [State tokens](#state-tokens-status-language).
 
-| Role (pairing) | Light | Dark | Contrast target |
+| Role (pairing) | Light / glass | Dark | Contrast target |
 |---|---|---|---|
-| Foreground on Background | `oklch(0.145 0.012 265)` on `oklch(0.988 0.002 280)` | `oklch(0.96 0.005 260)` on `oklch(0.13 0.02 260)` | 4.5:1 |
-| Primary-foreground on Primary | `oklch(0.98 0.005 260)` on `oklch(0.52 0.16 260)` | `oklch(0.10 0.015 260)` on `oklch(0.62 0.16 260)` | 4.5:1 |
-| Secondary-foreground on Secondary | `oklch(0.22 0.01 280)` on `oklch(0.96 0.004 280)` | `oklch(0.96 0.005 260)` on `oklch(0.22 0.015 260)` | 4.5:1 |
-| Muted-foreground on Background | `oklch(0.50 0.02 280)` on `oklch(0.988 0.002 280)` | `oklch(0.64 0.02 260)` on `oklch(0.13 0.02 260)` | 4.5:1 |
-| Accent-foreground on Accent | `oklch(0.22 0.01 280)` on `oklch(0.95 0.04 260)` | `oklch(0.96 0.005 260)` on `oklch(0.20 0.04 260)` | 4.5:1 |
-| Destructive text on Background | `oklch(0.58 0.24 27)` | `oklch(0.70 0.19 22)` | 4.5:1 |
-| Ring (focus indicator) on Background | `oklch(0.52 0.16 260)` | `oklch(0.62 0.16 260)` | 3:1 |
+| Foreground on Background | `#1F2A24` on `#E9EDE5` | `#F1F5EB` on `#121C17` | 4.5:1 |
+| Card-foreground on Card | `#1F2A24` on `#F7F8F2` | `#F1F5EB` on `#1C2A22` | 4.5:1 |
+| Popover-foreground on Popover | `#1F2A24` on `#FFFFFF` | `#F1F5EB` on `#27372D` | 4.5:1 |
+| Primary-foreground on Primary | `#FFFFFF` on `#3E634F` | `#16251A` on `#ADC99F` | 4.5:1 |
+| Secondary-foreground on Secondary | `#46544A` on `#E6EBE1` | `#D0DBCB` on `#16231C` | 4.5:1 |
+| Muted-foreground on Background | `#59665C` on `#E9EDE5` | `#AABAA5` on `#121C17` | 4.5:1 |
+| Muted-foreground on Card | `#59665C` on `#F7F8F2` | `#AABAA5` on `#1C2A22` | 4.5:1 |
+| Accent-foreground on Accent | `#274C36` on `#DDE9D8` | `#E4EEDC` on `#314A35` | 4.5:1 |
+| Destructive-foreground on Destructive | `#FFFFFF` on `#963F37` | `#381914` on `#F0B0A6` | 4.5:1 |
+| Destructive text on Background | `#963F37` on `#E9EDE5` | `#F0B0A6` on `#121C17` | 4.5:1 |
+| Input boundary on Card | `#738170` on `#F7F8F2` | `#829680` on `#1C2A22` | 3:1 |
+| Ring (focus indicator) on Background | `#245F70` on `#E9EDE5` | `#9ACFE1` on `#121C17` | 3:1 |
 
-### Glass muted text
+`--surface-raised` matches the popover fill; `--text-secondary` matches the
+secondary foreground. Decorative `--border` is `#C5CFC1` in light/glass and
+`#405344` in dark; it does not replace `--input` for meaningful control outlines.
 
-Glass uses `oklch(0.70 0.02 260)` for muted text over its translucent background.
-The alpha-aware token audit composites the page over white and requires 4.5:1 contrast.
-Opaque dark-theme values remain unchanged. Browser identity checks also measure native task text in light, dark and glass.
+### Material and glass
+
+The shared workspace uses a static sage/ivory atmosphere, translucent header and
+map chrome, and solid card/reading surfaces. `--shell-alpha` is **92%** in light
+and glass and **90%** in dark. `WorkspaceFrame.css` composites `--card` with that
+alpha for chrome; text is never made transparent through container opacity.
+Measure actual foreground and muted text over the resulting backgrounds,
+including selection and hover. Token pairs alone do not qualify rendered glass.
+
+Unsupported blur starts with an opaque surface. Reduced-transparency preference,
+the in-app opaque choice and forced colors remove backdrop blur. Forced colors
+use system surfaces, selection and text. Keep information, controls and focus
+available when effects disappear; do not add nested blur or decorative panels.
+The existing logo and same-origin fonts remain the product identity.
+
+The full-width workspace header keeps labelled Work/Explore/Operate, context, search/commands and main actions visible. It wraps into useful rows. Secondary
+appearance utilities may use a disclosure. A resizable map yields space to the working center. Explore shows detail for selected evidence, not an empty placeholder. These are the bounded shared-shell/Explore changes, not evidence
+that every route has completed the redesign.
 
 ## Typography
 
-The body font is Inter, loaded in `src/index.css` with a system-UI fallback
-stack (`system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-sans-serif`) so text never disappears before the webfont loads. `index.css`
-adds one custom size token, `--text-tiny` (`0.625rem` / 10px), for the
-smallest captions and badges; every other size comes from Tailwind's default
-type scale so it stays consistent with the rest of the ecosystem's tooling.
+The body font is Inter, loaded in `src/index.css` with a system-UI fallback. Its fallback stack is `system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`. Text remains visible before the webfont loads. `index.css` adds `--text-tiny` for readable metadata and badges. Its size is `0.75rem`, or 12px at the default root size. Required information must not be
+shrunk to fit. Other sizes use the existing Tailwind scale; keep readable line
+heights, wrapping and user text enlargement. Inter is bundled with the build,
+not fetched from a remote font service.
 
 ## Spacing and density
 
-`--radius` (`0.625rem`) is the one spacing primitive in `index.css`; `-sm`,
-`-md`, `-lg` and `-xl` are derived from it (`calc(var(--radius) ± Npx)`) so
-corner rounding stays proportional across control sizes. Interactive density
-follows the existing components rather than a separate scale: header and
-launcher controls (`ChatHeader`, the chat FAB) use a 40px (`size-10`) touch
-target, compact inline controls (Atlas filter clauses) use a 32px (`size-8`/
-`h-8`) target, and no actionable control drops below 24px — consistent with
-[WCAG 2.2 2.5.8 Target Size (Minimum)](https://www.w3.org/TR/WCAG22/#target-size-minimum).
-Required actions wrap onto additional lines at narrow widths instead of being
-clipped or hidden (see `FilterBar`'s `flex-wrap`/`min-w-0` layout).
+`--radius` is `0.75rem` (12px at the default root size). The `-sm`, `-md`,
+`-lg` and `-xl` corner tokens derive from it, giving 8px, 10px, 12px and 16px
+respectively. Use aligned rows, modest padding and fewer nested containers for
+density, not tiny text or fixed-height boxes that clip wrapping content.
+
+| Workspace density token | Compact (default) | Comfortable | Coarse pointer |
+|---|---|---|---|
+| `--control-height` | `2.25rem` / 36px | `2.75rem` / 44px | At least `2.75rem` / 44px |
+| `--record-height` (two-line row) | `3.25rem` / 52px | `4rem` / 64px | `4rem` / 64px |
+| `--panel-padding` | `0.75rem` / 12px | `1rem` / 16px | Selected density padding |
+
+These are minimum sizing tokens, not limits on wrapped content. Existing
+component-specific sizes may be larger; legacy controls still need their own
+route-level target review. No actionable control should fall below 24px,
+consistent with [WCAG 2.2 2.5.8 Target Size (Minimum)](https://www.w3.org/TR/WCAG22/#target-size-minimum).
+Coarse-pointer usability takes priority over compact presentation. Required
+actions wrap at narrow widths instead of being clipped or hidden.
+
+### Appearance preferences
+
+The existing `ThemeProvider` exposes `theme`/`setTheme`, `density`/`setDensity`,
+`motion`/`setMotion` and `transparency`/`setTransparency`, alongside its existing
+base-color controls. There is no second preference provider.
+
+| Preference | Values | Default | Persistence |
+|---|---|---|---|
+| Theme | `system`, `light`, `dark`, `glass` | `system` | `vite-ui-theme` unless the provider supplies another storage key |
+| Density | `compact`, `comfortable` | `compact` | `agent-webui.density` |
+| Motion | `system`, `reduce` | `system` | `agent-webui.motion` |
+| Transparency | `glass`, `opaque` | `glass` | `agent-webui.transparency` |
+
+The provider applies one theme class and root `data-density`, `data-motion` and
+`data-transparency` attributes. System theme follows color-scheme changes.
+Invalid stored values use safe defaults; unavailable storage leaves the current
+controls usable without promising persistence. A system reduction request is
+never overridden by a more expressive in-app choice.
 
 ## Focus
 
@@ -102,9 +156,15 @@ loading/error fallbacks:
 
 ## Reduced motion
 
-`src/index.css` disables nonessential animation and transition motion for
-every element when the user has requested it, while leaving all text, icons
-and layout fully visible:
+State-linked transitions use `--motion-fast: 110ms`, `--motion-context: 180ms`,
+`--motion-panel: 220ms` and `--motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1)`.
+Current uses include control color feedback, map selection feedback and an 8px
+map reveal. These token durations are not measured interaction/frame budgets.
+State changes must not wait for an animation to finish; newer input retargets or
+interrupts it. Never use idle visual activity or fabricated progress to make the
+workspace appear dynamic.
+
+`src/index.css` disables nonessential animation and transitions when the user requests reduced motion. All text, icons and layout remain visible:
 
 ```css
 @media (prefers-reduced-motion: reduce) {
@@ -116,6 +176,12 @@ and layout fully visible:
   }
 }
 ```
+
+The in-app `motion: reduce` preference applies the same global floor through
+`data-motion='reduce'`; `motion: system` leaves the operating-system media query
+in force. Workspace map reveal is explicitly removed for either reduction path.
+Text, status and available actions remain visible. First-paint behavior, repeated
+input, cancellation and focus still require rendered qualification.
 
 Components that need an explicit reduced-motion alternative beyond this
 global floor (for example the chat drawer's open/close transition and its
@@ -131,3 +197,12 @@ Build new surfaces from `src/components/ui/` and these tokens; do not add a
 parallel button, dialog, filter, tooltip, renderer or color system. A pattern
 borrowed from an outside source is paraphrased in original wording only after
 its license is checked, and never pulled in as a live or copied dependency.
+
+## Qualification boundary
+
+Canopy Glass extends `WEBUI-DESIGN-R002.1.1`, `WEBUI-DESIGN-R004.1.1` and `WEBUI-DESIGN-R005.2`. The shared-shell/Explore slice extends `WEBUI-APPS-R049.2.1`. This page documents source defaults
+and interaction requirements, not full theme acceptance. Complete graph, editor,
+run, administration and authentication review, all-route mobile parity, manual
+accessibility, measured performance and installed-provider evidence remain open
+under the existing specifications. A passing token audit or screenshot alone
+cannot establish those outcomes.
