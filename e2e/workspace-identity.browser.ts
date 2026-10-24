@@ -206,11 +206,41 @@ async function checkNarrowTask(page: Page, map: Locator, size: { width: number; 
   expect(task!.y).toBeLessThan(290)
   expect(task!.height).toBeGreaterThanOrEqual(340)
   await expectDock(page)
-  await hit(page.getByRole('button', { name: 'Reprobe readiness', exact: true }))
-  await page.locator('.workspace-task-surface .workspace-route-content').evaluate((element) => {
-    element.scrollTop = element.scrollHeight
+  const reprobe = page.getByRole('button', { name: 'Reprobe readiness', exact: true })
+  const initial = await reprobe.evaluate((element) => {
+    const rect = (node: Element) => {
+      const box = node.getBoundingClientRect()
+      return { x: box.x, y: box.y, width: box.width, height: box.height }
+    }
+    const ancestors = []
+    for (let node = element.parentElement; node; node = node.parentElement) {
+      const style = getComputedStyle(node)
+      ancestors.push({
+        className: node.className,
+        rect: rect(node),
+        scrollTop: node.scrollTop,
+        clientHeight: node.clientHeight,
+        scrollHeight: node.scrollHeight,
+        overflow: style.overflow,
+        scrollPadding: style.scrollPadding,
+      })
+    }
+    return { target: rect(element), viewport: { width: innerWidth, height: innerHeight }, ancestors }
   })
-  await hit(page.getByRole('button', { name: 'Refresh capabilities', exact: true }))
+  console.log('native-task-entry-geometry', JSON.stringify(initial))
+  await test.info().attach('native-task-entry-geometry.json', {
+    body: JSON.stringify(initial, null, 2),
+    contentType: 'application/json',
+  })
+  // The in-flow assistant shares the task area. Reach actions using actual Tab
+  // navigation, not a programmatic scroll that can reveal overflow:hidden content.
+  await tabTo(page, reprobe)
+  await expect(reprobe).toBeFocused()
+  await hit(reprobe)
+  const refresh = page.getByRole('button', { name: 'Refresh capabilities', exact: true })
+  await tabTo(page, refresh)
+  await expect(refresh).toBeFocused()
+  await hit(refresh)
   await expectDock(page)
   await tabTo(page, page.getByRole('textbox', { name: 'Filter fleet children' }))
   await hit(page.getByRole('textbox', { name: 'Filter fleet children' }))

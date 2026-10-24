@@ -83,6 +83,14 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - name: Workspace identity, native readability and cancellation
         run: pnpm exec playwright test --config e2e/workspace-identity.config.ts
+      - name: Preserve workspace identity and native task access evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workspace-identity-browser
+          path: test-results/workspace-identity*/
+          retention-days: 14
+          if-no-files-found: error
       - name: Catalog destination history and responsive navigation
         run: pnpm exec playwright test --config e2e/workspace-branches.config.ts workspace-catalog
       - name: Canopy Glass retained evidence and effects

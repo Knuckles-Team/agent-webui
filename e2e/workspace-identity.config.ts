@@ -6,7 +6,12 @@ export default defineConfig({
   testMatch: 'workspace-identity.browser.ts',
   workers: 1,
   reporter: 'list',
-  use: { baseURL: 'http://127.0.0.1:5206', browserName: 'chromium' },
+  use: {
+    baseURL: 'http://127.0.0.1:5206',
+    browserName: 'chromium',
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
+  },
   webServer: {
     cwd: fileURLToPath(new URL('..', import.meta.url)),
     command: 'corepack pnpm exec vite --host 127.0.0.1 --port 5206 --strictPort',

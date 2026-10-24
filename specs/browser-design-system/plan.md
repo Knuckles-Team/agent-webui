@@ -178,3 +178,12 @@ and CanvasText for selected content, with Highlight borders and existing weight
 to mark selection. Keep automatic forced-color adjustment and recapture both
 light and dark system palettes. Computed contrast alone cannot detect backplate
 painting defects; actual screenshot review remains required.
+
+### Work focus clearance correction (2026-10-24)
+
+Hosted geometry isolated the remaining graph clipping to false launcher clearance.
+Work already places chat in flow, but inherited a six-rem bottom scroll inset.
+Native focus centered the diagram above its task scrollport edge.
+Remove that inset only for Work; retain clearance where the floating launcher exists.
+Require full diagram visibility after native focus, before browser-test reveal.
+Keep responsive sizing, keyboard pan, and the equivalent dependency list unchanged.

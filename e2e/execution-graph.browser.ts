@@ -122,7 +122,43 @@ for (const viewport of [
       await page.evaluate(
         () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
       )
-      await target.scrollIntoViewIfNeeded()
+      // Preserve native focus geometry separately from Playwright's reveal.
+      // Ancestor rectangles make any clipped edge attributable, not guessed.
+      for (const phase of ['native-focus', 'playwright-reveal'] as const) {
+        if (phase === 'playwright-reveal') await target.scrollIntoViewIfNeeded()
+        const geometry = await target.evaluate((el) => {
+          const describe = (node: Element) => {
+            const style = getComputedStyle(node)
+            const rect = node.getBoundingClientRect()
+            return {
+              tag: node.tagName,
+              class: node.className,
+              rect: rect.toJSON() as Record<string, number>,
+              client: [node.clientWidth, node.clientHeight, node.clientLeft, node.clientTop],
+              scroll: [node.scrollWidth, node.scrollHeight, node.scrollLeft, node.scrollTop],
+              overflow: [style.overflowX, style.overflowY],
+              padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+              scrollPadding: style.scrollPadding,
+              position: style.position,
+            }
+          }
+          const ancestors = []
+          for (let node = el.parentElement; node; node = node.parentElement) ancestors.push(describe(node))
+          const header = document.querySelector('.workspace-context-rail')
+          return {
+            viewport: [innerWidth, innerHeight, scrollX, scrollY],
+            target: describe(el),
+            header: header ? describe(header) : null,
+            ancestors,
+          }
+        })
+        await test.info().attach(`${name}-${phase}-geometry`, {
+          body: JSON.stringify(geometry, null, 2),
+          contentType: 'application/json',
+        })
+        console.log(`${name}-${phase}-geometry ${JSON.stringify(geometry)}`)
+        if (name === 'diagram' && phase === 'native-focus') await expect(target).toBeInViewport({ ratio: 1 })
+      }
       await page.screenshot({
         path: test
           .info()

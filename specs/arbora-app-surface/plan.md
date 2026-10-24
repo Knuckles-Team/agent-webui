@@ -978,3 +978,13 @@ Qualify the diagram and step details at wide, narrow, low-height and enlarged-te
 sizes. Never weaken the viewport ratio or replace the equivalent dependency list
 to accommodate the new header. Read admission, lifecycle honesty and graph
 semantics remain unchanged.
+
+
+### Hosted native assistant qualification
+
+The first draft passed hosted typecheck and full lint on c8bd060, composed with base 954a227.
+The identity journey failed its initial narrow Operate action hit test.
+That result does not yet distinguish occlusion from missing keyboard navigation.
+Preserve initial geometry and failure captures. Reach each action with native Tab navigation, then retain the unchanged hit test.
+The advancing base also changed generated design evidence. Regenerate the composed history receipt without hand-editing status.
+Full native browser acceptance remains open.

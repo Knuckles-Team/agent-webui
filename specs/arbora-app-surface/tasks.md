@@ -351,5 +351,6 @@ that interrupted run is not validation. Hosted native dock, touch/keyboard,
 short/narrow, appearance and pixel qualification remain pending. The dock adds
 no provider, scheduler, data endpoint or semantic-tool authority.
 
-Typecheck, scoped typed lint and the production build passed. Whole-repository
-lint exceeded local memory; exact-candidate hosted lint remains pending.
+Typecheck, scoped typed lint and the production build passed. Local whole-repository
+lint exceeded memory. Hosted typecheck and full lint passed on c8bd060, composed
+with base 954a227. Browser qualification remains incomplete.

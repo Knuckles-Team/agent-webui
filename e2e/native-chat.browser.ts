@@ -210,10 +210,14 @@ test('retained long transcript keeps its real scrolling child and scroll-to-late
     const scroller = transcriptElement.locator(':scope > div').first()
     await scroller.scrollIntoViewIfNeeded()
     expect(await scroller.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true)
-    await scroller.hover()
-    await page.mouse.wheel(0, -10000)
-    await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeLessThan(50)
     const latest = panel.getByRole('button', { name: 'Scroll to latest message' })
+    if (await latest.isVisible()) await latest.click()
+    await expect
+      .poll(() => scroller.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop))
+      .toBeLessThan(3)
+    await scroller.hover()
+    await page.mouse.wheel(0, -(await scroller.evaluate((element) => element.scrollHeight)))
+    await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeLessThan(50)
     await latest.click()
     await expect
       .poll(() => scroller.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop))
