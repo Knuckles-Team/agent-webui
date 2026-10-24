@@ -239,3 +239,36 @@ live-provider or auth acceptance.
 - [ ] WEBUI-APPS-R004: Await authoritative current-plan and run-metrics bindings; task text does not replace these fields.
 - [ ] WEBUI-APPS-R006.4: Await supported-harness discovery and indexed sessions; browser conversations do not replace this producer.
 - [ ] WEBUI-APPS-R050: Qualify the composed served-provider journey and actual authorization boundaries.
+
+## Loaded destination branch delivery
+
+- [x] Present the existing validated command catalog as native DOM branches and a flat searchable list.
+- [x] Nest only confirmed fleet capabilities and selected-trace nodes beneath their loaded parents.
+- [x] Restore breadcrumb focus, retain the branch while searching, and retire unavailable entries.
+- [ ] Complete WEBUI-APPS-R046.2.2 and WEBUI-DESIGN-R005.1 acceptance across deepest dynamic leaves, real touch, manual screen readers and installed providers.
+
+This bounded source implementation uses main `c5c8ce0a3b5b9a09f30c5f9098a83407be396c22`.
+Branch drill-in is instantaneous native DOM navigation, not camera animation.
+It adds no browser-history entries until a destination is selected. The existing
+catalog bounds and typed dispatchers remain authoritative. It does not migrate
+legacy pages, infer backend relationships or complete the broad parent rows.
+
+
+Validation on this branch:
+
+- Workspace component suite: 14 files, 101 tests passed.
+- Branch browser journeys: 2 passed, with normal and reduced motion across four viewport shapes.
+- Existing viewport continuity journeys: 2 passed, including simulated keyboard occlusion.
+- Native Chromium 200-percent zoom journeys: 3 passed at 1280, 640 and 740 physical pixels.
+- Production asset regeneration, TypeScript compilation and strict documentation build passed.
+
+The browser fixtures supply synthetic identity and API responses. They are not
+live-provider or manual screen-reader acceptance. Earlier runs exposed hidden
+focus after dialog resize and animation settling. The shared viewport hook now
+repairs both cases. The final browser chain ran on unchanged source.
+
+Rendered captures use synthetic fleet data. The desktop capture is
+`branches-1440x900.png`, SHA-256 `1a697b1fe14272569417f50929f08d02d6b62ed0b8aa6b5a15624b1eb481480d`.
+The narrow capture is `branches-320x740.png`, SHA-256
+`31e22b9af6b865d0b056c13e8a4ab15161cbafe1e38328172122c9d5f4873ad3`.
+The browser test writes these files into its configured output directory.

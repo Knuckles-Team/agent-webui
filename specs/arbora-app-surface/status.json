@@ -2076,7 +2076,10 @@
       "title": "Remaining complete navigation qualification",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "e2e/workspace-branches.browser.ts:2",
+        "src/components/workspace/__tests__/WorkspaceCommandBranches.test.tsx:2"
+      ]
     },
     {
       "id": "WEBUI-APPS-R049.1.7",

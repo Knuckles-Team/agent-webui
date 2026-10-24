@@ -1,5 +1,21 @@
 # Design-system verification
 
+## Loaded branch browsing regression
+
+`WorkspaceCommandBranches.test.tsx` covers native links, confirmed relationship
+grouping, breadcrumb focus and retirement, including retirement while hidden by
+search. Run `corepack pnpm exec playwright test --config e2e/workspace-branches.config.ts`
+for the rendered Operate journey with synthetic identity and fleet responses.
+Check keyboard drill-in, immediate ancestor return, global search and branch restoration.
+Check 44 CSS px targets, no horizontal overflow, native surface selection and real Back/Forward. Capture 320-by-740, 740-by-320, 1440-by-900 and 587-by-913
+CSS px layouts under both motion preferences.
+
+This is partial WEBUI-DESIGN-R005.1 evidence for loaded branches. No camera
+animation or scaled screenshot is introduced. Full dynamic depth, real touch,
+manual screen-reader, native-device and installed-provider acceptance remain open.
+
+## General verification matrix
+
 | Test | Fixture | Pass |
 |---|---|---|
 | Token contrast | Light/dark token table | Text and controls meet WCAG 2.2 AA contrast where applicable |

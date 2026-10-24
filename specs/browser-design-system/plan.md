@@ -10,7 +10,7 @@ Inputs and actions expose name, role, state and error association. Dynamic resul
 
 ## Review evidence
 
-Create synthetic chat, Atlas and operational-form fixtures. Cover viewport widths 320, 375, 768 and 1440px, with light/dark and reduced-motion variants. Commit small baseline/after screenshots only if the repository's artifact policy permits; otherwise publish CI artifacts and record URLs/digests in `tasks.md`. No screenshot may contain real tenant, personal or secret data. Assess contrast and accessible names automatically, then perform keyboard and screen-reader manual review with a short result record. Check copied patterns and external text against licensing before adoption; do not add a telemetry network call.
+Create synthetic chat, Atlas and operational-form fixtures. Cover viewport widths 320, 375, 768 and 1440px, with light/dark and reduced-motion variants. Commit small baseline/after screenshots only if the repository's artifact policy permits. Otherwise publish CI artifacts and record URLs/digests in `tasks.md`. No screenshot may contain real tenant, personal or secret data. Assess contrast and accessible names automatically, then perform keyboard and screen-reader manual review with a short result record. Check copied patterns and external text against licensing before adoption; do not add a telemetry network call.
 
 ## Fresh checkout
 
@@ -27,3 +27,22 @@ Reuse table virtualization, graph worker layout and LOD transport rather than ad
 ## Consolidated workspace acceptance
 
 WEBUI-APPS-R049.1/R049.2 define three primary contexts instead of page-per-feature navigation. Density and responsiveness must serve that redesigned composition. Preserving an old standalone page under a compact rail is not visual acceptance. Reuse accessible domain widgets inside the new context surfaces. Record task navigation and scrolling outcomes alongside performance, focus and viewport evidence.
+
+## Loaded workspace branch navigation
+
+Extend the existing command catalog for partial WEBUI-DESIGN-R005.1 and
+WEBUI-APPS-R046.2.2 delivery. Branches and the flat searchable list consume the
+same validated, caller-visible destinations. Context roots contain loaded leaves;
+confirmed fleet capabilities nest under their server and trace nodes under their
+loaded trace. No other relationship is inferred. Drilling changes readable DOM
+content without camera travel, scaling text or adding browser-history entries.
+Breadcrumbs return to any visible ancestor and restore focus; selecting a leaf
+uses the existing typed dispatcher and retained workspace surface. Missing
+branches retire immediately with their catalog. Full dynamic-leaf, shared-entity,
+installed-provider and manual accessibility acceptance remain open.
+
+The portalled command dialog shares the workspace's existing deferred focus
+reveal and listener cleanup. Its height and placement follow the visual viewport
+at normal scale. Resizing must keep a retained focused leaf reachable. Pinch zoom
+does not reflow the workspace or force focus scrolling. Keyboard occlusion tests
+using an overridden viewport height remain simulated evidence.
