@@ -211,3 +211,6 @@ R005.3 source progress: `OperateCatalogPanel` renders the existing enhanced cata
 
 R005.3 and R049.1.2 source progress includes selected connector definition inspection through the existing enhanced catalog adapter.
 Full operational migration and provider connection acceptance remain unchecked.
+
+R049.1.2 next source batch: contextual readiness diagnosis, selected-check inspection and explicit reprobe through the supported dashboard adapter.
+Legacy alias retirement, complete migration and live-provider acceptance remain open.

@@ -6,6 +6,7 @@ import { conversationOwnerKey } from '@/lib/chat-store'
 import { useWorkspaceCommands } from './WorkspaceCommands'
 import { useWorkspaceAdmission } from './useWorkspaceAdmission'
 import { loadedOperateCommands } from './loaded-workspace-commands'
+import { OperateReadinessPanel } from './OperateReadinessPanel'
 import { OperateCatalogPanel } from './OperateCatalogPanel'
 import { OperateConnectorTiles } from './OperateConnectorTiles'
 import { useIdentity, type Identity } from '@/lib/auth'
@@ -151,6 +152,7 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
         </p>
       ) : (
         <>
+          <OperateReadinessPanel generation={generation} />
           <OperateCatalogPanel generation={generation} runtime={children} />
           <label className="flex flex-col gap-1">
             Filter fleet children

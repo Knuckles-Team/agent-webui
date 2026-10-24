@@ -584,3 +584,19 @@ Render lifecycle, authority, revision and digests without implying execution per
 Keep registration availability, MCP transport state and unknown provider connectivity distinct.
 Retire selection after catalog refresh, refusal or admission change.
 Full migration, provider connectivity and governed execution acceptance remain open.
+
+### Operate readiness diagnosis
+
+Use the supported dashboard readiness route for existing R049.1.2 health-context migration.
+Preserve returned rollups, dynamic checks, snapshot provenance and complete check evidence.
+Accept a validated diagnostic snapshot on HTTP 503; transport refusal remains distinct.
+The installed graph-analysis readiness action is unserved and cannot qualify this journey.
+Let operators select a returned check, inspect its evidence and explicitly reprobe.
+Replace the previous evidence on refresh and retire it on admission changes.
+Do not infer query readiness or fixed checks absent from the response.
+
+Inventory bounds: the workspace matrix assigns prompt/template editing to Work, so this lane leaves it there.
+Installed scheduling, pipeline, maintenance and model-management facades refuse unsupported operations.
+Fleet load/unload require authenticated MCP sessions and are not HTTP actions.
+Legacy broker topic/message requests do not match its advertised queue/publish contract.
+Readiness diagnosis uses the supported dashboard collector rather than those unavailable journeys.
