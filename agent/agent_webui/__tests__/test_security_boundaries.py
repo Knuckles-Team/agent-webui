@@ -665,6 +665,7 @@ def test_graph_route_admin_gate_is_narrowed_to_arbitrary_query_execution() -> No
     [
         '/api/v1/ops/fleet.status',
         '/api/v1/ops/fleet.catalog.list',
+        '/api/v1/ops/runs.current_plan',
         '/api/graph/ask',
         '/api/graph/ask-data',
         '/api/graph/catalog',
@@ -719,6 +720,9 @@ def test_unknown_post_route_keeps_the_write_floor() -> None:
 @pytest.mark.parametrize(
     'path',
     [
+        '/api/v1/ops/runs.cancel',
+        '/api/v1/ops/runs.current_plan/mutation',
+        '/api/v1/ops/runs.current_plan_unknown',
         '/api/v1/ops/fleet.call',
         '/api/v1/ops/fleet.tools.load',
         '/api/v1/ops/fleet.tools.unload',
@@ -979,16 +983,20 @@ def test_fleet_discovery_host_entrypoint(
     mock_agent, authenticated_client_factory, operation
 ):
     """The real host admits readers without granting fleet effect authority."""
-    app = create_agent_web_app(
-        mock_agent, workspace_helpers={}, listener_host='127.0.0.1'
-    )
     calls = []
 
-    @app.post(f'/api/v1/ops/{operation}')
     async def discovery():
         calls.append(operation)
         return {'value': {}}
 
+    app = create_agent_web_app(
+        mock_agent,
+        workspace_helpers={},
+        listener_host='127.0.0.1',
+        application_composer=lambda app: app.add_api_route(
+            f'/api/v1/ops/{operation}', discovery, methods=['POST']
+        ),
+    )
     with authenticated_client_factory(app, scope='kg:read mcp:discover') as client:
         response = client.post(f'/api/v1/ops/{operation}', json={})
     assert response.status_code == 200
@@ -1003,17 +1011,111 @@ def test_fleet_discovery_host_entrypoint(
 def test_fleet_effect_host_entrypoint_refuses_reader(
     mock_agent, authenticated_client_factory, operation
 ):
-    app = create_agent_web_app(
-        mock_agent, workspace_helpers={}, listener_host='127.0.0.1'
-    )
     calls = []
 
-    @app.post(f'/api/v1/ops/{operation}')
     async def effect():
         calls.append(operation)
         return {'value': {}}
 
+    app = create_agent_web_app(
+        mock_agent,
+        workspace_helpers={},
+        listener_host='127.0.0.1',
+        application_composer=lambda app: app.add_api_route(
+            f'/api/v1/ops/{operation}', effect, methods=['POST']
+        ),
+    )
     with authenticated_client_factory(app, scope='kg:read mcp:discover') as client:
         response = client.post(f'/api/v1/ops/{operation}', json={})
     assert response.status_code == 403
     assert calls == []
+
+
+# spec: WEBUI-APPS-R004.4
+def test_current_plan_host_entrypoint(mock_agent, authenticated_client_factory):
+    """Exact read admission retains authentication and caller scope checks."""
+    calls = []
+
+    async def current_plan():
+        calls.append('read')
+        return {'value': {'availability': 'unavailable', 'snapshot': None}}
+
+    app = create_agent_web_app(
+        mock_agent,
+        workspace_helpers={},
+        listener_host='127.0.0.1',
+        application_composer=lambda app: app.add_api_route(
+            '/api/v1/ops/runs.current_plan', current_plan, methods=['POST']
+        ),
+    )
+    with authenticated_client_factory(app, scope='kg:read') as client:
+        assert client.post('/api/v1/ops/runs.current_plan', json={}).status_code == 200
+    assert calls == ['read']
+    assert (
+        TestClient(app).post('/api/v1/ops/runs.current_plan', json={}).status_code
+        == 401
+    )
+    assert calls == ['read']
+
+
+@pytest.mark.parametrize(
+    'operation',
+    ['runs.cancel', 'runs.current_plan/mutation', 'runs.current_plan_unknown'],
+)
+def test_current_plan_neighbors_refuse_reader(
+    mock_agent, authenticated_client_factory, operation
+):
+    calls = []
+
+    async def effect():
+        calls.append(operation)
+        return {}
+
+    app = create_agent_web_app(
+        mock_agent,
+        workspace_helpers={},
+        listener_host='127.0.0.1',
+        application_composer=lambda app: app.add_api_route(
+            f'/api/v1/ops/{operation}', effect, methods=['POST']
+        ),
+    )
+    with authenticated_client_factory(app, scope='kg:read') as client:
+        assert client.post(f'/api/v1/ops/{operation}', json={}).status_code == 403
+    assert calls == []
+
+
+@pytest.mark.parametrize('method', ['PUT', 'PATCH', 'DELETE'])
+def test_current_plan_other_methods_keep_write_floor(method):
+    assert (
+        WebUIAuthorizationMiddleware._required_scope(
+            scope_type='http', path='/api/v1/ops/runs.current_plan', method=method
+        )
+        == 'kg:write'
+    )
+
+
+@pytest.mark.parametrize('status', [403, 404, 503])
+def test_current_plan_host_preserves_downstream_refusal(
+    mock_agent, authenticated_client_factory, status
+):
+    """Read classification cannot turn a downstream refusal into plan success."""
+    calls = []
+
+    async def refused_plan():
+        calls.append('read')
+        raise FastAPIHTTPException(
+            status_code=status, detail='Current plan unavailable'
+        )
+
+    app = create_agent_web_app(
+        mock_agent,
+        workspace_helpers={},
+        listener_host='127.0.0.1',
+        application_composer=lambda app: app.add_api_route(
+            '/api/v1/ops/runs.current_plan', refused_plan, methods=['POST']
+        ),
+    )
+    with authenticated_client_factory(app, scope='kg:read') as client:
+        response = client.post('/api/v1/ops/runs.current_plan', json={})
+    assert response.status_code == status
+    assert calls == ['read']

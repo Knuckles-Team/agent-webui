@@ -786,3 +786,17 @@ turns. Generic provider estimates remain separate and exclude Arbora-tagged mess
 Focused tests cover the decoder, Vercel stream, rendered Chat, replay and caller
 separation. They do not establish native producer, restart, context-budget or
 full-session acceptance.
+
+### Read-only current plan in the selected task
+
+Extend WEBUI-APPS-R004.4 through the existing Arbora operation transport.
+The selected task's validated `metadata.arbora.runId` selects `runs.current_plan`.
+Arbora projects that reference from its stored task run identifier; its presence
+does not prove plan availability. The independent Work trace URL and
+`runTraceRef` never select this read. Render only the SDK current-plan snapshot,
+not an executable task plan or a plan inferred from chat content.
+Clear expired snapshots and retire requests across task and identity changes.
+Classify only the canonical `Effect.READ` POST as a host read; retain
+authentication, CSRF and downstream caller policy. Do not grant write access
+to compensate for a read transport. This bounded slice adds no editing,
+metrics, harness configuration, trace association or provider acceptance.

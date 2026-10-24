@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.3
+// spec: WEBUI-APPS-R049.1.3, WEBUI-APPS-R004.4
 import { act, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,16 +6,28 @@ import { PageContextProvider } from '@/lib/page-context'
 import type { WebMcpToolDefinition } from '@/lib/webmcp/types'
 import { ApiError } from '@/lib/api-validation'
 import { workApi } from '@/lib/work-workspace'
+import { readCurrentPlan } from '@/lib/current-plan'
 import WorkWorkspace from '../WorkWorkspace'
-const state = vi.hoisted(() => ({ expires: 1, role: 'user', tools: new Map<string, WebMcpToolDefinition>() }))
+const state = vi.hoisted(() => ({
+  expires: 1,
+  role: 'user',
+  user: 'owner',
+  tenant: 'tenant',
+  csrf: 'csrf-a',
+  tools: new Map<string, WebMcpToolDefinition>(),
+}))
+vi.mock('@/lib/current-plan', async (original) => ({
+  ...(await original<object>()),
+  readCurrentPlan: vi.fn(async () => ({ availability: 'unavailable', snapshot: null })),
+}))
 vi.mock('@/lib/auth', () => ({
   useIdentity: () => ({
     loading: false,
     identity: {
-      userKey: 'owner',
+      userKey: state.user,
       role: state.role,
       needsSignIn: false,
-      raw: { tenant: 'tenant', authenticated: true, roles: [], expires_at: state.expires },
+      raw: { tenant: state.tenant, csrf_token: state.csrf, authenticated: true, roles: [], expires_at: state.expires },
     },
   }),
 }))
@@ -56,12 +68,53 @@ function setup() {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(workApi.getTask).mockResolvedValue({ id: 'task-a', status: { state: 'working' } })
   state.tools.clear()
   state.expires = 1
   state.role = 'user'
+  state.user = 'owner'
+  state.tenant = 'tenant'
+  state.csrf = 'csrf-a'
   window.history.replaceState({}, '', '/workspace/work?task=task-a')
 })
 describe('Work admission and authoritative task availability', () => {
+  it.each(['principal', 'tenant', 'expiry', 'csrf'] as const)(
+    'withdraws a current plan across observed %s admission changes',
+    async (change) => {
+      vi.mocked(workApi.getTask).mockResolvedValue({ id: 'task-a', metadata: { arbora: { runId: 'run-a' } } })
+      vi.mocked(readCurrentPlan).mockResolvedValueOnce({
+        availability: 'available',
+        snapshot: {
+          run_id: 'run-a',
+          revision: 1,
+          observed_at: new Date(Date.now() - 1000).toISOString(),
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+          items: [{ text: 'Private plan', status: 'pending' }],
+        },
+      })
+      const view = setup()
+      await screen.findByText('Private plan')
+      const pending = new Promise<never>(() => {
+        /* Deliberately pending new admission. */
+      })
+      vi.mocked(workApi.getTask).mockReturnValueOnce(pending)
+      if (change === 'principal') state.user = 'other-owner'
+      if (change === 'tenant') state.tenant = 'other-tenant'
+      if (change === 'expiry') state.expires = 2
+      if (change === 'csrf') state.csrf = 'csrf-b'
+      view.rerender()
+      expect(screen.queryByText('Private plan')).not.toBeInTheDocument()
+      expect(workApi.getTask).toHaveBeenCalledTimes(2)
+      expect(
+        JSON.stringify(
+          view.client
+            .getQueryCache()
+            .getAll()
+            .map((query) => query.queryKey),
+        ),
+      ).not.toContain('csrf-a')
+    },
+  )
   it('does not reuse a fresh cached task after observed admission renewal', async () => {
     const view = setup()
     await screen.findByText('Status: working')
