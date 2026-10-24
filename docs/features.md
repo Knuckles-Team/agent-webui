@@ -27,8 +27,9 @@ provider, channel, destination, or retention period.
   object, table, RDF, code, and temporal surfaces under Atlas.
 - **ACP and AG-UI** share the composed agent runtime rather than creating a
   second browser-only execution path.
-- **Graph activity** renders specialist routing, parallel execution, tool calls,
-  and expert reasoning in a collapsible timeline.
+- **Public activity components** render supported summary and tool parts when
+  a provider supplies them. The current Arbora adapter waits for the final
+  result. It forwards text and identity/usage metadata, not live rich activity.
 - **Human approval** intercepts security-sensitive tool calls before execution.
 - **Conversation persistence** combines per-user local presentation state with
   server-side chat records from `/api/enhanced/chats`.
@@ -108,3 +109,20 @@ served operations; a feature whose operation is not served answers 501
 `not_available`. Composition grants no identity or session authority. The host
 must still supply its configured `session_boundary` and enforce its own
 admission contract.
+
+## Execution inspection boundaries
+
+Work links the current response to its task when explicit matching metadata is
+available. It also offers independent task and trace/node inspection. Selecting
+a trace node does not retarget Chat, and trace spans are not spawned subagents.
+The current-plan panel is read-only and uses the selected task's validated `runId` rather than an independently selected trace.
+
+Observability renders a `parentId` trace waterfall. That view describes span
+nesting, not the dependency DAG of agent orchestration. Existing collapsible
+components do not prove live public summaries, tool events or child conversations.
+
+The [Work specification](https://github.com/Knuckles-Team/agent-webui/blob/main/specs/arbora-app-surface/requirements.md) retains
+nested execution navigation, separate hierarchy/dependency edges and stable deep
+links as remaining acceptance work. Public detail expansion also requires qualification. Targeted
+active-child messaging and completed-child continuation require distinct
+backend capabilities. Neither action is supplied by ordinary node selection.
