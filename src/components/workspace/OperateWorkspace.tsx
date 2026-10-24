@@ -6,6 +6,7 @@ import { conversationOwnerKey } from '@/lib/chat-store'
 import { useWorkspaceCommands } from './WorkspaceCommands'
 import { useWorkspaceAdmission } from './useWorkspaceAdmission'
 import { loadedOperateCommands } from './loaded-workspace-commands'
+import { OperateConnectorTiles } from './OperateConnectorTiles'
 import { useIdentity, type Identity } from '@/lib/auth'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
 import { useWebMcpToolSet } from '@/lib/webmcp/provider'
@@ -85,9 +86,6 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
   const selectedServer =
     state.server && children && Object.hasOwn(children, state.server) ? children[state.server] : undefined
   const selectedItem = items.find((item) => item.id === state.item && item.server === state.server)
-  const visibleServers = Object.keys(children ?? {}).filter((name) =>
-    name.toLowerCase().includes(state.q.toLowerCase()),
-  )
   const serverItems = items.filter((item) => item.server === state.server)
   useEffect(() => {
     if (previous.current !== selectedTip) {
@@ -172,13 +170,14 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
                   Fleet status could not be confirmed. Access or the served operation may be unavailable.
                 </p>
               )}
-              {!status.isError && children && visibleServers.length === 0 && <p>No matching fleet children.</p>}
-              {visibleServers.map((server) => (
-                <div key={server} className="flex min-w-0 flex-col gap-1">
-                  {link({ ...state, server, item: null }, server, state.server === server)}
-                  <span className="text-xs">Reported state: {children![server].state}</span>
-                </div>
-              ))}
+              {!status.isError && children && (
+                <OperateConnectorTiles
+                  childrenByName={children}
+                  filter={state.q}
+                  selected={state.server}
+                  renderLink={(server) => link({ ...state, server, item: null }, server, state.server === server)}
+                />
+              )}
               <button
                 className={control}
                 onClick={() => {

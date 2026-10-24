@@ -37,7 +37,7 @@ No task above names a requirement ID individually; together they must close ever
 - [ ] **WEBUI-APPS-R005.1.1:** Registry role contract.
 - [ ] **WEBUI-APPS-R005.1.2:** Rendered role filtering.
 - [ ] **WEBUI-APPS-R005.2:** Layout saved per user.
-- [ ] **WEBUI-APPS-R005.3:** Connector tiles from the catalog.
+- [ ] **WEBUI-APPS-R005.3:** Operate renders tiles for returned fleet children with source regression coverage. Complete connector catalog and connection-state acceptance remain open.
 - [ ] **WEBUI-APPS-R005.4:** One chat session list.
 - [ ] **WEBUI-APPS-R005.5:** Every route renders.
 - [ ] **WEBUI-APPS-R005.5.1:** Census detects a throwing view.

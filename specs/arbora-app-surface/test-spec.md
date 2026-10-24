@@ -37,7 +37,7 @@ Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`
 | WEBUI-APPS-R005.1.1 | src/lib/__tests__/nav-registry.test.ts | Registry role contract. |
 | WEBUI-APPS-R005.1.2 | Planned rendered sidebar and route-shell acceptance | Rendered role filtering. |
 | WEBUI-APPS-R005.2 | src/components/views/__tests__/DashboardView.test.tsx | Layout saved per user. |
-| WEBUI-APPS-R005.3 | src/components/views/__tests__/DashboardConnectorTiles.test.tsx | Connector tiles from the catalog. |
+| WEBUI-APPS-R005.3 | src/components/views/__tests__/DashboardConnectorTiles.test.tsx | Mount Operate through the browser adapter with HTTP fixtures. Check tiles without tools, reported state, zero/absent counters, filter and selection. Check loading, empty and refused refresh. Assert no connector data in browser storage. This is partial source presentation evidence. Complete catalog membership, connection state and live-provider acceptance remain open. |
 | WEBUI-APPS-R005.4 | src/components/__tests__/chat-session-sync.test.tsx | One chat session list. |
 | WEBUI-APPS-R005.5 | src/__tests__/routes/route-render.hostile.test.tsx | Every route renders. |
 | WEBUI-APPS-R005.5.1 | src/__tests__/routes/route-render.hostile.test.tsx | Census detects a throwing view. |
