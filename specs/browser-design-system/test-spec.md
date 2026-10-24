@@ -232,6 +232,8 @@ Cover the unsecured-install warning, destructive Badge, calendar marker and shar
 Check paired foregrounds at rest and over 90% hover fills on each reading surface.
 Disabled controls retain their disabled semantics and use solid muted text/background pairs, not reduced text opacity.
 The hosted fixture must capture the dark security warning and disabled send control.
+In both forced-color palettes, check the visible Arbora word uses CanvasText on Canvas.
+Assert the brand link and its text color, contrast and actual screenshot appearance.
 
 Preserve the task's bottom scroll clearance for the fixed assistant launcher.
 At short heights, keyboard-focus and hit-test the final relationship action.

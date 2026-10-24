@@ -480,6 +480,10 @@
     background: Canvas;
     backdrop-filter: none;
   }
+  .workspace-context-rail #workspace-home {
+    color: CanvasText;
+    background: Canvas;
+  }
   .workspace-context-rail nav a[aria-current],
   .workspace-map-node[aria-current],
   .workspace-map-toggle[aria-expanded='true'],
