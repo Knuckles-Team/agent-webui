@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   csrf: 'session-a',
   roles: ['mcp:discover'],
 }))
+vi.mock('@/components/workspace/OperateReadinessPanel', () => ({ OperateReadinessPanel: () => null }))
 vi.mock('@/lib/operate-catalog', () => ({
   readOperateCatalog: vi.fn(async () => ({ source: 'epistemic_graph', servers: [], components: [] })),
 }))

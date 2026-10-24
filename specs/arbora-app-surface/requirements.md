@@ -246,3 +246,6 @@ R005.3 and R049.1.2 partial implementation includes contextual catalog tool and 
 Returned definitions retain their identities and explicit connector associations.
 MCP runtime state describes transport; it does not establish upstream provider connectivity.
 Both requirements retain their existing acceptance gaps.
+
+R049.1.2 readiness migration preserves the supported dashboard snapshot and its explicit reprobe action.
+Diagnostic HTTP 503 responses are distinct from unreadable, denied or unavailable transport responses.

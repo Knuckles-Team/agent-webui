@@ -284,3 +284,19 @@ The built browser selected each definition, changed connectors, and retired the 
 Unknown runtime evidence remained explicit. HTTP 503 withdrawal and recovery passed without browser errors.
 The journey retained the synthetic identity port and root-first navigation described above.
 Provider connectivity, direct entry and full authentication acceptance remain open.
+
+### Contextual readiness journey
+
+Validate dynamic check selection, complete diagnostic evidence, provenance and explicit reprobe through the real typed adapter.
+Cover diagnostic HTTP 503, malformed responses, denied reads, stale response retirement and admission changes.
+Qualify the installed collector and dashboard route with synthetic registered probes before claiming served integration.
+Keep live-provider, native control and full migration acceptance separate.
+
+Installed qualification used Arbora 0.1.7, its real dashboard route, collector and public synthetic probe registry.
+The built workspace completed diagnosis and reprobe at 1366 by 900 and 375 by 812 pixels.
+Keyboard selection retained complete probe evidence. Mobile touch triggered reprobe.
+A real HTTP 503 snapshot transitioned to HTTP 200 after the synthetic dependency recovered.
+An invalid temporary bearer produced HTTP 401 and withdrew evidence; restoring the synthetic bearer allowed recovery.
+Neither viewport produced page errors or horizontal overflow. All 49 focused source tests passed.
+The browser entered through the root and existing history event; cold-entry assets remain separately owned.
+Synthetic engine and identity fixtures do not qualify live engine, identity-provider or complete migration acceptance.

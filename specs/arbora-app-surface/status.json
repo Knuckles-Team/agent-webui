@@ -1993,7 +1993,9 @@
       "title": "Complete contextual migration acceptance",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "src/components/workspace/__tests__/OperateReadinessPanel.test.tsx:1"
+      ]
     },
     {
       "id": "WEBUI-APPS-R049.1.3",

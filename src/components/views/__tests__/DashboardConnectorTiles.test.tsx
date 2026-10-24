@@ -16,7 +16,17 @@ const meta = { registry_digest: 'fixture', api_version: 'v1' }
 let status: unknown
 let refused: boolean
 let pending: boolean
-const fetcher = vi.fn(async (url: string, _options?: RequestInit) => {
+async function readDashboardFixture(url: string, _options?: RequestInit) {
+  if (url === '/api/dashboard/readiness')
+    return Response.json({
+      schema_version: 'arbora.readiness.v1',
+      snapshot_id: 'fixture',
+      observed_at: '2026-10-24T12:00:00Z',
+      overall: 'ready',
+      checks: { engine: { state: 'ready' } },
+      required_failures: [],
+      degraded_reasons: [],
+    })
   if (url === '/api/enhanced/tools')
     return Response.json({
       source: 'epistemic_graph',
@@ -32,7 +42,8 @@ const fetcher = vi.fn(async (url: string, _options?: RequestInit) => {
       meta,
     })
   throw new Error(`Unexpected request: ${url}`)
-})
+}
+const fetcher = vi.fn(readDashboardFixture)
 
 function fleetResponse() {
   if (pending)
@@ -72,6 +83,11 @@ afterEach(() => vi.unstubAllGlobals())
 describe('Operate connector inventory through the real browser adapter', () => {
   it('renders each returned connector even with no capabilities, preserving zero and missing counters', async () => {
     renderWithProviders(<OperateWorkspace />)
+    const readiness = within(screen.getByRole('region', { name: 'Readiness diagnosis' }))
+    fireEvent.click(await readiness.findByRole('button', { name: 'engine: ready' }))
+    expect(readiness.getByRole('region', { name: 'Readiness check engine' })).toHaveTextContent(
+      'Evidence from snapshot fixture',
+    )
     const records = within(await screen.findByRole('article', { name: 'Connector records' }))
     expect(records.getByText('Reported state: running')).toBeVisible()
     expect(records.getByText('Mounted tools').nextElementSibling).toHaveTextContent('0')
