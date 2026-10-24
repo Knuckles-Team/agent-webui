@@ -508,7 +508,10 @@
 }
 /* Work already has in-flow chat. Only body-flow routes need FAB clearance. */
 .workspace-body:not(.workspace-body-flow) > .workspace-route-content {
-  scroll-padding-block: 1rem;
+  scroll-padding-block: 0;
+}
+.workspace-body:not(.workspace-body-flow) > .workspace-route-content :focus-visible {
+  scroll-margin-block: 1rem;
 }
 .workspace-map-context p {
   margin-top: 0.25rem;

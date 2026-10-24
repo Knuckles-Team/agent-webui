@@ -187,3 +187,11 @@ Native focus centered the diagram above its task scrollport edge.
 Remove that inset only for Work; retain clearance where the floating launcher exists.
 Require full diagram visibility after native focus, before browser-test reveal.
 Keep responsive sizing, keyboard pan, and the equivalent dependency list unchanged.
+
+The follow-up geometry check confirmed full native diagram visibility.
+A nearly full-height details card still intersected the one-rem scroll inset.
+Work now applies that clearance to focused controls through scroll margins instead.
+Its unobstructed scrollport can show physically fitting content edge to edge.
+Original wide and narrow whole-card visibility checks remain unchanged.
+All viewport cases must expose every details field through keyboard scrolling.
+Oversized low-height and enlarged-text cards require complete reachability, not simultaneous visibility.
