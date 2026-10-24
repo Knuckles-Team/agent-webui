@@ -188,3 +188,22 @@ describe('nav-registry: ROUTES', () => {
     expect(isAtlasPath('/chat')).toBe(false)
   })
 })
+
+// spec: WEBUI-APPS-R045, WEBUI-APPS-R049.1.2
+it('limits compatibility redirects to audited entries and registered terminal destinations', () => {
+  expect(
+    ROUTES.filter((route) => route.redirects)
+      .map((route) => route.id)
+      .sort(),
+  ).toEqual(['control-plane.prompts', 'workspace.entry'])
+  for (const source of ROUTES) {
+    for (const destination of source.redirects ?? []) {
+      const target = ROUTE_REGISTRY.find((route) => route.id === destination.routeId)
+      expect(target).toBeDefined()
+      expect(target?.redirects).toBeUndefined()
+      expect(target?.path).not.toContain(':')
+    }
+  }
+  expect(matchRoute('/overview')?.route.id).toBe('observability.dashboard')
+  expect(matchRoute('/prompts')?.route.minRole).toBe('admin')
+})

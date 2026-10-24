@@ -4,7 +4,7 @@ import type { WebMcpExecutionOptions } from './types'
 import { canonicalJson, utf8ByteLength } from './canonical'
 import { parseStrictJson } from './strict-json'
 
-const validatedExecutors = new WeakSet<(...args: never[]) => unknown>()
+const validatedExecutors = new WeakMap<(...args: never[]) => unknown, (input: unknown) => unknown>()
 
 /** The local draft and Arbora channel both cap serialized results at 1.5 KiB. */
 export const WEBMCP_OUTPUT_BYTE_BUDGET = 1_500
@@ -53,11 +53,18 @@ export function createValidatedExecutor<Input, Output>(
     const output = await execute(input, options)
     return parseBoundedWebMcpOutput(outputSchema, output)
   }
-  validatedExecutors.add(validated)
+  validatedExecutors.set(validated, (input) => parseWebMcpInput(inputSchema, input))
   return validated
 }
 
 /** Runtime invariant for definitions eligible for the governed remote catalog. */
 export function isValidatedWebMcpExecutor(execute: (...args: never[]) => unknown): boolean {
   return validatedExecutors.has(execute)
+}
+
+/** Validate a proposal without invoking its tool callback or granting execution. */
+export function validateWebMcpArguments(execute: (...args: never[]) => unknown, input: unknown): void {
+  const validate = validatedExecutors.get(execute)
+  if (!validate) throw new Error('WebMCP tool has no retained input validator')
+  validate(input)
 }

@@ -53,7 +53,7 @@ import { WorkspaceContextRail } from './components/workspace/WorkspaceContextRai
 import { WorkspaceViewport } from './components/workspace/WorkspaceViewport'
 import { WorkspaceFrame } from './components/workspace/WorkspaceFrame'
 import { WorkspaceNavigation } from './components/WorkspaceNavigation'
-import { useWorkspaceLocation } from './lib/workspace-navigation'
+import { resolveWorkspaceRedirect, useWorkspaceEntry, useWorkspaceLocation } from './lib/workspace-navigation'
 import { WebMcpProvider, WorkspaceWebMcpControl } from './lib/webmcp/provider.tsx'
 
 // Lazy: only reachable behind `isObjectDetail`. A static import here pinned it
@@ -123,14 +123,18 @@ function deriveRouteFlags(match: ReturnType<typeof matchRoute>) {
  * plus two small effects/hooks, nothing stateful enough to need splitting further.
  */
 function useRouteState() {
-  const currentRoute = useWorkspaceLocation()
-
+  const location = useWorkspaceLocation()
+  const { identity, loading: identityLoading } = useIdentity()
+  const admitted = !identityLoading && !identity.needsSignIn
+  useWorkspaceEntry(identity.role, admitted)
+  // Derive the destination before rendering, not one effect later. This keeps the
+  // same Work instance (and unsaved drafts) when revisiting a compatibility link.
+  const currentRoute = (admitted ? resolveWorkspaceRedirect(location, identity.role) : null) ?? location
   const pathname = useMemo(() => new URL(currentRoute, window.location.origin).pathname, [currentRoute])
   const match = useMemo(() => matchRoute(pathname), [pathname])
   const { activeRoute, isChat, isDashboard, isNotFound, isObjectDetail, objectId, currentView } =
     deriveRouteFlags(match)
 
-  const { identity, loading: identityLoading } = useIdentity()
   /** The route-guard half of R9: the sidebar already hides what `identity.role` cannot
    * reach, but a caller who navigates (or is deep-linked) straight to a hidden path must
    * still be stopped here rather than seeing the page render. While `/auth/session` is
@@ -291,6 +295,14 @@ function RouteContentSurface({
   objectId,
 }: RouteContentSurfaceProps) {
   if (isChat || isDashboard) return null
+  // Compatibility entries never mount their retired standalone body, including while identity loads.
+  if (route.redirects && !routeAccessDenied)
+    return (
+      <div className="workspace-route-content flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-3 sm:p-5">
+        {renderRouteHeading(route)}
+        <RouteLoadingFallback />
+      </div>
+    )
 
   const body = routeAccessDenied ? (
     renderRouteAccessDenied(route, identity)
@@ -306,7 +318,7 @@ function RouteContentSurface({
 }
 
 function isWorkspaceProof(route: RouteDef): boolean {
-  return ['workspace.work-proof', 'workspace.explore-proof', 'workspace.operate'].includes(route.id)
+  return ['workspace.entry', 'workspace.work-proof', 'workspace.explore-proof', 'workspace.operate'].includes(route.id)
 }
 
 function workspaceBodyClass(route: RouteDef): string {

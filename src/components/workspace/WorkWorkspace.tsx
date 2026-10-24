@@ -5,7 +5,7 @@ import { useIdentity } from '@/lib/auth'
 import { conversationOwnerKey, useConversations } from '@/lib/chat-store'
 import { useConversationIdFromUrl } from '@/hooks/useConversationIdFromUrl'
 import { roleAtLeast } from '@/lib/nav-registry'
-import { useWorkspaceLocation } from '@/lib/workspace-navigation'
+import { resolveWorkspaceRedirect, useWorkspaceLocation } from '@/lib/workspace-navigation'
 import { usePageContextPublisher } from '@/lib/page-context'
 import { useWebMcpToolSet } from '@/lib/webmcp/provider'
 import { makeTool } from '@/lib/webmcp/tools'
@@ -59,7 +59,8 @@ function AuthorizedWork({
       cancellation.retire()
     }
   }, [cancellation])
-  const location = useWorkspaceLocation()
+  const currentLocation = useWorkspaceLocation()
+  const location = resolveWorkspaceRedirect(currentLocation, identity.role) ?? currentLocation
   const { state, error } = destination(location)
   const conversations = useConversations(conversationOwnerKey(identity))
   const [activeConversation, setActiveConversation] = useConversationIdFromUrl()
