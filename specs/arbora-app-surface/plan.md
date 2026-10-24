@@ -635,3 +635,19 @@ ConsoleConfirmView retains its direct plan-reference URL and human review bounda
 Chat's plan mode and routing-plan activity do not provide an authoritative current-run plan snapshot.
 Richer metrics, goal/workflow editing, IDE authoring and harness discovery remain migration obligations.
 This continuation preserves their legacy routes.
+
+### Task output inspection in Work
+
+WEBUI-APPS-R049.1.3 also renders returned task output inside the selected task.
+The producer is agents.tasks.get through the existing enhanced sessions detail facade.
+Arbora's A2ATask contains text artifacts and explicit metadata from WorkItemA2AAuthority.
+Artifact containment establishes its task association. No identifier parsing establishes any other association.
+Render contextId, metadata.arbora.runId and runTraceRef as opaque text when valid.
+Do not navigate from those references or infer a browser conversation, trace selection or subagent.
+Render only bounded text artifacts. Refuse unsupported or malformed output without hiding valid task status and cancellation controls.
+Preserve missing output and explicit producer refusal as distinct states.
+Component and synthetic browser fixtures qualify presentation only. Full migration and live-provider acceptance remain open.
+
+Task reads do not retry explicit 401, 403, 404 or 501 responses.
+Transient failures retain bounded retries. The caller can request another read explicitly.
+This avoids keeping cached output visible during retry backoff after an explicit refusal.

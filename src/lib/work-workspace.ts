@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { canonicalJson } from '@/lib/webmcp/canonical'
-import { fetchValidated } from '@/lib/api-validation'
+import { ApiError, fetchValidated } from '@/lib/api-validation'
 import { gatewayPost } from '@/lib/gateway'
 import { roleAtLeast, type Role } from '@/lib/nav-registry'
 
@@ -84,6 +84,11 @@ export type WorkRun = z.infer<typeof TraceRowSchema>
 export type WorkRunDetail = z.infer<typeof RunDetailSchema>['result']
 /** Existing read-only trace surface. No invented conversation-to-run association. */
 const AgentTaskSchema = z.object({ id, status: z.object({ state: z.string() }).optional() }).loose()
+/** Explicit refusal is final for this read; the caller can request a new read. */
+export function retryWorkTaskRead(failureCount: number, error: unknown): boolean {
+  if (error instanceof ApiError && [401, 403, 404, 501].includes(error.status)) return false
+  return failureCount < 3
+}
 export const workApi = {
   listTasks: (signal?: AbortSignal) =>
     fetchValidated('/api/enhanced/sessions?limit=50', z.array(AgentTaskSchema), { signal }),

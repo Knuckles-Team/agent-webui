@@ -14,6 +14,7 @@ import {
   navigateWork,
   parseWorkState,
   workApi,
+  retryWorkTaskRead,
   workHref,
   WorkStateSchema,
   type WorkState,
@@ -21,6 +22,7 @@ import {
 } from '@/lib/work-workspace'
 import { useWorkspaceCommands } from './WorkspaceCommands'
 import { WorkTaskControls } from './WorkTaskControls'
+import { WorkTaskInspector } from './WorkTaskInspector'
 import { createTaskCancellation } from './task-cancellation'
 import { useWorkspaceAdmission } from './useWorkspaceAdmission'
 import { loadedWorkCommands } from './loaded-workspace-commands'
@@ -64,11 +66,13 @@ function AuthorizedWork({
   const tasks = useQuery({
     queryKey: ['work-tasks', generation],
     queryFn: ({ signal }) => workApi.listTasks(signal),
+    retry: retryWorkTaskRead,
     enabled: !error,
   })
   const task = useQuery({
     queryKey: ['work-task', generation, state.task],
     queryFn: ({ signal }) => workApi.getTask(state.task!, signal),
+    retry: retryWorkTaskRead,
     enabled: !error && Boolean(state.task),
   })
   const runs = useQuery({
@@ -279,8 +283,9 @@ function AuthorizedWork({
                       void tasks.refetch()
                     }}
                   />
+                  <WorkTaskInspector task={taskData} />
                   <p className="text-sm">
-                    Child-agent execution and linked evidence are not supplied by this task contract.
+                    Child-agent execution and relationships to listed traces are not supplied by this task contract.
                   </p>
                 </>
               )}
