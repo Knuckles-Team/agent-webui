@@ -66,5 +66,18 @@ Dark and glass themes use deep green surfaces and pale sage selection.
 Bark-colored relationship strokes show only the existing loaded branches.
 The context rail, map controls and selected paths share this vocabulary.
 Keep task content, assistant styling, global theme tokens and legacy pages unchanged.
-Keep current spacing, target sizes, focus clearance and responsive layout.
-Add no gradients, decorative motion or image assets.
+Preserve readable type, target sizes, focus clearance and responsive capability access.
+Use the exact README-referenced PNG brand asset without redrawing or tracing it.
+Keep motion limited to short map reveal and control feedback, with a reduced-motion alternative.
+
+Initially narrow workspaces disclose the map on request and retain that choice across resize.
+Keep all map, list, filter and breadcrumb controls available through the keyboard.
+Order the selected path by its actual loaded ancestry, with numbered steps and small indentation.
+Reserve a narrow launcher dock outside the task scroll viewport while the assistant trigger is enabled.
+Keep primary Work at full height and preserve assistant open/close focus behavior.
+One context row hosts map and focus controls through owned slots, without a second toolbar.
+Compact context and More disclosures retain keyboard access on narrow screens.
+A default 14-rem map rail resizes between 12 and 22 rem while preserving center space.
+Pointer and keyboard resizing persist a bounded presentation preference, not navigation state.
+Natural translucent shell surfaces use modest blur, with opaque reduced-transparency and forced-colors alternatives.
+Keep native task palettes and shared assistant components unchanged.

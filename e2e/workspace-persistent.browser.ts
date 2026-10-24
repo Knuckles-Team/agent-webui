@@ -60,6 +60,7 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) {
     const composer = page.getByRole('textbox', { name: 'Message input' })
     await composer.fill('Retained unsent workspace draft')
     await composer.evaluate((element) => element.setAttribute('data-retention-probe', 'original'))
+    await openCompactControls(page, /^Workspace context:/)
     await page
       .getByRole('navigation', { name: 'Primary workspace contexts' })
       .getByRole('link', { name: 'operate', exact: true })
@@ -79,7 +80,7 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) {
     ).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Operate', exact: true })).toBeFocused()
     await page.getByRole('button', { name: 'Focus map', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Workspace navigation', exact: true })).toBeFocused()
+    await expect(map.getByRole('searchbox', { name: 'Filter loaded destinations' })).toBeFocused()
     const historyLength = await page.evaluate(() => history.length)
     await map.getByRole('button', { name: 'List', exact: true }).click()
     await map.getByRole('button', { name: 'Map', exact: true }).click()
@@ -116,13 +117,16 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) {
         contentType: 'image/png',
       })
     }
+    await openCompactControls(page, 'More workspace controls')
     await page.getByRole('button', { name: 'Focus current task', exact: true }).click()
     await expect(page.getByRole('region', { name: 'Current workspace task', exact: true })).toBeFocused()
+    await openCompactControls(page, /^Workspace context:/)
     await page
       .getByRole('navigation', { name: 'Primary workspace contexts' })
       .getByRole('link', { name: 'explore', exact: true })
       .click()
     await expect(map.getByText('Explore', { exact: true }).first()).toBeVisible()
+    await openCompactControls(page, /^Workspace context:/)
     await page
       .getByRole('navigation', { name: 'Primary workspace contexts' })
       .getByRole('link', { name: 'work', exact: true })
@@ -215,6 +219,8 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const)
 
         await page.emulateMedia({ reducedMotion })
         await page.goto('http://127.0.0.1:5204/workspace/operate?server=catalog')
+        await tabTo(page, page.getByRole('button', { name: 'Show map', exact: true }))
+        await page.keyboard.press('Enter')
         const map = page.getByRole('complementary', { name: 'Workspace map' })
         await expect(
           map
@@ -300,4 +306,9 @@ async function repeatHistory(page: Page, map: Locator, crumb: Locator) {
     await expect(crumb).toHaveAttribute('aria-current', 'location')
     await expect(page.getByRole('heading', { name: 'Operate', exact: true })).toBeFocused()
   }
+}
+
+async function openCompactControls(page: Page, name: string | RegExp) {
+  const trigger = page.getByRole('button', { name })
+  if (await trigger.isVisible()) await trigger.click()
 }

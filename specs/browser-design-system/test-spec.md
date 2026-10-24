@@ -115,3 +115,19 @@ Check that selected controls remain visible without frame overflow.
 Run the persistent-map browser matrix for keyboard, history, reduced motion and native 200-percent zoom continuity.
 The synthetic captures cover the owned shell, not a global theme audit or complete migration.
 R002.1 and the broader design acceptance remain open.
+
+Fresh 320-by-740 captures occur before focus or scroll, with the map initially closed.
+Check at least 340 pixels of initial task height and visible header targets of at least 44 pixels.
+Check initial visible readiness controls, then keyboard-reached fleet controls and bottom-scroll controls.
+New main readiness content precedes the fleet filter; it is not forced above the fold.
+Assert that the workspace viewport ends above the launcher's maximum halo extent.
+Check assistant open/close layout and focus restoration, and full-height primary Work.
+Expanded map controls retain native-zoom and reduced-motion coverage in the persistent browser matrix.
+This evidence covers initial and tested focus/scroll states, not all provider content or manual accessibility.
+
+The compact header reuses the exact README PNG and checks that the browser loads its pixels.
+Desktop checks cover one-row height, keyboard min/max rail sizing, pointer drag and persisted width.
+Check reduced-motion animation removal and opaque forced-colors/reduced-transparency fallbacks.
+Hit-test command-dialog close and assistant close controls above the shell header.
+Unit tests cover retired portal slots, retained task identity and malformed or unavailable preference storage.
+These checks do not establish live WebMCP, manual screen-reader, provider or complete migration acceptance.

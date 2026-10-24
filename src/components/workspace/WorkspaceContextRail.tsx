@@ -1,3 +1,5 @@
+import arboraLogo from '../../../docs/assets/brands/agent-webui-logo-v1.png'
+import { WorkspaceHeaderDisclosure } from './WorkspaceHeaderDisclosure'
 import { WorkspaceCommandPalette } from './WorkspaceCommands'
 import { useEffect, useState } from 'react'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
@@ -30,7 +32,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
   })()
   return (
     <header className="workspace-context-rail shrink-0 border-b bg-background px-3 py-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="workspace-header-row">
         <a
           id="workspace-home"
           className="inline-flex min-h-11 items-center font-semibold"
@@ -42,37 +44,48 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
             else navigateOperate(parseOperateState(remembered.operate), role)
           }}
         >
-          Arbora
+          <img src={arboraLogo} alt="Arbora" className="workspace-brand-logo" />
+          <span aria-hidden="true">Arbora</span>
         </a>
-        <nav aria-label="Primary workspace contexts" className="flex flex-wrap gap-1">
-          {(['work', 'explore', 'operate'] as const).map((context) => (
-            <a
-              key={context}
-              className="inline-flex min-h-11 items-center rounded border px-3 capitalize"
-              aria-disabled={!roleAtLeast(role, context === 'operate' ? 'reader' : 'user')}
-              aria-current={active === context ? 'page' : undefined}
-              href={context === 'explore' ? exploreDestination : remembered[context]}
-              onClick={(event) => {
-                if (!roleAtLeast(role, context === 'operate' ? 'reader' : 'user')) {
+        <WorkspaceHeaderDisclosure
+          id="workspace-context-options"
+          label={`Workspace context: ${active}`}
+          caption={active}
+        >
+          <nav aria-label="Primary workspace contexts" className="flex flex-wrap gap-1">
+            {(['work', 'explore', 'operate'] as const).map((context) => (
+              <a
+                key={context}
+                className="inline-flex min-h-11 items-center rounded border px-3 capitalize"
+                aria-disabled={!roleAtLeast(role, context === 'operate' ? 'reader' : 'user')}
+                aria-current={active === context ? 'page' : undefined}
+                href={context === 'explore' ? exploreDestination : remembered[context]}
+                onClick={(event) => {
+                  if (!roleAtLeast(role, context === 'operate' ? 'reader' : 'user')) {
+                    event.preventDefault()
+                    return
+                  }
+                  if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
                   event.preventDefault()
-                  return
-                }
-                if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
-                event.preventDefault()
-                if (context === 'work') navigateWork(parseWorkState(remembered.work), role)
-                else if (context === 'explore')
-                  navigateExploreLens(parseExploreLensState(exploreDestination), role, EXPLORE_LENSES)
-                else navigateOperate(parseOperateState(remembered.operate), role)
-              }}
-            >
-              {context}
-            </a>
-          ))}
-        </nav>
-        <WorkspaceCommandPalette />
-        <a className="inline-flex min-h-11 items-center text-sm underline" href="/privacy">
-          Privacy
-        </a>
+                  if (context === 'work') navigateWork(parseWorkState(remembered.work), role)
+                  else if (context === 'explore')
+                    navigateExploreLens(parseExploreLensState(exploreDestination), role, EXPLORE_LENSES)
+                  else navigateOperate(parseOperateState(remembered.operate), role)
+                }}
+              >
+                {context}
+              </a>
+            ))}
+          </nav>
+        </WorkspaceHeaderDisclosure>
+        <div id="workspace-map-toggle-slot" />
+        <WorkspaceHeaderDisclosure id="workspace-more-options" label="More workspace controls" caption="More">
+          <WorkspaceCommandPalette />
+          <div id="workspace-frame-tools-slot" />
+          <a className="inline-flex min-h-11 items-center text-sm underline" href="/privacy">
+            Privacy
+          </a>
+        </WorkspaceHeaderDisclosure>
       </div>
     </header>
   )

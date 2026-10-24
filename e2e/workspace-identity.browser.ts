@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 for (const theme of ['light', 'dark', 'glass']) {
   test(`Arbora shell identity and contrast in ${theme}`, async ({ page }, info) => {
@@ -64,9 +64,21 @@ for (const theme of ['light', 'dark', 'glass']) {
       { width: 320, height: 740 },
     ]) {
       await page.setViewportSize(size)
+      await page.goto('about:blank')
+      await page.goto('/workspace/operate?server=catalog&item=search')
+      await expect(
+        page
+          .getByRole('region', { name: 'Current workspace task' })
+          .getByRole('heading', { name: 'Search', exact: true }),
+      ).toBeVisible()
+      await page.screenshot({ path: info.outputPath(`identity-${theme}-${size.width}x${size.height}-initial.png`) })
+      await checkDesktopShell(page, size)
+      await checkNarrowTask(page, map, size)
+      await openNarrowMap(page, map, size)
       await selected.focus()
       await expect(selected).toBeInViewport()
       expect(await page.locator('.workspace-frame').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+      await openContext(page)
       await page.locator('.workspace-context-rail nav a[aria-current]').hover()
       const contrast = await page
         .locator(
@@ -108,8 +120,179 @@ for (const theme of ['light', 'dark', 'glass']) {
           })
         })
       for (const result of contrast) expect(result.ratio, `${theme}: ${result.label}`).toBeGreaterThanOrEqual(4.5)
+      await closeContext(page)
       await selected.focus()
       await page.screenshot({ path: info.outputPath(`identity-${theme}-${size.width}x${size.height}.png`) })
+      await closeNarrowMap(page, map, size)
     }
+    await checkPrimaryWork(page)
   })
+}
+
+async function tabTo(page: Page, target: Locator) {
+  for (let count = 0; count < 100; count++) {
+    if (await target.evaluate((element) => element === document.activeElement)) return
+    await page.keyboard.press('Tab')
+  }
+  throw new Error('Map disclosure is not reachable by keyboard')
+}
+async function hit(target: Locator) {
+  await expect
+    .poll(() =>
+      target.evaluate((element) => {
+        const box = element.getBoundingClientRect()
+        return [box.left + 8, box.right - 8].every((x) =>
+          [box.top + 8, box.bottom - 8].every((y) => element.contains(document.elementFromPoint(x, y))),
+        )
+      }),
+    )
+    .toBe(true)
+}
+
+async function checkNarrowTask(page: Page, map: Locator, size: { width: number; height: number }) {
+  if (size.width !== 320) return
+  await expect(map).not.toBeVisible()
+  const sizes = await page
+    .locator('.workspace-header-row button:visible')
+    .evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().height))
+  for (const height of sizes) expect(height).toBeGreaterThanOrEqual(44)
+  const task = await page.getByRole('region', { name: 'Current workspace task' }).boundingBox()
+  expect(task!.y).toBeLessThan(290)
+  expect(task!.height).toBeGreaterThanOrEqual(340)
+  await expectDock(page)
+  await hit(page.getByRole('button', { name: 'Reprobe readiness', exact: true }))
+  await page.locator('.workspace-task-surface .workspace-route-content').evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+  })
+  await hit(page.getByRole('button', { name: 'Refresh capabilities', exact: true }))
+  await expectDock(page)
+  await tabTo(page, page.getByRole('textbox', { name: 'Filter fleet children' }))
+  await hit(page.getByRole('textbox', { name: 'Filter fleet children' }))
+  await checkDrawer(page)
+  await checkCompactFocus(page)
+}
+
+async function openNarrowMap(page: Page, map: Locator, size: { width: number; height: number }) {
+  if (size.width !== 320) return
+  await tabTo(page, page.getByRole('button', { name: 'Show map', exact: true }))
+  await page.keyboard.press('Enter')
+  await expect(map).toBeVisible()
+  await page.setViewportSize({ width: 740, height: 320 })
+  await expect(map).toBeVisible()
+  await page.setViewportSize(size)
+}
+
+async function closeNarrowMap(page: Page, map: Locator, size: { width: number; height: number }) {
+  if (size.width !== 320) return
+  await tabTo(page, page.getByRole('button', { name: 'Hide map', exact: true }))
+  await page.keyboard.press('Enter')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(map).not.toBeVisible()
+}
+
+async function expectDock(page: Page) {
+  const viewport = await page.locator('.workspace-viewport').boundingBox()
+  const launcher = await page.locator('#chat-panel-toggle').boundingBox()
+  expect(viewport!.y + viewport!.height).toBeLessThanOrEqual(launcher!.y - launcher!.height / 2)
+}
+async function checkDrawer(page: Page) {
+  const viewport = page.locator('.workspace-viewport')
+  const launcher = page.getByRole('button', { name: 'Open chat', exact: true })
+  await tabTo(page, launcher)
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: 'Close chat', exact: true })).toBeFocused()
+  await expect.poll(() => viewport.evaluate((element) => element.getBoundingClientRect().height)).toBe(740)
+  await page.keyboard.press('Enter')
+  await expect(launcher).toBeFocused()
+  await expectDock(page)
+}
+async function checkPrimaryWork(page: Page) {
+  await page.setViewportSize({ width: 320, height: 740 })
+  await openContext(page)
+  await page
+    .getByRole('navigation', { name: 'Primary workspace contexts' })
+    .getByRole('link', { name: 'work', exact: true })
+    .click()
+  await expect(page.locator('#chat-panel-toggle')).toBeDisabled()
+  await expect
+    .poll(() => page.locator('.workspace-viewport').evaluate((element) => element.getBoundingClientRect().height))
+    .toBe(740)
+  await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible()
+}
+
+async function openContext(page: Page) {
+  const trigger = page.getByRole('button', { name: /^Workspace context:/ })
+  if (await trigger.isVisible()) {
+    await tabTo(page, trigger)
+    await page.keyboard.press('Enter')
+  }
+}
+
+async function checkDesktopShell(page: Page, size: { width: number; height: number }) {
+  const logo = page.locator('.workspace-brand-logo')
+  await expect.poll(() => logo.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0)
+  if (size.width !== 1440) return
+  const header = await page.locator('.workspace-context-rail').boundingBox()
+  expect(header!.height).toBeLessThanOrEqual(64)
+  const handle = page.getByRole('separator', { name: 'Resize workspace map' })
+  await expect(handle).toHaveAttribute('aria-valuenow', '14')
+  await handle.focus()
+  await page.keyboard.press('Home')
+  await expect(handle).toHaveAttribute('aria-valuenow', '12')
+  await page.keyboard.press('End')
+  await expect(handle).toHaveAttribute('aria-valuenow', '22')
+  const start = await handle.boundingBox()
+  await page.mouse.move(start!.x + 22, start!.y + 22)
+  await page.mouse.down()
+  await page.mouse.move(start!.x - 106, start!.y + 22, { steps: 8 })
+  await page.mouse.up()
+  await expect(handle).toHaveAttribute('aria-valuenow', '14')
+  expect(await page.evaluate(() => localStorage.getItem('agent-webui.workspace-map-width'))).toBe('14')
+  const task = await page.getByRole('region', { name: 'Current workspace task' }).boundingBox()
+  expect(task!.width).toBeGreaterThanOrEqual(384)
+  await expect(page.locator('.workspace-map')).toHaveCSS('animation-name', 'none')
+  await page.emulateMedia({ forcedColors: 'active' })
+  await expect(page.locator('.workspace-map')).toHaveCSS('backdrop-filter', 'none')
+  await page.emulateMedia({ forcedColors: 'none' })
+  const media = await page.context().newCDPSession(page)
+  await media.send('Emulation.setEmulatedMedia', {
+    features: [
+      { name: 'prefers-reduced-transparency', value: 'reduce' },
+      { name: 'prefers-reduced-motion', value: 'reduce' },
+    ],
+  })
+  await expect(page.locator('.workspace-map')).toHaveCSS('backdrop-filter', 'none')
+  await expect(page.locator('.workspace-map')).toHaveCSS('background-color', /rgb\(.*\)/)
+  await media.detach()
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.getByRole('button', { name: 'Find destination' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  const close = dialog.getByRole('button', { name: 'Close destination search', exact: true })
+  await hit(close)
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+}
+
+async function closeContext(page: Page) {
+  const trigger = page.getByRole('button', { name: /^Workspace context:/ })
+  if (!(await trigger.isVisible())) return
+  await page.locator('.workspace-context-rail nav a[aria-current]').focus()
+  await page.keyboard.press('Escape')
+  await expect(trigger).toBeFocused()
+}
+
+async function checkCompactFocus(page: Page) {
+  await openContext(page)
+  const current = page.locator('.workspace-context-rail nav a[aria-current]')
+  await tabTo(page, current)
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: /^Workspace context:/ })).toBeFocused()
+  const more = page.getByRole('button', { name: 'More workspace controls' })
+  await tabTo(page, more)
+  await page.keyboard.press('Enter')
+  await tabTo(page, page.getByRole('button', { name: 'Focus current task' }))
+  await page.keyboard.press('Escape')
+  await expect(more).toBeFocused()
+  await expect(more).toHaveAttribute('aria-expanded', 'false')
 }
