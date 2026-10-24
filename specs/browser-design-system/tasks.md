@@ -195,3 +195,22 @@ This section records specification work only. Local implementation and synthetic
 source/browser results must be recorded separately when available. Earlier hosted
 screenshots and compact-header receipts remain historical, not Canopy Glass
 acceptance. No broader completion follows from the shared-shell/Explore slice.
+
+## Viewport continuity evidence partition
+
+- [x] WEBUI-DESIGN-R004.2.1: Retain the existing bounded viewport and query source evidence.
+- [ ] WEBUI-DESIGN-R004.2.1: Qualify compact native chat after the enlarged-text clipping repair; retain actual browser captures.
+- [ ] WEBUI-DESIGN-R004.2.2: Complete every remaining parent obligation with exact-candidate browser and native-device evidence.
+
+R004.2 remains open until both children meet their complete criteria.
+The residual child retains fold, native keyboard, safe-area, stream, graph and all-surface continuity acceptance.
+Do not infer that authored test bindings complete those journeys.
+
+## Retained acceptance ledger correction — 2026-10-24
+
+- [ ] WEBUI-DESIGN-R002.1.2: Complete the remaining density, hierarchy, token documentation and contrast acceptance inherited from R002/R002.1.
+- [ ] WEBUI-DESIGN-R004.1.2: Complete the remaining all-route/action responsive acceptance inherited from R004.1.
+
+The original parent obligations and qualified source-child receipts remain intact.
+The generated ancestor state must remain open while either retained acceptance child remains open.
+Metadata guard tests preserve this distinction; they are not feature-acceptance evidence.

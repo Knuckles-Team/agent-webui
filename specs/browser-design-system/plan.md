@@ -187,3 +187,27 @@ Native focus centered the diagram above its task scrollport edge.
 Remove that inset only for Work; retain clearance where the floating launcher exists.
 Require full diagram visibility after native focus, before browser-test reveal.
 Keep responsive sizing, keyboard pan, and the equivalent dependency list unchanged.
+
+The follow-up geometry check confirmed full native diagram visibility.
+A nearly full-height details card still intersected the one-rem scroll inset.
+Work now applies that clearance to focused controls through scroll margins instead.
+Its unobstructed scrollport can show physically fitting content edge to edge.
+Original wide and narrow whole-card visibility checks remain unchanged.
+All viewport cases must expose every details field through keyboard scrolling.
+Oversized low-height and enlarged-text cards require complete reachability, not simultaneous visibility.
+
+### Retain the full viewport continuity obligation
+
+R004.2 now separates bounded source continuity from complete device and surface acceptance.
+R004.2.1 owns the retained implementation and current workspace tests.
+R004.2.2 preserves every unfulfilled parent criterion, including native keyboard and fold behavior.
+The canonical generator must leave R004.2 and its responsive ancestor open while that child is unspecified by implementation.
+Preserve every acceptance criterion. Regenerate status with the canonical tool.
+
+### Acceptance rollup correction — 2026-10-24
+
+The source-delivery children did not exhaust their original parent acceptance criteria.
+Explicit retained-acceptance children now preserve those obligations in canonical generated rollups.
+Parent requirement text and qualified child evidence remain unchanged.
+Regenerate every spec status and audit ancestor states after source and receipt commits.
+The metadata regression must not create feature-acceptance bindings for retained work.

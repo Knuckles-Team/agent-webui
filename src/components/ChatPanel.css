@@ -126,6 +126,13 @@
 /* Narrow workspaces keep conversation content available on explicit expansion,
    while the existing composer and real status remain visible in normal flow. */
 @container workspace-chat (max-width: 51.999rem) {
+  .workspace-assistant[data-primary='false'][data-expanded='false'] {
+    min-height: max-content;
+  }
+  .workspace-assistant[data-primary='false'][data-expanded='false'] .workspace-assistant-content {
+    flex: none;
+    overflow: visible;
+  }
   .workspace-assistant[data-primary='false'][data-expanded='false'] .chat-transcript,
   .workspace-assistant[data-primary='false'][data-expanded='false'] .chat-composer-options {
     display: none;

@@ -1,5 +1,5 @@
-// spec: WEBUI-APPS-R005.4, WEBUI-APPS-R049.1.3, WEBUI-APPS-R049.2
-// spec: WEBUI-DESIGN-R004.2
+// spec: WEBUI-APPS-R005.4, WEBUI-APPS-R049.1.3
+// spec: WEBUI-DESIGN-R004.2.1
 // Rendered synthetic app evidence only, not native WebMCP or live provider acceptance.
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { baseURL, responses } from './fixtures/documentation-screenshots.mjs'
@@ -37,15 +37,18 @@ async function prepare(
   await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible()
 }
 
-async function hitTarget(control: Locator) {
-  await control.scrollIntoViewIfNeeded()
+async function hitTarget(control: Locator, reveal = true) {
+  if (reveal) await control.scrollIntoViewIfNeeded()
   await expect(control).toBeInViewport()
   await expect
     .poll(() =>
       control.evaluate((element) => {
         const box = element.getBoundingClientRect()
-        return [box.left + 3, box.right - 3].every((x) =>
-          [box.top + 3, box.bottom - 3].every((y) => element.contains(document.elementFromPoint(x, y))),
+        // Stay inside the painted rounded corners, as the identity journey does.
+        const xInset = Math.min(8, box.width / 4)
+        const yInset = Math.min(8, box.height / 4)
+        return [box.left + xInset, box.right - xInset].every((x) =>
+          [box.top + yInset, box.bottom - yInset].every((y) => element.contains(document.elementFromPoint(x, y))),
         )
       }),
     )
@@ -65,8 +68,9 @@ async function reachComposerByWheel(page: Page, input: Locator) {
   // Ordinary scrolling must work too: programmatic reveal can scroll overflow:hidden.
   for (let attempt = 0; attempt < 12 && !(await visible()); attempt += 1) {
     const size = page.viewportSize()!
+    const direction = await input.evaluate((element) => (element.getBoundingClientRect().top < 0 ? -1 : 1))
     await page.mouse.move(size.width * 0.7, size.height - 24)
-    await page.mouse.wheel(0, size.height / 2)
+    await page.mouse.wheel(0, (direction * size.height) / 2)
     await page.waitForTimeout(50)
   }
   expect(await visible()).toBe(true)
@@ -146,7 +150,10 @@ test('one native assistant retains draft, controls and context through navigatio
     if (await options.isVisible()) await options.click()
     await hitTarget(input)
     await info.attach(`native-chat-${size.width}x${size.height}.png`, {
-      body: await page.screenshot({ animations: 'disabled' }),
+      body: await page.screenshot({
+        path: info.outputPath(`native-chat-${size.width}x${size.height}.png`),
+        animations: 'disabled',
+      }),
       contentType: 'image/png',
     })
   }
@@ -222,7 +229,7 @@ test('retained long transcript keeps its real scrolling child and scroll-to-late
     await expect
       .poll(() => scroller.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop))
       .toBeLessThan(3)
-    await transcriptElement.getByRole('link', { name: 'Read evidence', exact: true }).first().focus()
+    await transcriptElement.getByRole('button', { name: 'Read evidence', exact: true }).first().focus()
     if (size.width === 320) {
       await page.keyboard.press('Escape')
       await expect(input).toBeFocused()
@@ -321,7 +328,10 @@ test('fresh secondary workspace entries do not autofocus or scroll down to the c
     await expect(input).not.toBeFocused()
     expect(await page.locator('.workspace-viewport').evaluate((element) => element.scrollTop)).toBe(0)
     await info.attach(`native-chat-fresh-${path.split('/').at(-1)}.png`, {
-      body: await page.screenshot({ animations: 'disabled' }),
+      body: await page.screenshot({
+        path: info.outputPath(`native-chat-fresh-${path.split('/').at(-1)}.png`),
+        animations: 'disabled',
+      }),
       contentType: 'image/png',
     })
   }
@@ -345,15 +355,35 @@ test('native composer and task remain reachable with enlarged text at narrow and
     const input = page.getByRole('textbox', { name: 'Message input' })
     await context.scrollIntoViewIfNeeded()
     expect((await context.boundingBox())!.height).toBeGreaterThanOrEqual(200)
+    await expect
+      .poll(() =>
+        page
+          .locator('.workspace-assistant-content, .workspace-assistant .chat-flow')
+          .evaluateAll((elements) => elements.every((element) => element.scrollHeight <= element.clientHeight + 1)),
+      )
+      .toBe(true)
     await reachComposerByWheel(page, input)
     await input.fill('Enlarged text draft')
     await hitTarget(input)
     const mode = page.getByRole('combobox', { name: 'Agent mode' })
-    await hitTarget(mode)
-    await hitTarget(page.getByRole('button', { name: 'Expand chat', exact: true }))
+    const expand = page.getByRole('button', { name: 'Expand chat', exact: true })
+    for (const [control, key] of [
+      [mode, 'Tab'],
+      [expand, 'Shift+Tab'],
+    ] as const) {
+      for (let attempt = 0; attempt < 32; attempt += 1) {
+        if (await control.evaluate((element) => element === document.activeElement)) break
+        await page.keyboard.press(key)
+      }
+      await expect(control).toBeFocused()
+      await hitTarget(control, false)
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await info.attach(`native-chat-large-text-${size.width}x${size.height}.png`, {
-      body: await page.screenshot({ animations: 'disabled' }),
+      body: await page.screenshot({
+        path: info.outputPath(`native-chat-large-text-${size.width}x${size.height}.png`),
+        animations: 'disabled',
+      }),
       contentType: 'image/png',
     })
   }

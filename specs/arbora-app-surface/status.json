@@ -219,7 +219,8 @@
     "WEBUI-APPS-R049.1.11",
     "WEBUI-APPS-R049.1.12",
     "WEBUI-APPS-R049.1.13",
-    "WEBUI-APPS-R049.2.1"
+    "WEBUI-APPS-R049.2.1",
+    "WEBUI-APPS-R049.2.2"
   ],
   "requirements": [
     {
@@ -2011,21 +2012,16 @@
     {
       "id": "WEBUI-APPS-R049.2",
       "title": "Measured ground-up redesign acceptance",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "93401c34a695",
         "ac86f2de9817",
         "d18ec8c78341"
       ],
-      "verified_by": [
-        "e2e/canopy-glass.browser.ts:4",
-        "e2e/native-chat.browser.ts:1",
-        "src/components/__tests__/ChatPanel.test.tsx:1",
-        "src/components/workspace/__tests__/ExploreQueryWorkspace.test.tsx:210",
-        "src/components/workspace/__tests__/ExploreWorkspace.test.tsx:135"
-      ],
+      "verified_by": [],
       "rollup_of": [
-        "WEBUI-APPS-R049.2.1"
+        "WEBUI-APPS-R049.2.1",
+        "WEBUI-APPS-R049.2.2"
       ]
     },
     {
@@ -2050,7 +2046,7 @@
         "e2e/workspace-catalog.browser.ts:17",
         "e2e/workspace-task-lifecycle.spec.ts:396",
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:156",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:164",
         "src/components/views/__tests__/ArboraReadinessView.test.tsx:1"
       ]
     },
@@ -2199,10 +2195,10 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "12b5f5624953",
+        "19b439519a22",
         "47885260902d",
         "5069ca94e71e",
-        "bb56d874ef78",
-        "ce6e3d27c60c"
+        "bb56d874ef78"
       ],
       "verified_by": [
         "e2e/execution-graph.browser.ts:1",
@@ -2223,6 +2219,13 @@
         "src/components/workspace/__tests__/ExploreQueryWorkspace.test.tsx:210",
         "src/components/workspace/__tests__/ExploreWorkspace.test.tsx:135"
       ]
+    },
+    {
+      "id": "WEBUI-APPS-R049.2.2",
+      "title": "Remaining measured redesign acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
     }
   ]
 }

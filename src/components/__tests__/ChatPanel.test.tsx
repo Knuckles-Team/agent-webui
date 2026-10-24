@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R005.4, WEBUI-APPS-R049.1.3, WEBUI-APPS-R049.2
+// spec: WEBUI-APPS-R005.4, WEBUI-APPS-R049.1.3
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

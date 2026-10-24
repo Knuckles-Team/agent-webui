@@ -16,12 +16,16 @@
     "WEBUI-DESIGN-R002.1",
     "WEBUI-DESIGN-R004.1",
     "WEBUI-DESIGN-R004.2",
+    "WEBUI-DESIGN-R004.2.1",
+    "WEBUI-DESIGN-R004.2.2",
     "WEBUI-DESIGN-R005.1",
     "WEBUI-DESIGN-R010",
     "WEBUI-DESIGN-R011",
     "WEBUI-DESIGN-R002.1.1",
     "WEBUI-DESIGN-R004.1.1",
-    "WEBUI-DESIGN-R005.2"
+    "WEBUI-DESIGN-R005.2",
+    "WEBUI-DESIGN-R002.1.2",
+    "WEBUI-DESIGN-R004.1.2"
   ],
   "requirements": [
     {
@@ -39,7 +43,7 @@
     {
       "id": "WEBUI-DESIGN-R002",
       "title": "Design tokens documented with contrast targets",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "12b5f5624953",
         "2c9874c2a559",
@@ -48,11 +52,9 @@
         "93401c34a695"
       ],
       "verified_by": [
-        "e2e/canopy-glass.browser.ts:1",
-        "e2e/workspace-density.spec.ts:1",
         "src/__tests__/design-tokens.test.ts:113",
-        "src/__tests__/design-tokens.test.ts:120",
-        "src/__tests__/design-tokens.test.ts:152"
+        "src/__tests__/design-tokens.test.ts:57",
+        "src/components/__tests__/ThemeProvider.test.tsx:1"
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R002.1"
@@ -73,7 +75,7 @@
     {
       "id": "WEBUI-DESIGN-R004",
       "title": "Responsive layout covers 320px mobile through desktop",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "12b5f5624953",
         "47885260902d",
@@ -82,11 +84,7 @@
         "ac86f2de9817"
       ],
       "verified_by": [
-        "e2e/accessibility.spec.ts:17",
-        "e2e/canopy-glass.browser.ts:2",
-        "e2e/execution-graph.browser.ts:2",
-        "e2e/native-chat.browser.ts:2",
-        "e2e/workspace-viewport.browser.ts:1"
+        "e2e/accessibility.spec.ts:17"
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R004.1",
@@ -169,52 +167,59 @@
     {
       "id": "WEBUI-DESIGN-R002.1",
       "title": "Purposeful density and Arbora visual hierarchy",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "12b5f5624953",
         "93401c34a695",
         "ac86f2de9817"
       ],
       "verified_by": [
-        "e2e/canopy-glass.browser.ts:1",
         "e2e/workspace-density.spec.ts:1",
-        "src/__tests__/design-tokens.test.ts:120",
-        "src/__tests__/design-tokens.test.ts:152",
-        "src/__tests__/design-tokens.test.ts:181"
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:164",
+        "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:1"
       ],
       "rollup_of": [
-        "WEBUI-DESIGN-R002.1.1"
+        "WEBUI-DESIGN-R002.1.1",
+        "WEBUI-DESIGN-R002.1.2"
       ]
     },
     {
       "id": "WEBUI-DESIGN-R004.1",
       "title": "Full mobile and arbitrary-aspect feature parity",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "12b5f5624953",
+        "19b439519a22",
         "47885260902d",
         "93401c34a695",
-        "ac86f2de9817",
-        "dce97c2798ef"
+        "ac86f2de9817"
       ],
       "verified_by": [
-        "e2e/canopy-glass.browser.ts:2",
-        "e2e/execution-graph.browser.ts:2",
-        "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:93",
-        "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:94",
-        "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:160"
+        "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:93"
       ],
       "rollup_of": [
-        "WEBUI-DESIGN-R004.1.1"
+        "WEBUI-DESIGN-R004.1.1",
+        "WEBUI-DESIGN-R004.1.2"
       ]
     },
     {
       "id": "WEBUI-DESIGN-R004.2",
       "title": "Resize, fold and visual viewport continuity",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "d18ec8c78341"
       ],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-DESIGN-R004.2.1",
+        "WEBUI-DESIGN-R004.2.2"
+      ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R004.2.1",
+      "title": "Bounded workspace viewport continuity",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
       "verified_by": [
         "e2e/native-chat.browser.ts:2",
         "e2e/workspace-viewport.browser.ts:1",
@@ -222,6 +227,13 @@
         "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:71",
         "src/components/workspace/__tests__/WorkspaceViewport.test.tsx:1"
       ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R004.2.2",
+      "title": "Complete resize and device continuity acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
     },
     {
       "id": "WEBUI-DESIGN-R005.1",
@@ -260,7 +272,8 @@
       "landed_in": [
         "12b5f5624953",
         "93401c34a695",
-        "ac86f2de9817"
+        "ac86f2de9817",
+        "ec837ceabe6b"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
@@ -276,10 +289,10 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "12b5f5624953",
+        "19b439519a22",
         "47885260902d",
         "93401c34a695",
-        "ac86f2de9817",
-        "dce97c2798ef"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
@@ -299,6 +312,20 @@
         "e2e/canopy-glass.browser.ts:3",
         "src/components/__tests__/ThemeProvider.test.tsx:89"
       ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R002.1.2",
+      "title": "Remaining density and hierarchy acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-DESIGN-R004.1.2",
+      "title": "Remaining full-route responsive parity acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
     }
   ]
 }

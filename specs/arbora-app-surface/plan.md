@@ -988,3 +988,24 @@ That result does not yet distinguish occlusion from missing keyboard navigation.
 Preserve initial geometry and failure captures. Reach each action with native Tab navigation, then retain the unchanged hit test.
 The advancing base also changed generated design evidence. Regenerate the composed history receipt without hand-editing status.
 Full native browser acceptance remains open.
+
+The next hosted identity pass confirms native keyboard access at narrow widths.
+Initial pixels retain the full header, task scrollport and compact composer without launcher clearance.
+Compose the Work focus-inset correction using the route's existing identity, not its retired shell depth.
+Keep full evidence viewport assertions and focused-control margins distinct.
+Write native browser captures to retained output paths; attachment buffers alone do not persist with the list reporter.
+
+The native browser pass exposed compact composer clipping with enlarged text.
+Give the compact assistant its intrinsic height and let the outer boundary scroll.
+Do not change expanded transcript scrolling or hide active execution controls.
+Keep ordinary wheel reachability and all four painted-control hit tests.
+Use the rendered markdown destination's button role for the resize focus precondition.
+Pending-approval review and fresh-entry focus passed; remaining browser cases still need qualification.
+
+### Acceptance rollup correction — 2026-10-24
+
+The source-delivery children did not exhaust their original parent acceptance criteria.
+Explicit retained-acceptance children now preserve those obligations in canonical generated rollups.
+Parent requirement text and qualified child evidence remain unchanged.
+Regenerate every spec status and audit ancestor states after source and receipt commits.
+The metadata regression must not create feature-acceptance bindings for retained work.

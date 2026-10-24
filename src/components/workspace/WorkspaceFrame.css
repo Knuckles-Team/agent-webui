@@ -474,6 +474,10 @@
     background: Canvas;
     backdrop-filter: none;
   }
+  .workspace-context-rail #workspace-home {
+    color: CanvasText;
+    background: Canvas;
+  }
   .workspace-context-rail nav a[aria-current],
   .workspace-map-node[aria-current],
   .workspace-map-toggle[aria-expanded='true'],
@@ -499,6 +503,13 @@
   padding-top: 0.75rem;
   padding-inline: 0.75rem;
   scroll-padding: 1rem;
+}
+/* Fit Work evidence to its scrollport; give focused controls their own inset. */
+.workspace-task-surface .workspace-route-content[data-workspace-route='workspace.work-proof'] {
+  scroll-padding-block: 0;
+}
+.workspace-task-surface .workspace-route-content[data-workspace-route='workspace.work-proof'] :focus-visible {
+  scroll-margin-block: 1rem;
 }
 .workspace-map-context p {
   margin-top: 0.25rem;

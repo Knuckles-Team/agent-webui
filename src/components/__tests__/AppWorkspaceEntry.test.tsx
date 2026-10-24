@@ -78,6 +78,10 @@ it('mounts Work by default, replaces only the entry, and retains query/hash/hist
   const length = window.history.length
   render(<App />)
   expect(await screen.findByRole('heading', { name: 'Work' })).toBeVisible()
+  expect(screen.getByRole('heading', { name: 'Work' }).closest('.workspace-route-content')).toHaveAttribute(
+    'data-workspace-route',
+    'workspace.work-proof',
+  )
   expect(window.location.pathname + window.location.search + window.location.hash).toBe(
     '/workspace/work?conversation=existing#context',
   )
@@ -114,6 +118,10 @@ it('waits for identity, retains sign-in, and gives readers an admitted workspace
   state.role = 'reader'
   view.rerender(<App />)
   expect(await screen.findByText('Reader workspace')).toBeVisible()
+  expect(screen.getByText('Reader workspace').closest('.workspace-route-content')).toHaveAttribute(
+    'data-workspace-route',
+    'workspace.operate',
+  )
   expect(window.location.pathname).toBe('/workspace/operate')
 })
 it('preserves prompt drafts across compatibility and lens links, but retires them on owner change', async () => {

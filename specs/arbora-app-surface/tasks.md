@@ -354,3 +354,11 @@ no provider, scheduler, data endpoint or semantic-tool authority.
 Typecheck, scoped typed lint and the production build passed. Local whole-repository
 lint exceeded memory. Hosted typecheck and full lint passed on c8bd060, composed
 with base 954a227. Browser qualification remains incomplete.
+
+## Retained redesign ledger correction — 2026-10-24
+
+- [ ] WEBUI-APPS-R049.2.2: Complete the original measured redesign criteria beyond the bounded R049.2.1 source slice.
+
+Keep the Work/Operate, baseline comparison and native interaction obligations above open.
+Preserve the qualified source child without promoting its broader ancestor.
+Metadata guard tests are not evidence that the remaining redesign is accepted.

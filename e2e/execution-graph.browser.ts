@@ -89,6 +89,26 @@ for (const viewport of [
     await join.focus()
     await page.keyboard.press('Enter')
     await expect(join.locator('..').getByText('left, right', { exact: true })).toBeVisible()
+    await expect(join).toBeInViewport({ ratio: 1 })
+    // Read every expanded field with real keyboard scrolling, including text
+    // enlargement where the full details card cannot fit in one viewport.
+    for (const field of await join.locator('..').locator('dt, dd').all()) {
+      for (let attempt = 0; attempt < 80; attempt++) {
+        const direction = await field.evaluate((el) => {
+          const rect = el.getBoundingClientRect()
+          const port = el.closest('.workspace-route-content')!.getBoundingClientRect()
+          if (rect.top < Math.max(0, port.top)) return 'ArrowUp'
+          if (rect.bottom > Math.min(innerHeight, port.bottom)) return 'ArrowDown'
+          return null
+        })
+        if (!direction) break
+        await page.keyboard.press(direction)
+        // Native keyboard scrolling animates independently of CSS motion.
+        await page.waitForTimeout(120)
+      }
+      await expect(field).toBeInViewport({ ratio: 1 })
+      await expect(join).toBeFocused()
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     expect(graphRequests).toEqual([
       { schema_version: 'arbora-execution-graph-v1', run_id: fixture.run_id, task_id: fixture.task_id },
@@ -140,6 +160,7 @@ for (const viewport of [
               padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
               scrollPadding: style.scrollPadding,
               position: style.position,
+              outline: [style.outlineWidth, style.outlineOffset],
             }
           }
           const ancestors = []
@@ -157,7 +178,15 @@ for (const viewport of [
           contentType: 'application/json',
         })
         console.log(`${name}-${phase}-geometry ${JSON.stringify(geometry)}`)
-        if (name === 'diagram' && phase === 'native-focus') await expect(target).toBeInViewport({ ratio: 1 })
+        if (name === 'diagram' && phase === 'native-focus') {
+          await expect(target).toBeInViewport({ ratio: 1 })
+          const clip = geometry.ancestors.filter((el) => el.overflow[1] !== 'visible')
+          const edge = geometry.target.outline.reduce((total, value) => total + parseFloat(value), 0)
+          expect(geometry.target.rect.top - edge).toBeGreaterThanOrEqual(Math.max(0, ...clip.map((el) => el.rect.top)))
+          expect(geometry.target.rect.bottom + edge).toBeLessThanOrEqual(
+            Math.min(viewport.height, ...clip.map((el) => el.rect.bottom)),
+          )
+        }
       }
       await page.screenshot({
         path: test
@@ -168,7 +197,14 @@ for (const viewport of [
         animations: 'disabled',
         caret: 'hide',
       })
-      await expect(target).toBeInViewport({ ratio: 1 })
+      const fits = (await target.boundingBox())!.height <= taskHeight
+      if (name === 'diagram' || fits || (viewport.height === 740 && !('textScale' in viewport)))
+        await expect(target).toBeInViewport({ ratio: 1 })
+      else {
+        // Only added low-height/enlarged-text cases may exceed a whole viewport.
+        // Their complete field-by-field keyboard reachability is proved above.
+        expect(viewport.height === 390 || 'textScale' in viewport).toBe(true)
+      }
     }
     refused = true
     await refresh.click()

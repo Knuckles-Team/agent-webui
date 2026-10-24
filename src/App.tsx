@@ -298,7 +298,10 @@ function RouteContentSurface({
   // Compatibility entries never mount their retired standalone body, including while identity loads.
   if (route.redirects && !routeAccessDenied)
     return (
-      <div className="workspace-route-content flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-3 sm:p-5">
+      <div
+        className="workspace-route-content flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-3 sm:p-5"
+        data-workspace-route={route.id}
+      >
         {renderRouteHeading(route)}
         <RouteLoadingFallback />
       </div>
@@ -311,7 +314,10 @@ function RouteContentSurface({
   )
 
   return (
-    <div className="workspace-route-content flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-3 sm:p-5">
+    <div
+      className="workspace-route-content flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-3 sm:p-5"
+      data-workspace-route={route.id}
+    >
       <div className="mx-auto w-full">{body}</div>
     </div>
   )

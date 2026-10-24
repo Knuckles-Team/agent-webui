@@ -207,6 +207,11 @@ test('Canopy appearance preferences retain the task and remove effects', async (
       probe.remove()
       return result
     })
+    const brand = page.locator('#workspace-home')
+    await expect(brand).toHaveCSS('color', palette.color)
+    await expect(brand).toHaveCSS('background-color', palette.background)
+    await expect(brand.locator('span')).toHaveCSS('color', palette.color)
+    expect(await contrast(brand)).toBeGreaterThanOrEqual(4.5)
     for (const control of await selected.all()) {
       await expect(control).toHaveCSS('color', palette.color)
       await expect(control).toHaveCSS('background-color', palette.background)

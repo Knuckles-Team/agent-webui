@@ -68,7 +68,7 @@ describe('retained workspace query lens', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
-  // spec: WEBUI-DESIGN-R004.2
+  // spec: WEBUI-DESIGN-R004.2.1
   it('keeps validation mode, source, errors and focused pane across host visibility changes', async () => {
     vi.stubGlobal(
       'fetch',

@@ -610,7 +610,7 @@ the same dock position across Work, Explore, Operate and retained private routes
 Chat.conversation-identity.test.tsx uses real Chat and transport.
 It checks draft retention, current context on send and owner retirement through the dock.
 
-WEBUI-APPS-R049.2 and WEBUI-DESIGN-R004.2: native-chat.browser.ts exercises the
+WEBUI-APPS-R049.1.3 and WEBUI-DESIGN-R004.2.1: native-chat.browser.ts exercises the
 actual app with synthetic server fixtures. Check absent fixed overlays, dominant
 desktop task width, keyboard/touch composer access, expansion, repeated context
 changes, resize and short viewports. Execution must be recorded on the exact
@@ -619,3 +619,12 @@ candidate; authored checks alone do not establish browser acceptance.
 The existing canonical Chat suites retain attachment, tool, usage, SWE, history
 and admission coverage. No native WebMCP, all-leaf semantic navigation or live
 provider completion is inferred from these source tests.
+
+## Retained acceptance verification
+
+WEBUI-APPS-R049.2.2 retains every original baseline/redesign comparison and native interaction criterion from R049.2.
+Record identical-fixture task results, navigation counts and scrolling distances for the complete composition.
+Keep Work/Operate and unqualified native interactions visible as gaps rather than inferring acceptance from the Explore slice.
+
+The gate-wrapper metadata tests keep broad ancestor rollups open and preserve qualified source receipts.
+Those data-only guards do not establish product acceptance.
