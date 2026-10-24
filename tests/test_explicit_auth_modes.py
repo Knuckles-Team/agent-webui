@@ -19,14 +19,7 @@ def test_explicit_none_binds_no_identity_or_grant(monkeypatch):
     from agent_webui.host import current_actor, current_grant
 
     _no_verifier(monkeypatch)
-    app = _build(
-        auth_mode='none',
-        anonymous_read_routes=frozenset(
-            {'/api/mode-contract', '/api/context-contract'}
-        ),
-    )
 
-    @app.get('/api/mode-contract')
     def contract():
         actor = current_actor()
         return {
@@ -35,6 +28,14 @@ def test_explicit_none_binds_no_identity_or_grant(monkeypatch):
             'grant': current_grant(),
             'actor': actor.actor_id,
         }
+
+    app = _build(
+        auth_mode='none',
+        application_composer=lambda app: app.get('/api/mode-contract')(contract),
+        anonymous_read_routes=frozenset(
+            {'/api/mode-contract', '/api/context-contract'}
+        ),
+    )
 
     response = TestClient(app).get('/api/mode-contract')
     assert response.status_code == 200
@@ -112,20 +113,21 @@ def test_none_clears_ambient_authority_and_refuses_stale_cookie(monkeypatch):
     )
 
     _no_verifier(monkeypatch)
-    app = _build(
-        auth_mode='none',
-        anonymous_read_routes=frozenset(
-            {'/api/mode-contract', '/api/context-contract'}
-        ),
-    )
     inherited = ActorContext(
         actor_id='host-process', tenant_id='host', authenticated=True
     )
     grant = RequestGrant(inherited, 'host', frozenset({'kg:admin'}))
 
-    @app.get('/api/context-contract')
     def context():
         return {'actor': current_actor().actor_id, 'grant': current_grant()}
+
+    app = _build(
+        auth_mode='none',
+        application_composer=lambda app: app.get('/api/context-contract')(context),
+        anonymous_read_routes=frozenset(
+            {'/api/mode-contract', '/api/context-contract'}
+        ),
+    )
 
     with use_actor(inherited), use_grant(grant):
         client = TestClient(app)

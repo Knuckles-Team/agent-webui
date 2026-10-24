@@ -34,7 +34,7 @@ Exercise real enhanced file/config/editor handlers in no-auth: the interim imple
 
 | Child | Source evidence or remaining acceptance |
 |---|---|
-| WEBUI-IDENTITY-R003.1.1 | `tests/test_explicit_auth_modes.py` checks explicit anonymous policy and refusal, not positive governed effects. |
+| WEBUI-IDENTITY-R003.1.1 | `tests/test_explicit_auth_modes.py` checks explicit anonymous policy and refusal, not positive governed effects. Register probe routes through `application_composer` before the SPA mount so the same checks run against installed candidate wheels with packaged assets. |
 | WEBUI-IDENTITY-R003.1.2 | Installed anonymous journeys, UI/WebMCP parity and native effects remain open. |
 | WEBUI-IDENTITY-R003.2.1 | `tests/test_explicit_auth_modes.py` refuses missing or untyped EG owners. |
 | WEBUI-IDENTITY-R003.2.2 | Installed EG login/session/logout and HTTP/WebSocket qualification remain open. |
