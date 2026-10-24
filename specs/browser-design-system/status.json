@@ -50,7 +50,8 @@
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R002.1"
-      ]
+      ],
+      "priority": 0
     },
     {
       "id": "WEBUI-DESIGN-R003",
@@ -78,7 +79,8 @@
       "rollup_of": [
         "WEBUI-DESIGN-R004.1",
         "WEBUI-DESIGN-R004.2"
-      ]
+      ],
+      "priority": 0
     },
     {
       "id": "WEBUI-DESIGN-R005",
@@ -94,7 +96,8 @@
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R005.1"
-      ]
+      ],
+      "priority": 0
     },
     {
       "id": "WEBUI-DESIGN-R006",
@@ -161,7 +164,8 @@
         "e2e/workspace-density.spec.ts:1",
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:156",
         "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:1"
-      ]
+      ],
+      "priority": 0
     },
     {
       "id": "WEBUI-DESIGN-R004.1",
@@ -170,7 +174,8 @@
       "landed_in": [],
       "verified_by": [
         "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:93"
-      ]
+      ],
+      "priority": 0
     },
     {
       "id": "WEBUI-DESIGN-R004.2",
@@ -182,7 +187,8 @@
         "e2e/workspace-zoom.browser.ts:1",
         "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:71",
         "src/components/workspace/__tests__/WorkspaceViewport.test.tsx:1"
-      ]
+      ],
+      "priority": 0
     },
     {
       "id": "WEBUI-DESIGN-R005.1",
@@ -193,14 +199,30 @@
         "e2e/workspace-branches.browser.ts:1",
         "src/components/workspace/__tests__/WorkspaceCommandBranches.test.tsx:1",
         "src/components/workspace/__tests__/WorkspacePaletteFocus.test.tsx:1"
-      ]
+      ],
+      "priority": 0
     },
     {
       "id": "WEBUI-DESIGN-R010",
       "title": "Measured performance under representative load",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [],
+      "priority": 0
     }
+  ],
+  "frontier": [
+    "WEBUI-DESIGN-R002.1",
+    "WEBUI-DESIGN-R004.1",
+    "WEBUI-DESIGN-R004.2",
+    "WEBUI-DESIGN-R005.1",
+    "WEBUI-DESIGN-R010"
+  ],
+  "unserved": [
+    "WEBUI-DESIGN-R002.1",
+    "WEBUI-DESIGN-R004.1",
+    "WEBUI-DESIGN-R004.2",
+    "WEBUI-DESIGN-R005.1",
+    "WEBUI-DESIGN-R010"
   ]
 }

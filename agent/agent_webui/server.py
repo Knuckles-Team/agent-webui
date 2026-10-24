@@ -202,6 +202,8 @@ _READ_ONLY_POST_PATHS = frozenset(
         # Canonical Arbora Effect.READ operations; mcp:discover is checked downstream.
         '/api/v1/ops/fleet.status',
         '/api/v1/ops/fleet.catalog.list',
+        # Canonical runs.current_plan is Effect.READ; run visibility stays downstream.
+        '/api/v1/ops/runs.current_plan',
         '/api/graph/ask',
         '/api/graph/ask-data',
         '/api/graph/catalog',

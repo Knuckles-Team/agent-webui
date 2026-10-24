@@ -729,3 +729,17 @@ Mounted tests check the selected Work branch and editor DOM across map presentat
 
 R049 owns this partial entry migration. R049.1.3 owns the retained Work source behavior.
 R045 and R049.1.2 remain open; these source receipts do not complete either requirement.
+
+### Read-only current plan in the selected task
+
+Extend WEBUI-APPS-R004.4 through the existing Arbora operation transport.
+The selected task's validated `metadata.arbora.runId` selects `runs.current_plan`.
+Arbora projects that reference from its stored task run identifier; its presence
+does not prove plan availability. The independent Work trace URL and
+`runTraceRef` never select this read. Render only the SDK current-plan snapshot,
+not an executable task plan or a plan inferred from chat content.
+Clear expired snapshots and retire requests across task and identity changes.
+Classify only the canonical `Effect.READ` POST as a host read; retain
+authentication, CSRF and downstream caller policy. Do not grant write access
+to compensate for a read transport. This bounded slice adds no editing,
+metrics, harness configuration, trace association or provider acceptance.

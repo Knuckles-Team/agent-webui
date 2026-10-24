@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.3
+// spec: WEBUI-APPS-R049.1.3, WEBUI-APPS-R004.4
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'
@@ -7,6 +7,7 @@ import { PublicPageContextSchema, toPublicPageContext } from '@/lib/webmcp/contr
 import { parseBoundedWebMcpOutput } from '@/lib/webmcp/validation'
 import type { WebMcpToolDefinition } from '@/lib/webmcp/types'
 import { ApiError } from '@/lib/api-validation'
+import { readCurrentPlan } from '@/lib/current-plan'
 import { navigateWork, parseWorkState, workApi, workHref } from '@/lib/work-workspace'
 import { useConversations } from '@/lib/chat-store'
 import WorkWorkspace from '../WorkWorkspace'
@@ -15,6 +16,10 @@ const state = vi.hoisted(() => ({
   role: 'user',
   loading: false,
   tenant: 'tenant-a',
+}))
+vi.mock('@/lib/current-plan', async (original) => ({
+  ...(await original<object>()),
+  readCurrentPlan: vi.fn(async () => ({ availability: 'unavailable', snapshot: null })),
 }))
 vi.mock('@/lib/auth', () => ({
   useIdentity: () => ({
@@ -114,6 +119,65 @@ describe('retained Work composition', () => {
     })
     expect(screen.getByRole('heading', { name: 'Work' })).toHaveFocus()
     expect(screen.getByLabelText('Selected evidence')).toHaveTextContent('task-a')
+  })
+  it('reads only the selected task run metadata, never its independent trace URL or reference', async () => {
+    vi.mocked(workApi.getTask).mockResolvedValueOnce({
+      id: 'task-a',
+      metadata: {
+        arbora: {
+          runId: 'authoritative-run',
+          runTraceRef: 'trace-not-a-run',
+        },
+      },
+    })
+    window.history.replaceState({}, '', '/workspace/work?task=task-a&run=trace-a')
+    mount()
+    await screen.findByText('Current plan is not available for this run.')
+    expect(readCurrentPlan).toHaveBeenCalledExactlyOnceWith('authoritative-run', expect.any(AbortSignal))
+    expect(parseWorkState(window.location.href)).toMatchObject({ task: 'task-a', run: 'trace-a' })
+    fireEvent.click(screen.getByRole('button', { name: 'All traces' }))
+    expect(parseWorkState(window.location.href)).toMatchObject({ task: 'task-a', run: null })
+    expect(readCurrentPlan).toHaveBeenCalledTimes(1)
+  })
+  it('retires the previous task plan request when selecting another task', async () => {
+    vi.mocked(workApi.listTasks).mockResolvedValueOnce([{ id: 'task-a' }, { id: 'task-b' }])
+    vi.mocked(workApi.getTask)
+      .mockResolvedValueOnce({ id: 'task-a', metadata: { arbora: { runId: 'run-a' } } })
+      .mockResolvedValueOnce({ id: 'task-b', metadata: { arbora: { runId: 'run-b' } } })
+    let resolve!: (value: Awaited<ReturnType<typeof readCurrentPlan>>) => void
+    vi.mocked(readCurrentPlan).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done
+      }),
+    )
+    window.history.replaceState({}, '', '/workspace/work?task=task-a')
+    mount()
+    await screen.findByText('Loading current plan…')
+    const signal = vi.mocked(readCurrentPlan).mock.calls[0][1]
+    fireEvent.click(await screen.findByRole('link', { name: 'task-b' }))
+    await screen.findByText('Current plan is not available for this run.')
+    expect(signal.aborted).toBe(true)
+    expect(readCurrentPlan).toHaveBeenLastCalledWith('run-b', expect.any(AbortSignal))
+    await act(async () => {
+      resolve({
+        availability: 'available',
+        snapshot: {
+          run_id: 'run-a',
+          revision: 1,
+          observed_at: new Date(Date.now() - 1000).toISOString(),
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+          items: [{ text: 'Retired task plan', status: 'pending' }],
+        },
+      })
+    })
+    expect(screen.queryByText('Retired task plan')).not.toBeInTheDocument()
+    expect(parseWorkState(window.location.href).task).toBe('task-b')
+  })
+  it('does not manufacture a plan selector from a trace or missing task metadata', async () => {
+    window.history.replaceState({}, '', '/workspace/work?task=task-a&run=trace-a')
+    mount()
+    await screen.findByText(/no valid run reference/)
+    expect(readCurrentPlan).not.toHaveBeenCalled()
   })
   it('inspects only returned task output and keeps the conversation while refreshing', async () => {
     vi.mocked(workApi.getTask).mockResolvedValueOnce({
