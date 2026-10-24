@@ -151,6 +151,30 @@ describe('retained Work composition', () => {
     })
     expect(screen.getByLabelText('Selected evidence')).toHaveTextContent('trace-a')
   })
+  it('does not infer navigation to a recorded parent absent from the loaded trace', async () => {
+    vi.mocked(workApi.getRun).mockResolvedValueOnce({
+      ok: true,
+      unavailable: false,
+      data: {
+        result: {
+          trace: { id: 'trace-a' },
+          nodes: [{ id: 'node-a', parentId: 'unloaded-parent', name: 'Child' }],
+        },
+      },
+    })
+    const selected = { conversation: 'conversation-a', task: 'task-a', run: 'trace-a', node: 'node-a' }
+    window.history.replaceState({}, '', workHref(selected))
+    mount()
+    await screen.findByText('unloaded-parent')
+    expect(screen.queryByRole('button', { name: 'Inspect recorded parent' })).not.toBeInTheDocument()
+    expect(parseWorkState(window.location.href)).toEqual(selected)
+    await expect(
+      state.tools[0].execute({ ...selected, node: 'unloaded-parent' }, { signal: new AbortController().signal }),
+    ).rejects.toThrow('outside')
+    expect(parseWorkState(window.location.href)).toEqual(selected)
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trace' }))
+    expect(parseWorkState(window.location.href)).toEqual({ ...selected, node: null })
+  })
   it('withdraws stale evidence on failed refresh and restores matching detail on retry', async () => {
     window.history.replaceState({}, '', '/workspace/work?run=trace-a&node=node-a')
     mount()
