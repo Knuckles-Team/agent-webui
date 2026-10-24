@@ -282,8 +282,10 @@
     {
       "id": "WEBUI-API-R011.4",
       "title": "Flat execution read source adapter",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "5069ca94e71e"
+      ],
       "verified_by": [
         "e2e/execution-graph.browser.ts:1",
         "src/components/workspace/__tests__/WorkExecutionGraph.test.tsx:1",
