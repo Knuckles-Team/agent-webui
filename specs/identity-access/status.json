@@ -38,8 +38,7 @@
         "WEBUI-IDENTITY-R003.1",
         "WEBUI-IDENTITY-R003.2",
         "WEBUI-IDENTITY-R003.3"
-      ],
-      "priority": 0
+      ]
     },
     {
       "id": "WEBUI-IDENTITY-R004",
@@ -132,8 +131,7 @@
       "rollup_of": [
         "WEBUI-IDENTITY-R003.1.1",
         "WEBUI-IDENTITY-R003.1.2"
-      ],
-      "priority": 0
+      ]
     },
     {
       "id": "WEBUI-IDENTITY-R003.2",
@@ -144,8 +142,7 @@
       "rollup_of": [
         "WEBUI-IDENTITY-R003.2.1",
         "WEBUI-IDENTITY-R003.2.2"
-      ],
-      "priority": 0
+      ]
     },
     {
       "id": "WEBUI-IDENTITY-R003.3",
@@ -156,16 +153,14 @@
       "rollup_of": [
         "WEBUI-IDENTITY-R003.3.1",
         "WEBUI-IDENTITY-R003.3.2"
-      ],
-      "priority": 0
+      ]
     },
     {
       "id": "WEBUI-IDENTITY-R010",
       "title": "Long-session renewal and mode-transition coherence",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": [],
-      "priority": 0
+      "verified_by": []
     },
     {
       "id": "WEBUI-IDENTITY-R003.1.1",
@@ -188,8 +183,7 @@
       "title": "Complete installed anonymous journeys",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": [],
-      "priority": 0
+      "verified_by": []
     },
     {
       "id": "WEBUI-IDENTITY-R003.2.1",
@@ -207,8 +201,7 @@
       "title": "Installed EG identity journeys",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": [],
-      "priority": 0
+      "verified_by": []
     },
     {
       "id": "WEBUI-IDENTITY-R003.3.1",
@@ -226,20 +219,7 @@
       "title": "External provider interoperability qualification",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": [],
-      "priority": 0
+      "verified_by": []
     }
-  ],
-  "frontier": [
-    "WEBUI-IDENTITY-R010",
-    "WEBUI-IDENTITY-R003.1.2",
-    "WEBUI-IDENTITY-R003.2.2",
-    "WEBUI-IDENTITY-R003.3.2"
-  ],
-  "unserved": [
-    "WEBUI-IDENTITY-R010",
-    "WEBUI-IDENTITY-R003.1.2",
-    "WEBUI-IDENTITY-R003.2.2",
-    "WEBUI-IDENTITY-R003.3.2"
   ]
 }

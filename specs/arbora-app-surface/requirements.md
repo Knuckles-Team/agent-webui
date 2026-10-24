@@ -263,3 +263,19 @@ remain supported for asset hosting. This repair alone does not qualify dynamic
 leaves, history, semantic zoom, provider behavior or complete redesign.
 
 Readiness alias retirement follows the supported dashboard contract. Unavailable graph `refresh.mode` and `principal` fields are explicitly retired.
+
+### R048 attended agent proposal delivery
+
+The armed WebMCP channel accepts an Arbora proposal for human review.
+It shows the exact tool, arguments, requesting agent and opaque requester reference.
+A trusted human acceptance returns only the proposal decision.
+It neither runs a tool nor satisfies the separate exact-request mutation confirmation.
+Generation, schema and retained input validation bind the prompt to the active registration.
+Expiry, server withdrawal, disconnect and retirement withdraw the prompt.
+The client rejects terminal proposal IDs.
+
+Source tests cover proposals, channel transport, rendered review and Python message validation.
+Accepted-path component tests use the existing attended-gesture seam.
+These fixtures do not establish authenticated served execution or installed native browser acceptance.
+WEBUI-APPS-R048 remains open pending that composed acceptance.
+This change grants no session, arms no browser and changes no production authority.

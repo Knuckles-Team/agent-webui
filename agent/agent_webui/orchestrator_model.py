@@ -28,6 +28,8 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from .turn_usage import bound_turn_usage
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_WEBUI_AGENT_NAME = 'webui-assistant'
@@ -139,7 +141,16 @@ def _run_identity(result: Any, conversation_context: str) -> dict[str, Any] | No
         # into an execution failure that encourages the caller to repeat effects.
         logger.warning('Arbora run identity metadata is invalid')
         return None
-    return {'arbora_run': identity.model_dump(exclude_none=True)}
+    usage = bound_turn_usage(
+        arbora.get('usage'),
+        task_id=identity.task_id,
+        context_id=identity.context_id,
+        run_id=identity.run_id,
+    )
+    return {
+        'arbora_run': identity.model_dump(exclude_none=True),
+        'arbora': {'usage': usage},
+    }
 
 
 _stream_metadata: ContextVar[dict[str, Any] | None] = ContextVar(
@@ -231,7 +242,14 @@ def build_orchestrator_model(
         result = await (invoke or invoke_operation)(
             'agents.run', {'message': message}, idempotency_key=run_id
         )
-        return _reply_text(result).strip(), _run_identity(result, conversation_context)
+        # Mark every canonical turn, including missing/invalid receipts, so the
+        # browser never mistakes FunctionModel estimates for producer usage.
+        # Explicit null clears a previous value in the SDK metadata deep merge.
+        metadata = {
+            'arbora': {'usage': None},
+            **(_run_identity(result, conversation_context) or {}),
+        }
+        return _reply_text(result).strip(), metadata
 
     async def _reply(
         messages: list[ModelMessage], agent_info: AgentInfo

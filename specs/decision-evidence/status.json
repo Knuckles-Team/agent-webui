@@ -126,7 +126,5 @@
         "src/components/decisions/__tests__/DecisionExplorerTab.test.tsx:41"
       ]
     }
-  ],
-  "frontier": [],
-  "unserved": []
+  ]
 }

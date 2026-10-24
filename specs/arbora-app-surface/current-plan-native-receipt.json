@@ -1,0 +1,58 @@
+{
+  "requirement": "WEBUI-APPS-R004.4",
+  "observed_at": "2026-10-24T16:15:59Z",
+  "qualification": "Released native producer to actual registered Arbora operation through WebUI host; synthetic browser identity seam",
+  "webui_executed_source": "ea34a07ce134595aeca78fa8cf8370c55ff52de5",
+  "webui_server_sha256": "409648ebcc3a1383e19877a71047864396abba1abb6e73865fe7f6ac81340a30",
+  "arbora_executed_overlay": "b733513693ae8850712967fb4915bf4a6be65939",
+  "arbora_equivalent_published_source": "ac074461cd8a496fe93cbd33cca6c2269857075a",
+  "arbora_code_tree": "b2ef346f8f16973ca4437cbd83fae2d38d7ec24d",
+  "arbora_identity_fixture_tree": "84546035e6efca8802d473741df7c519cebd8246",
+  "eg_fixture_source": "17553fa7a2f4dfa5c7b48ab44823742e19e739cc",
+  "eg_fixture_file": "tests/conftest.py",
+  "eg_fixture_sha256": "83300cdba77977cec16841f944cb65831200d966d51df2ed59c2832283ad335d",
+  "releases": {
+    "epistemic_graph-2.27.6-cp39-abi3-manylinux_2_28_x86_64.whl": "85c57dbeaad1e5142322e360f44a6fe8032e6cf75882c8293859a84fab5bea0a",
+    "epistemic_graph_server-2.27.6-py3-none-manylinux_2_28_x86_64.whl": "1a711f76a58605776ff78229f263d851a6d83475fd40a30d2480ad81be668334",
+    "agent_connector_sdk-0.5.4-py3-none-any.whl": "d9a35dbbeec3cb50baa6bcd28a8f2d691fef23206532e86340d9c8d0fb617603",
+    "native_executable_sha256": "c33b7ab5835e775eacb43dcea2039a3efce26c7c4b1b5193da4d0bca8956d606"
+  },
+  "seed_scopes": [
+    "service:control",
+    "work:submit",
+    "work:claim",
+    "work:write"
+  ],
+  "seed_control_reason": "Public WorkItems capability negotiation invokes Health, which requires service:control.",
+  "reader_scopes": [
+    "kg:read",
+    "work:read"
+  ],
+  "authority": "Separate disposable client contexts for the same immutable synthetic owner; no persistent account or production endpoint.",
+  "assertions": {
+    "reader_control_denied": true,
+    "reader_publication_denied": true,
+    "available_empty_revision_zero": true,
+    "ordered_revision_one": true,
+    "missing_run_unavailable": true,
+    "missing_csrf_http_status": 401,
+    "canonical_embedded_policy_active": true,
+    "server_and_store_removed": true,
+    "task_plan_field_absent": true
+  },
+  "setup_failures_preserved": [
+    "Invalid fixture policy profile required was refused; corrected to local with the default embedded policy.",
+    "Synthetic issuer tenant/audience mismatch was refused before dispatch; matched the same native fixture deployment without changing binding checks."
+  ],
+  "reproducer": "scripts/qualify_current_plan_native.py",
+  "reproducer_validation": "Successful exercise statements are AST-identical, apart from import order; retained wrapper adds explicit input, version and hash guards. The native sequence was not rerun for this packaging-only change.",
+  "not_proven": [
+    "Installed WebUI/Arbora wheel composition",
+    "Live issuer or production identity",
+    "Native browser current-plan rendering",
+    "Live provider plan availability"
+  ],
+  "delivery_state": "SPECIFIED",
+  "published_task_plan": null,
+  "arbora_equivalent_full_tree": "a21126a9991d8720afae71e5aafb8f10348684a1"
+}

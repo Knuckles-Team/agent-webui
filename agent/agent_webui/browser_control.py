@@ -219,8 +219,20 @@ class ControlCancelled(_WireModel):
     effect: Literal['none', 'browser_reported_committed', 'unknown']
 
 
+class ControlProposalResponse(_WireModel):
+    protocol: Literal['webmcp.control.v1']
+    type: Literal['control.proposal_response']
+    proposal_id: str = Field(pattern=_OPAQUE_ID_PATTERN)
+    proposal_digest: str = Field(pattern=_DIGEST_PATTERN)
+    accepted: bool
+
+
 BrowserMessage = Annotated[
-    CatalogRegister | ControlConfirm | ControlResult | ControlCancelled,
+    CatalogRegister
+    | ControlConfirm
+    | ControlResult
+    | ControlCancelled
+    | ControlProposalResponse,
     Field(discriminator='type'),
 ]
 
@@ -264,6 +276,37 @@ class ControlCancel(_WireModel):
     reason: str = Field(min_length=1, max_length=64, pattern=r'^[a-z][a-z0-9_-]{0,63}$')
 
 
+class ControlProposalRequest(_WireModel):
+    protocol: Literal['webmcp.control.v1']
+    type: Literal['control.proposal_request']
+    proposal_id: str = Field(pattern=_OPAQUE_ID_PATTERN)
+    proposal_digest: str = Field(pattern=_DIGEST_PATTERN)
+    registration_generation: int = Field(ge=1, le=2**53 - 1)
+    tool_id: str = Field(pattern=_OPAQUE_ID_PATTERN)
+    schema_digest: str = Field(pattern=_DIGEST_PATTERN)
+    arguments: dict[str, JsonValue]
+    requester_agent: str = Field(min_length=1, max_length=512)
+    requester_run_ref: str = Field(pattern=_OPAQUE_ID_PATTERN)
+    expires_at: int = Field(ge=1, le=2**53 - 1)
+
+    @field_validator('arguments')
+    @classmethod
+    def _bounded_proposal_arguments(
+        cls, value: dict[str, JsonValue]
+    ) -> dict[str, JsonValue]:
+        validate_protocol_json(value)
+        if len(canonical_protocol_json(value).encode('utf-8')) > 8_192:
+            raise ValueError('proposal arguments exceed the browser-control boundary')
+        return value
+
+
+class ControlProposalWithdrawn(_WireModel):
+    protocol: Literal['webmcp.control.v1']
+    type: Literal['control.proposal_withdrawn']
+    proposal_id: str = Field(pattern=_OPAQUE_ID_PATTERN)
+    reason: str = Field(pattern=r'^[a-z][a-z0-9_-]{0,63}$')
+
+
 class ChannelReady(_WireModel):
     protocol: Literal['webmcp.control.v1']
     type: Literal['channel.ready']
@@ -283,7 +326,12 @@ class CatalogRegistrationReceipt(_WireModel):
 
 
 ServerMessage = Annotated[
-    ChannelReady | ControlConfirmationRequest | ControlCall | ControlCancel,
+    ChannelReady
+    | ControlConfirmationRequest
+    | ControlCall
+    | ControlCancel
+    | ControlProposalRequest
+    | ControlProposalWithdrawn,
     Field(discriminator='type'),
 ]
 
