@@ -349,3 +349,8 @@ Those unavailable fields and fixed-check assumptions are retired, not fabricated
 The old client required principal metadata, but the retired page did not show it.
 Reprobe invokes the supported collector again; it does not claim the old refresh-mode semantics.
 Full provider, authentication and operational migration acceptance remain open.
+
+### Qualification source backup
+
+`e2e/fixtures/operate-qualification/` preserves the manual synthetic scripts used for the catalog, readiness and migration evidence above.
+Historical assertions remain candidate-specific. This backup adds no implementation or acceptance claim.
