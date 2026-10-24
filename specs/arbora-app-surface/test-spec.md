@@ -225,3 +225,11 @@ callbacks still navigate a registered object leaf and retain role, path and
 execution-cancellation checks. A held callback after cleanup must not add history
 or change rendered location. This is source integration evidence, not native
 browser, actual Back/Forward, or served authority acceptance. R048 stays open.
+
+## R048 hidden document registration tests
+
+`src/lib/webmcp/__tests__/provider.test.tsx` uses a structural document API fixture.
+Check initially hidden documents, visible-to-hidden cleanup, late acknowledgements, and fresh registrations on return.
+Manual content stays mounted. Hidden documents expose no attended control.
+Registration signals must abort when the document hides.
+The fixture does not prove native browser support, real visibility scheduling, or full R048 acceptance.
