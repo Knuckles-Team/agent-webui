@@ -195,36 +195,6 @@ and test gates are release requirements. Treat a clean baseline as an invariant.
 - Use conventional commit subjects and keep examples synthetic. Do not commit
   credentials, private endpoints, personal data, or machine-specific paths.
 
-## Release
-
-A `v*` tag push runs `.github/workflows/release.yml`: `release-intent` ->
-`publish-pypi` (wheel + sdist, `scripts/release/check_pypi_artifacts.py`) ->
-`publish-docker`. The workflow builds whatever version the tagged commit's
-`pyproject.toml` holds, so the bump merges before the tag. A tag on a
-commit with the previous version rebuilds the old version and PyPI refuses it.
-
-1. Bump first: `bump-my-version bump patch|minor|major --no-commit --no-tag`
-   (never hand-edit). `.bumpversion.cfg` updates `pyproject.toml`, `README.md`,
-   `package.json`, `agent/agent_webui/server.py` and `uv.lock`; confirm
-   `current_version` moved, then run `uv lock` and `pnpm install` if either
-   lock changed, and update any recorded fixture that embeds the version.
-2. Merge the bump PR to `main` (rebase merge).
-3. Confirm the merged commit's version before tagging. Read its version with
-   `git show <commit>:pyproject.toml | grep '^version'`; it must equal the
-   intended tag `vX.Y.Z`, match `.bumpversion.cfg` `current_version`, and the
-   version must not be on PyPI:
-   `curl -s -o /dev/null -w '%{http_code}' https://pypi.org/pypi/agent-webui/X.Y.Z/json`
-   must print `404`.
-4. Only then tag that commit and push the tag: `git tag vX.Y.Z <commit> &&
-   git push origin vX.Y.Z`.
-5. Confirm the wheel and the sdist are both on PyPI
-   (`https://pypi.org/pypi/agent-webui/X.Y.Z/json`, `urls` lists both) and the
-   `publish-docker` job pushed the image.
-6. If a tag sits on the wrong commit and nothing reached PyPI, drop the tag
-   (`git push origin :refs/tags/vX.Y.Z`, `git tag -d vX.Y.Z`) and re-tag the
-   right commit. If PyPI accepted any file, cut the next patch; never reuse that
-   version.
-
 ## Documentation
 
 README.md is the concise public entry point. Keep feature inventories, protocol
