@@ -2009,9 +2009,11 @@ class OIDCBrowserSessionMiddleware:
     async def _handle_session(self, scope: Any, send: Any) -> None:
         """Report who the browser is, without ever handing back the token."""
 
-        session = self._unseal(_read_session_cookie(_cookies(scope)))
+        session, cookies = await self._resolve_session(scope)
         if not session or not session.get('access_token'):
-            await self._respond(send, 200, body=b'{"authenticated":false}')
+            await self._respond(
+                send, 200, body=b'{"authenticated":false}', headers=cookies
+            )
             return
         claims = _unverified_claims(str(session['access_token']))
         realm_roles = [
@@ -2047,7 +2049,7 @@ class OIDCBrowserSessionMiddleware:
             },
             sort_keys=True,
         ).encode('utf-8')
-        await self._respond(send, 200, body=body)
+        await self._respond(send, 200, body=body, headers=cookies)
 
     # ------------------------------------------------------------------- pass-on
 
@@ -2236,7 +2238,7 @@ class OIDCBrowserSessionMiddleware:
         self, scope: Any, session: dict[str, Any]
     ) -> tuple[dict[str, Any] | None, list[tuple[bytes, bytes]] | None]:
         """Attempt the refresh-token grant for an expired session that still
-        carries one. Returns ``(None, None)`` if the refresh itself fails."""
+        carries one. Returns cookie deletion headers if the refresh itself fails."""
         refreshed = await self._token_request(
             {
                 'grant_type': 'refresh_token',
@@ -2244,7 +2246,7 @@ class OIDCBrowserSessionMiddleware:
             }
         )
         if refreshed is None:
-            return None, None
+            return None, _clear_session_cookie_headers(secure=_is_secure(scope))
         new_session = self._session_from_tokens(refreshed)
         cookies = _session_cookie_headers(
             self._seal(new_session), secure=_is_secure(scope)
@@ -2256,7 +2258,7 @@ class OIDCBrowserSessionMiddleware:
     ) -> tuple[dict[str, Any] | None, list[tuple[bytes, bytes]] | None]:
         """Unseal the session cookie and, if it is expired, either silently
         renew it (refresh token present) or discard it (no refresh token /
-        renewal failed). Returns ``(session_or_None, refreshed_cookies_or_None)``."""
+        renewal failed). Returns the session and renewal or deletion cookies."""
         session = self._unseal(_read_session_cookie(_cookies(scope)))
         if session is None:
             return None, None
@@ -2269,7 +2271,7 @@ class OIDCBrowserSessionMiddleware:
             return session, None
         if session.get('refresh_token'):
             return await self._renew_expired_session(scope, session)
-        return None, None
+        return None, _clear_session_cookie_headers(secure=_is_secure(scope))
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         scope_type = scope.get('type')
@@ -2309,7 +2311,10 @@ class OIDCBrowserSessionMiddleware:
             )
             return
 
-        await self.app(scope, receive, send)
+        cookie_send = self._cookie_sender(
+            scope, send, set_cookies=refreshed_cookies, attended_receipt=None
+        )
+        await self.app(scope, receive, cookie_send)
 
 
 @dataclass(frozen=True, slots=True)

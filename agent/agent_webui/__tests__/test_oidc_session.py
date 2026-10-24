@@ -1714,3 +1714,81 @@ async def test_verify_browser_session_rejects_a_principal_mismatch(
         await verify_browser_session(
             scope, session, authority=authority, console_origin=_EVIDENCE_ORIGIN
         )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('path', [SESSION_PATH, '/api/fixture'])
+@pytest.mark.parametrize('refresh', ['', 'rejected-refresh'])
+async def test_expired_http_session_clears_cookies_and_status(
+    monkeypatch, path, refresh
+):
+    async def refuse_api(scope, receive, send):
+        assert not any(key == b'authorization' for key, _ in scope['headers'])
+        await OIDCBrowserSessionMiddleware._respond(send, 401)
+
+    middleware = OIDCBrowserSessionMiddleware(refuse_api, settings=_settings())
+
+    async def rejected(_form):
+        return None
+
+    monkeypatch.setattr(middleware, '_token_request', rejected)
+    sealed = middleware._seal(
+        {
+            'access_token': 'expired-fixture',
+            'refresh_token': refresh,
+            'expires_at': time.time() - 1,
+        }
+    )
+    cookie = '; '.join(
+        raw.decode().split(';', 1)[0]
+        for _, raw in _session_cookie_headers(sealed, secure=False)
+    )
+    send = _Recorder()
+    await middleware(_scope(path, headers=[(b'cookie', cookie.encode())]), None, send)
+    assert send.status == (200 if path == SESSION_PATH else 401)
+    if path == SESSION_PATH:
+        assert json.loads(send.body) == {'authenticated': False}
+    assert send.headers(b'set-cookie') == [
+        raw for _, raw in _clear_session_cookie_headers(secure=False)
+    ]
+
+
+@pytest.mark.anyio
+async def test_session_status_renews_and_persists_cookie(monkeypatch):
+    middleware = OIDCBrowserSessionMiddleware(_noop_app, settings=_settings())
+
+    async def renewed(form):
+        assert form['refresh_token'] == 'refresh-fixture'
+        return {
+            'access_token': 'new-fixture',
+            'expires_in': 300,
+            'refresh_token': 'renewed-refresh-fixture',
+        }
+
+    monkeypatch.setattr(middleware, '_token_request', renewed)
+    sealed = middleware._seal(
+        {
+            'access_token': 'expired-fixture',
+            'refresh_token': 'refresh-fixture',
+            'expires_at': time.time() - 1,
+        }
+    )
+    cookie = '; '.join(
+        raw.decode().split(';', 1)[0]
+        for _, raw in _session_cookie_headers(sealed, secure=False)
+    )
+    send = _Recorder()
+    await middleware(
+        _scope(SESSION_PATH, headers=[(b'cookie', cookie.encode())]), None, send
+    )
+    assert json.loads(send.body)['authenticated'] is True
+    cookies = {
+        raw.decode().split(';', 1)[0].split('=', 1)[0]: raw.decode()
+        .split(';', 1)[0]
+        .split('=', 1)[1]
+        for raw in send.headers(b'set-cookie')
+    }
+    renewed_session = middleware._unseal(_read_session_cookie(cookies))
+    assert renewed_session is not None
+    assert renewed_session['access_token'] == 'new-fixture'
+    assert renewed_session['refresh_token'] == 'renewed-refresh-fixture'
