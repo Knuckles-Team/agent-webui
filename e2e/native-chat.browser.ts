@@ -1,5 +1,6 @@
 // spec: WEBUI-APPS-R005.4, WEBUI-APPS-R049.1.3
-// spec: WEBUI-DESIGN-R004.2.1
+// spec: WEBUI-DESIGN-R004.2.1, WEBUI-DESIGN-R004.2, WEBUI-APPS-R049.2
+// Partial parent evidence only; retained acceptance children keep both parent rollups open.
 // Rendered synthetic app evidence only, not native WebMCP or live provider acceptance.
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { baseURL, responses } from './fixtures/documentation-screenshots.mjs'

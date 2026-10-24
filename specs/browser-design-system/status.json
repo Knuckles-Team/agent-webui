@@ -209,7 +209,9 @@
       "landed_in": [
         "d18ec8c78341"
       ],
-      "verified_by": [],
+      "verified_by": [
+        "e2e/native-chat.browser.ts:2"
+      ],
       "rollup_of": [
         "WEBUI-DESIGN-R004.2.1",
         "WEBUI-DESIGN-R004.2.2"
@@ -218,8 +220,10 @@
     {
       "id": "WEBUI-DESIGN-R004.2.1",
       "title": "Bounded workspace viewport continuity",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "4d0f9693e45d"
+      ],
       "verified_by": [
         "e2e/native-chat.browser.ts:2",
         "e2e/workspace-viewport.browser.ts:1",

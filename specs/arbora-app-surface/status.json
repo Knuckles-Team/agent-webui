@@ -490,6 +490,7 @@
       "title": "One chat session list",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "4d0f9693e45d",
         "d18ec8c78341"
       ],
       "verified_by": [
@@ -2018,7 +2019,9 @@
         "ac86f2de9817",
         "d18ec8c78341"
       ],
-      "verified_by": [],
+      "verified_by": [
+        "e2e/native-chat.browser.ts:2"
+      ],
       "rollup_of": [
         "WEBUI-APPS-R049.2.1",
         "WEBUI-APPS-R049.2.2"
@@ -2057,9 +2060,9 @@
       "landed_in": [
         "158591a6bcef",
         "213863471869",
+        "4d0f9693e45d",
         "6592af62bedb",
-        "80061c0d6501",
-        "b95cabd555b2"
+        "80061c0d6501"
       ],
       "verified_by": [
         "e2e/native-chat.browser.ts:1",
