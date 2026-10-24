@@ -55,3 +55,13 @@ fold hardware, browser zoom or live-provider acceptance.
 `WorkspaceViewport.test.tsx` covers retained selection/focus, pinch-zoom reflow
 avoidance, fallback without VisualViewport, and listener cleanup. These tests
 do not complete WEBUI-DESIGN-R004.2; its broader acceptance remains open.
+
+## Native browser zoom regression
+
+Run `pnpm exec playwright test --config e2e/workspace-zoom.config.ts` for actual
+200-percent Chromium zoom. A permission-free local extension sets the browser
+tab zoom in an isolated temporary profile. This does not simulate zoom through
+CSS, device-scale emulation or pinch scaling. The test checks focus visibility
+across each control's center and edges, keyboard query execution, result
+inspection and retained edits. Window widths are 1280, 640 and 740 pixels.
+Each journey uses reduced motion and synthetic identity/API responses.

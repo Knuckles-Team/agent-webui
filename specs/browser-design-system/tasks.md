@@ -71,3 +71,15 @@ This is partial WEBUI-DESIGN-R004.2 evidence. Native soft-keyboard, fold-device,
 200-percent browser zoom, stream and graph journeys, manual accessibility and
 live-provider acceptance remain open. Synthetic identity and API responses do
 not establish authenticated service acceptance.
+
+## Browser zoom and keyboard continuation
+
+- [x] Reserve scroll range and focus clearance for the floating assistant trigger in Explore and Operate.
+- [ ] Complete WEBUI-DESIGN-R004.2 acceptance across all workspace journeys and native devices.
+
+The native Chromium zoom regression reproduces a partially obscured Run Query
+button before this repair. It uses Tab, Shift+Tab, Enter and Space to edit,
+submit, inspect results and return to the retained draft. Browser zoom is set
+to 200 percent in a fresh profile. The test records the browser zoom value,
+doubled pixel ratio, halved CSS viewport width and unchanged visual-viewport scale.
+This is partial evidence; the full requirement remains open. It does not establish physical fold-device, native soft-keyboard, manual screen-reader or live-service acceptance.
