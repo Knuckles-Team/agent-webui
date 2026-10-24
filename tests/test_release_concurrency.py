@@ -25,6 +25,11 @@ class CiConcurrencyTests(unittest.TestCase):
             '  group: release-${{ github.workflow }}-${{ github.ref }}', RELEASE
         )
 
+    def test_release_publishes_only_to_pypi(self) -> None:
+        self.assertIn('publish-pypi:', RELEASE)
+        self.assertNotIn('publish-docker', RELEASE)
+        self.assertNotIn('docker/', RELEASE)
+
     def test_ci_never_publishes(self) -> None:
         for marker in ('twine', 'docker/build-push-action', 'create-version-release'):
             self.assertNotIn(marker, CI)
