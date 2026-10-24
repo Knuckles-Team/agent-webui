@@ -10,9 +10,20 @@ import { usePageContextPublisher } from '@/lib/page-context'
 import { useWebMcpToolSet } from '@/lib/webmcp/provider'
 import { makeTool } from '@/lib/webmcp/tools'
 import { z } from 'zod'
-import { navigateWork, parseWorkState, workApi, workHref, WorkStateSchema, type WorkState } from '@/lib/work-workspace'
+import {
+  navigateWork,
+  parseWorkState,
+  workApi,
+  retryWorkTaskRead,
+  workHref,
+  WorkStateSchema,
+  type WorkState,
+  type WorkRunDetail,
+} from '@/lib/work-workspace'
 import { useWorkspaceCommands } from './WorkspaceCommands'
 import { WorkTaskControls } from './WorkTaskControls'
+import { WorkConversationControls } from './WorkConversationControls'
+import { WorkTaskInspector } from './WorkTaskInspector'
 import { createTaskCancellation } from './task-cancellation'
 import { useWorkspaceAdmission } from './useWorkspaceAdmission'
 import { loadedWorkCommands } from './loaded-workspace-commands'
@@ -50,17 +61,19 @@ function AuthorizedWork({
   const location = useWorkspaceLocation()
   const { state, error } = destination(location)
   const conversations = useConversations(conversationOwnerKey(identity))
-  const [activeConversation] = useConversationIdFromUrl()
+  const [activeConversation, setActiveConversation] = useConversationIdFromUrl()
   const heading = useRef<HTMLHeadingElement>(null)
   const previous = useRef(location)
   const tasks = useQuery({
     queryKey: ['work-tasks', generation],
     queryFn: ({ signal }) => workApi.listTasks(signal),
+    retry: retryWorkTaskRead,
     enabled: !error,
   })
   const task = useQuery({
     queryKey: ['work-task', generation, state.task],
     queryFn: ({ signal }) => workApi.getTask(state.task!, signal),
+    retry: retryWorkTaskRead,
     enabled: !error && Boolean(state.task),
   })
   const runs = useQuery({
@@ -73,10 +86,16 @@ function AuthorizedWork({
     queryFn: () => workApi.getRun(state.run!),
     enabled: !error && Boolean(state.run),
   })
-  const rows = useMemo(() => (runs.data?.ok ? (runs.data.data?.result ?? []) : []), [runs.data])
-  const candidateRun = detail.data?.ok ? detail.data.data?.result : undefined
+  const rows = useMemo(
+    function availableRunRows() {
+      if (runs.isError || !runs.data?.ok) return []
+      return runs.data.data?.result ?? []
+    },
+    [runs.data, runs.isError],
+  )
+  const candidateRun = !detail.isError && detail.data?.ok ? detail.data.data?.result : undefined
   const run = candidateRun?.trace.id === state.run ? candidateRun : undefined
-  const taskData = task.data?.id === state.task ? task.data : undefined
+  const taskData = !task.isError && task.data?.id === state.task ? task.data : undefined
   const taskMismatch = Boolean(task.data && !taskData)
   const runMismatch = Boolean(candidateRun && !run)
   const selectedNode = run?.nodes.find((node) => node.id === state.node)
@@ -116,9 +135,10 @@ function AuthorizedWork({
       previous.current = location
     }
   }, [location])
+  const availableTasks = useMemo(() => (tasks.isError ? [] : (tasks.data ?? [])), [tasks.isError, tasks.data])
   const tools = useMemo(() => {
     const allowedConversations = new Set(conversations.map((entry) => entry.id))
-    const allowedTasks = new Set([null, state.task, ...(tasks.data?.map((entry) => entry.id) ?? [])])
+    const allowedTasks = new Set([null, state.task, ...availableTasks.map((entry) => entry.id)])
     const allowedRuns = new Set([null, state.run, ...rows.map((entry) => entry.id)])
     const allowedNodes = new Set(run?.nodes.map((node) => node.id) ?? [])
     return [
@@ -148,7 +168,7 @@ function AuthorizedWork({
         },
       }),
     ]
-  }, [conversations, rows, run, tasks.data, state.conversation, state.task, state.run, identity.role])
+  }, [conversations, rows, run, availableTasks, state.conversation, state.task, state.run, identity.role])
   useWebMcpToolSet(error ? [] : tools)
   return (
     <section aria-label="Work workspace" className="workspace-surface flex min-w-0 flex-col gap-3">
@@ -184,6 +204,14 @@ function AuthorizedWork({
         <p className="mt-2 break-all text-xs">
           Active: {activeConversation === '/' ? 'New conversation' : activeConversation}
         </p>
+        <WorkConversationControls
+          enabled={!error}
+          owner={conversationOwnerKey(identity)}
+          conversation={activeConversation}
+          onNew={() => {
+            setActiveConversation('/')
+          }}
+        />
       </section>
       <div className="workspace-panels workspace-panels-balanced">
         <section aria-label="Agent tasks" className="rounded border p-3">
@@ -211,23 +239,24 @@ function AuthorizedWork({
           )}
           {tasks.data?.length === 0 && <p>No tasks were returned.</p>}
           <ul>
-            {tasks.data?.map((entry) => (
-              <li key={entry.id}>
-                <a
-                  href={workHref({ ...state, task: entry.id })}
-                  className={`${button} my-1 inline-flex max-w-full flex-wrap break-all`}
-                  aria-current={state.task === entry.id ? 'true' : undefined}
-                  onClick={(event) => {
-                    if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
-                    event.preventDefault()
-                    navigateWork({ ...state, task: entry.id }, identity.role)
-                  }}
-                >
-                  {entry.id}
-                  {entry.status?.state && ` · ${entry.status.state}`}
-                </a>
-              </li>
-            ))}
+            {!tasks.isError &&
+              tasks.data?.map((entry) => (
+                <li key={entry.id}>
+                  <a
+                    href={workHref({ ...state, task: entry.id })}
+                    className={`${button} my-1 inline-flex max-w-full flex-wrap break-all`}
+                    aria-current={state.task === entry.id ? 'true' : undefined}
+                    onClick={(event) => {
+                      if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+                      event.preventDefault()
+                      navigateWork({ ...state, task: entry.id }, identity.role)
+                    }}
+                  >
+                    {entry.id}
+                    {entry.status?.state && ` · ${entry.status.state}`}
+                  </a>
+                </li>
+              ))}
           </ul>
           {state.task && (
             <div className="mt-2 border-t pt-2">
@@ -263,8 +292,9 @@ function AuthorizedWork({
                       void tasks.refetch()
                     }}
                   />
+                  <WorkTaskInspector task={taskData} />
                   <p className="text-sm">
-                    Child-agent execution and linked evidence are not supplied by this task contract.
+                    Child-agent execution and relationships to listed traces are not supplied by this task contract.
                   </p>
                 </>
               )}
@@ -321,6 +351,15 @@ function AuthorizedWork({
               >
                 All traces
               </button>
+              <button
+                className={button}
+                disabled={detail.isFetching}
+                onClick={() => {
+                  void detail.refetch()
+                }}
+              >
+                Refresh selected trace
+              </button>
               {detail.isFetching && <p role="status">Loading selected trace…</p>}
               {detail.data?.unavailable && <p role="status">Trace detail is unavailable on this backend.</p>}
               {(detail.isError || runMismatch || (detail.data && !detail.data.ok && !detail.data.unavailable)) && (
@@ -354,28 +393,7 @@ function AuthorizedWork({
                     ))}
                   </ul>
                   {state.node && !selectedNode && <p role="alert">This node is not present in the selected trace.</p>}
-                  {selectedNode && (
-                    <dl className="mt-3 grid gap-1 text-sm">
-                      <dt>Node</dt>
-                      <dd className="break-all">{selectedNode.id}</dd>
-                      <dt>Recorded parent</dt>
-                      <dd className="break-all">{selectedNode.parentId ?? 'No parent recorded'}</dd>
-                      <dt>Latency</dt>
-                      <dd>{selectedNode.latencyMs === undefined ? 'Not reported' : `${selectedNode.latencyMs} ms`}</dd>
-                      {selectedNode.model && (
-                        <>
-                          <dt>Model</dt>
-                          <dd>{selectedNode.model}</dd>
-                        </>
-                      )}
-                      {selectedNode.error && (
-                        <>
-                          <dt>Recorded error</dt>
-                          <dd className="break-words">{selectedNode.error}</dd>
-                        </>
-                      )}
-                    </dl>
-                  )}
+                  <TraceNodeInspector state={state} run={run} role={identity.role} />
                   <p className="mt-2 text-sm text-muted-foreground">
                     Run cancellation, live subagent execution and linked output evidence require upstream contracts and
                     are not available in this slice.
@@ -387,5 +405,56 @@ function AuthorizedWork({
         </section>
       </div>
     </section>
+  )
+}
+
+function TraceNodeInspector({
+  state,
+  run,
+  role,
+}: {
+  state: WorkState
+  run: WorkRunDetail
+  role: ReturnType<typeof useIdentity>['identity']['role']
+}) {
+  const node = run.nodes.find((entry) => entry.id === state.node)
+  const parentNode = node?.parentId ? run.nodes.find((entry) => entry.id === node.parentId) : undefined
+  return (
+    <>
+      {state.node && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className={button} onClick={() => navigateWork({ ...state, node: null }, role)}>
+            Back to trace
+          </button>
+          {parentNode && (
+            <button className={button} onClick={() => navigateWork({ ...state, node: parentNode.id }, role)}>
+              Inspect recorded parent
+            </button>
+          )}
+        </div>
+      )}
+      {node && (
+        <dl className="mt-3 grid gap-1 text-sm">
+          <dt>Node</dt>
+          <dd className="break-all">{node.id}</dd>
+          <dt>Recorded parent</dt>
+          <dd className="break-all">{node.parentId ?? 'No parent recorded'}</dd>
+          <dt>Latency</dt>
+          <dd>{node.latencyMs === undefined ? 'Not reported' : `${node.latencyMs} ms`}</dd>
+          {node.model && (
+            <>
+              <dt>Model</dt>
+              <dd>{node.model}</dd>
+            </>
+          )}
+          {node.error && (
+            <>
+              <dt>Recorded error</dt>
+              <dd className="break-words">{node.error}</dd>
+            </>
+          )}
+        </dl>
+      )}
+    </>
   )
 }

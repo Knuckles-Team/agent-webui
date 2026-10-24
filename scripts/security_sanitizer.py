@@ -10,8 +10,8 @@ MAX_SCAN_BYTES = 8 * 1024 * 1024
 # Config
 # llms.txt is the deliberate root-level AI entry index (llms-txt convention,
 # like robots.txt) shipped by the docs/day-0 work — not garbage.
-# overrides.txt is the sanctioned uv dependency-override file (UV_OVERRIDE in
-# docker/Dockerfile, mirroring [tool.uv] override-dependencies) shipped by the
+# overrides.txt is the sanctioned uv dependency-override file (mirroring
+# [tool.uv] override-dependencies) shipped by the
 # pydantic-ai v2 migration — a canonical packaging input, not scratch.
 # .security-audit-allow.txt is the OSV dependency-audit risk-acceptance ledger
 # (scripts/audit_dependencies.py, wired into the dependency-audit pre-commit hook)

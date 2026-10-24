@@ -246,3 +246,12 @@ Accepted-path component tests use the existing attended-gesture seam.
 These fixtures do not establish authenticated served execution or installed native browser acceptance.
 WEBUI-APPS-R048 remains open pending that composed acceptance.
 This change grants no session, arms no browser and changes no production authority.
+
+## Supported Work journey and remaining dependencies
+
+- [x] WEBUI-APPS-R049.1.3: Check conversation response, admitted task, output and independent trace inspection with synthetic browser responses.
+- [x] WEBUI-APPS-R049.1.3: Validate producer text artifacts and explicit references without inferring trace or conversation links.
+- [ ] WEBUI-APPS-R049.1.2: Migrate supported authoring and other remaining Work capabilities with parity evidence.
+- [ ] WEBUI-APPS-R004: Await authoritative current-plan and run-metrics bindings; task text does not replace these fields.
+- [ ] WEBUI-APPS-R006.4: Await supported-harness discovery and indexed sessions; browser conversations do not replace this producer.
+- [ ] WEBUI-APPS-R050: Qualify the composed served-provider journey and actual authorization boundaries.

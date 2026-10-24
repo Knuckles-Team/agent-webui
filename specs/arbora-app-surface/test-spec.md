@@ -336,3 +336,38 @@ Chromium 156.0.8078.4 ran with its sandbox active, fresh contexts and localhost 
 The browser used no native API feature flag.
 Synthetic clicks cannot accept; trusted browser clicks can accept or decline.
 This uses the production component with a synthetic channel and does not qualify served or native execution.
+
+WEBUI-APPS-R049.1.3 continuation uses mounted WorkWorkspace tests for selected
+trace refresh, failed-refresh evidence withdrawal, retry, loaded-parent
+navigation and return to trace. Preserve conversation/task URL fields. A
+missing parent has no navigation control.
+The trace-inspection scenario in e2e/workspace-task-lifecycle.spec.ts drives the mounted app in Chromium with synthetic API responses.
+It checks actual browser Back, parent selection, refusal and retry. These fixtures do not prove served provider behavior,
+native WebMCP or the complete mobile geometry matrix.
+
+WEBUI-APPS-R049.1.3 task inspection uses work-task-inspection.test.ts and the mounted WorkWorkspace suite.
+Check supported text output, absent output, explicit producer refusal, malformed references and unsupported parts.
+Reject duplicate artifact identities and output exceeding the rendering bounds.
+Render untrusted text without HTML execution or inferred links.
+Failed task refresh must withdraw output and references.
+
+The conversation-task-output scenario in e2e/workspace-task-lifecycle.spec.ts drives one mounted Chat instance.
+Send through the existing chat transport with synthetic admitted-task metadata.
+Inspect the returned task, output and references, then select an independent trace and node.
+Preserve the follow-up draft through navigation, browser Back, denial and retry.
+Capture desktop, portrait and short-landscape screenshots.
+These tests prove browser composition with synthetic responses, not live-provider execution or the complete migration.
+
+R049.1.3 conversation lifecycle tests exercise the real owner-scoped store in mounted controls.
+Check local rename and removal, remote-only refusal, failed storage writes and stale owner or conversation reviews.
+Semantic tools request visible review only; synthetic confirmation must not apply changes.
+The browser journey starts a new conversation, sends once, inspects its task, renames its local copy and removes that copy.
+Keep task and trace selections. Check that server history and another owner's cache remain unchanged.
+These fixtures do not qualify live-provider history or remote deletion.
+
+### R048 canonical CSRF forwarding
+
+The attended client uses the installed canonical fetch wrapper.
+A regression test covers initiation, finalization and revocation with session-bound CSRF.
+Safe readiness reads carry no token. Rotation replaces the token and session clearing removes it.
+This proves client forwarding only, not authenticated admission or native browser execution.

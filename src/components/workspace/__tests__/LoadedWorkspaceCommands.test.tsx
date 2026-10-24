@@ -4,6 +4,7 @@ import { act, fireEvent, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'
 import { PageContextProvider } from '@/lib/page-context'
+import { ApiError } from '@/lib/api-validation'
 import { workApi } from '@/lib/work-workspace'
 import { conversationOwnerKey } from '@/lib/chat-store'
 import type { WebMcpToolDefinition } from '@/lib/webmcp/types'
@@ -174,7 +175,7 @@ describe('loaded Work and Operate command adapters', () => {
     const held = state.tools.get('agent-webui.workspace.command')!
     const ids = (held.inputSchema as { properties: { commandId: { enum: string[] } } }).properties.commandId.enum
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
-    vi.mocked(workApi.listTasks).mockRejectedValueOnce(new Error('access revoked'))
+    vi.mocked(workApi.listTasks).mockRejectedValueOnce(new ApiError(403, 'access revoked'))
     fireEvent.click(screen.getByRole('button', { name: 'Refresh tasks' }))
     await screen.findByText('Task listing failed. Refresh to retry.')
     open()

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PageContextProvider } from '@/lib/page-context'
 import type { WebMcpToolDefinition } from '@/lib/webmcp/types'
+import { ApiError } from '@/lib/api-validation'
 import { workApi } from '@/lib/work-workspace'
 import WorkWorkspace from '../WorkWorkspace'
 const state = vi.hoisted(() => ({ expires: 1, role: 'user', tools: new Map<string, WebMcpToolDefinition>() }))
@@ -81,7 +82,7 @@ describe('Work admission and authoritative task availability', () => {
   it('withdraws cancellation after a failed authoritative task refresh despite cached data', async () => {
     const { client } = setup()
     await screen.findByRole('button', { name: 'Cancel task…' })
-    vi.mocked(workApi.getTask).mockRejectedValueOnce(new Error('revoked'))
+    vi.mocked(workApi.getTask).mockRejectedValueOnce(new ApiError(403, 'revoked'))
     await act(async () => {
       await client.invalidateQueries({ queryKey: ['work-task'] })
     })

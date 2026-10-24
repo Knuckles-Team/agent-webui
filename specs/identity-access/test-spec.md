@@ -34,7 +34,7 @@ Exercise real enhanced file/config/editor handlers in no-auth: the interim imple
 
 | Child | Source evidence or remaining acceptance |
 |---|---|
-| WEBUI-IDENTITY-R003.1.1 | `tests/test_explicit_auth_modes.py` checks explicit anonymous policy and refusal, not positive governed effects. |
+| WEBUI-IDENTITY-R003.1.1 | `tests/test_explicit_auth_modes.py` checks explicit anonymous policy and refusal, not positive governed effects. Register probe routes through `application_composer` before the SPA mount so the same checks run against installed candidate wheels with packaged assets. |
 | WEBUI-IDENTITY-R003.1.2 | Installed anonymous journeys, UI/WebMCP parity and native effects remain open. |
 | WEBUI-IDENTITY-R003.2.1 | `tests/test_explicit_auth_modes.py` refuses missing or untyped EG owners. |
 | WEBUI-IDENTITY-R003.2.2 | Installed EG login/session/logout and HTTP/WebSocket qualification remain open. |
@@ -42,3 +42,14 @@ Exercise real enhanced file/config/editor handlers in no-auth: the interim imple
 | WEBUI-IDENTITY-R003.3.2 | OIDC protocol fixtures and live provider acceptance remain open. |
 
 The source markers cover only configuration and refusal behavior. R003.1, R003.2 and R003.3 retain every original parent requirement. R010 renewal and mode-transition acceptance remains open.
+
+For the bounded R010 HTTP expiry repair, exercise `/auth/session` through the same session resolver as API traffic. An expired session with no usable renewal must report unauthenticated. Both session-status and API responses must expire its browser cookie chunks. Successful renewal must return the refreshed status and persist the renewed cookies. This does not close the full R010 concurrency, stream, WebSocket or mode-transition acceptance.
+For bounded R010 mounted identity revalidation, share one in-flight session read across mounted consumers. Revalidate on expiry, focus, reconnect and visibility. API authentication refusal and cross-tab logout hints immediately retire displayed authority and CSRF. Revalidate hints with the server; never trust identity data from browser storage. Discard responses that began before invalidation. Test successful renewal, refusal and stale responses with mounted consumers. Keep full provider, streaming, native-effect and concurrent producer-renewal acceptance open.
+
+Session reads have a ten-second deadline. A hung or refused read retires cached
+identity and CSRF. A later focus or reconnect recovers from a fresh server
+answer. Broker logout broadcasts only after success. Standalone redirect logout
+keeps its server navigation. Authenticated tabs schedule a read within sixty
+seconds, even if an earlier read preceded logout completion. Request deadlines
+add up to ten seconds. Background browser throttling may extend this delay.
+A click-time hint does not prove completed server logout.

@@ -39,3 +39,17 @@ describe('CSRF chokepoint', () => {
     vi.unstubAllGlobals()
   })
 })
+
+it('invalidates only same-origin application authentication failures', async () => {
+  const { IDENTITY_INVALIDATED } = await import('@/lib/identity-events')
+  const notify = vi.fn()
+  window.addEventListener(IDENTITY_INVALIDATED, notify)
+  const fetcher = vi.fn().mockResolvedValue(new Response('', { status: 401 }))
+  vi.stubGlobal('fetch', fetcher)
+  installCsrfToken(null)
+  await window.fetch('/api/fixture')
+  await window.fetch('/auth/session')
+  await window.fetch('https://elsewhere.example/api')
+  expect(notify).toHaveBeenCalledTimes(1)
+  window.removeEventListener(IDENTITY_INVALIDATED, notify)
+})

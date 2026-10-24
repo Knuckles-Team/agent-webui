@@ -102,7 +102,6 @@ ALLOWED_DOTFILES: frozenset[str] = frozenset(
         # convention, just a dotfile because dependency-cruiser's own
         # defaults look for the leading dot.
         ".dependency-cruiser.cjs",
-        ".dockerignore",  # Docker build-context exclusions
         ".env.example",  # non-secret catalog of explicit process-env keys
         ".gitattributes",  # git attributes (line endings, diff drivers, ...)
         ".gitignore",  # git exclusion patterns

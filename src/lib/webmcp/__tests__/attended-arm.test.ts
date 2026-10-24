@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { installCsrfToken } from '@/lib/csrf'
 import { SameOriginAttendedArmClient, type AttendedArmScope } from '../attended-arm'
 
 const SCOPE: AttendedArmScope = {
@@ -10,6 +11,7 @@ const SCOPE: AttendedArmScope = {
 }
 
 afterEach(() => {
+  installCsrfToken(null)
   vi.unstubAllGlobals()
 })
 
@@ -123,4 +125,45 @@ describe('same-origin attended-arm authority client', () => {
 
     await expect(new SameOriginAttendedArmClient().readiness()).rejects.toThrow('duplicate keys')
   })
+})
+
+// spec: WEBUI-APPS-R048
+it('uses the canonical CSRF owner for arm mutations, rotation and session clearing', async () => {
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'none' })))
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ authorization_url: 'https://identity.example/authorize', expires_at: 4_000_000_000 }),
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: 'armed',
+          expires_at: 4_000_000_000,
+          route_id: SCOPE.route_id,
+          registration_generation: SCOPE.registration_generation,
+          catalog_digest: SCOPE.catalog_digest,
+          tool_scope_digest: SCOPE.tool_scope_digest,
+        }),
+      ),
+    )
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
+  installCsrfToken('first-session-csrf')
+  const client = new SameOriginAttendedArmClient()
+  await client.readiness()
+  await client.initiate({ route_id: SCOPE.route_id })
+  installCsrfToken('rotated-session-csrf')
+  await client.finalize(SCOPE)
+  await client.revoke()
+  installCsrfToken(null)
+  await client.revoke()
+
+  const tokens = fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get('X-CSRF-Token'))
+  expect(tokens).toEqual([null, 'first-session-csrf', 'rotated-session-csrf', 'rotated-session-csrf', null])
+  expect(fetchMock.mock.calls.map(([, init]) => init?.method)).toEqual(['GET', 'POST', 'POST', 'DELETE', 'DELETE'])
+  expect(fetchMock.mock.calls.every(([, init]) => init?.credentials === 'same-origin')).toBe(true)
 })

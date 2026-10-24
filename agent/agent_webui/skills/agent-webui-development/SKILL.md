@@ -95,7 +95,7 @@ Specs are already designed. The work is implementation, delivered in very small,
 The browser presentation layer for Arbora, plus the FastAPI host that
 adapts browser protocols to the platform gateway (React views, streaming/
 WebSocket/REST adapters, browser identity/session/CSP enforcement, sandboxed
-MCP App rendering, packaged frontend assets / wheel / container image).
+MCP App rendering, packaged frontend assets / wheel; shipped only as a PyPI package served by Arbora).
 Arbora owns auth, composition, routing contracts and the gateway;
 epistemic-graph owns durable graph state; agent-utilities owns agent/
 workflow control-plane behavior; connector packages own source transport.
