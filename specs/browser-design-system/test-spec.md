@@ -172,3 +172,14 @@ Its eventual rendered result must be recorded separately from local mounted test
 The token audit composites the glass page background over white before checking muted-text contrast at 4.5:1.
 It reuses the existing OKLCH conversion and contrast helpers rather than treating the background as opaque.
 The hosted identity journey remains the rendered check for native Operate descriptions and controls in each theme.
+
+## Documentation screenshots
+
+WEBUI-DESIGN-R011: run `pnpm screenshots:test` for fixture coverage and
+manifest rejection of mismatched paths, dimensions, revisions, bytes and partial sets.
+Run `pnpm screenshots:refresh` in Chromium, then `pnpm screenshots:check`.
+The six captures assert loaded scene content, no alerts and no page overflow.
+They reject external and unknown API requests. Inspect all six PNGs.
+The provenance binds the source revision, viewport, theme, fixed synthetic fixture
+and browser version to each image digest. Hosted artifacts must contain the
+PNG files, not only attachment bodies. Full design acceptance remains open.

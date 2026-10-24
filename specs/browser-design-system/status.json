@@ -17,7 +17,8 @@
     "WEBUI-DESIGN-R004.1",
     "WEBUI-DESIGN-R004.2",
     "WEBUI-DESIGN-R005.1",
-    "WEBUI-DESIGN-R010"
+    "WEBUI-DESIGN-R010",
+    "WEBUI-DESIGN-R011"
   ],
   "requirements": [
     {
@@ -201,6 +202,18 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
+    },
+    {
+      "id": "WEBUI-DESIGN-R011",
+      "title": "Repeatable documentation screenshots",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "1cac40d60bc3"
+      ],
+      "verified_by": [
+        "e2e/documentation-screenshots.browser.ts:1",
+        "scripts/documentation-screenshots.test.mjs:1"
+      ]
     }
   ]
 }

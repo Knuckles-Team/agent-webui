@@ -12,7 +12,9 @@
   </div>
 </section>
 
-![The Arbora Atlas workspace presents guided knowledge entry points and expert query tools.](assets/screenshots/atlas-workspace.png)
+![The Explore workspace shows a synthetic evidence collection and selected research brief.](assets/screenshots/explore-wide.png)
+
+Synthetic demo data. See the [workspace gallery and screenshot refresh guide](screenshots.md).
 
 ## One interface, explicit authority
 
