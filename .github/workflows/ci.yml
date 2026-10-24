@@ -188,9 +188,22 @@ jobs:
         id: pr-test-scope
         run: |
           set -euo pipefail
-          uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' \
-            pipelines-hook pr-test-scope --base-ref "$PRE_COMMIT_FROM_REF" \
-            --src-root agent/agent_webui --tests-root tests > "$RUNNER_TEMP/pr-test-scope.txt"
+          # The mapper accepts one root per call. Use only pytest.ini's roots,
+          # then deduplicate their results for one pytest invocation.
+          candidates="$RUNNER_TEMP/pr-test-scope-candidates.txt"
+          scope="$RUNNER_TEMP/pr-test-scope.txt"
+          : > "$candidates"
+          for test_root in agent/agent_webui/__tests__ tests; do
+            uvx --from 'git+https://github.com/Knuckles-Team/pipelines@main' \
+              pipelines-hook pr-test-scope --base-ref "$PRE_COMMIT_FROM_REF" \
+              --src-root agent/agent_webui --tests-root "$test_root" >> "$candidates"
+          done
+          if grep -qx FULL "$candidates"; then
+            printf '%s\n' FULL > "$scope"
+          else
+            awk '$0 != "NONE" && !seen[$0]++' "$candidates" > "$scope"
+            if [ ! -s "$scope" ]; then printf '%s\n' NONE > "$scope"; fi
+          fi
           cat "$RUNNER_TEMP/pr-test-scope.txt"
           {
             echo "scope<<PR_TEST_SCOPE_EOF"
@@ -215,7 +228,7 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
-          .venv/bin/python -m pytest tests -q --tb=short -m "not slow" --timeout=60
+          .venv/bin/python -m pytest -q --tb=short -m "not slow" --timeout=60
           pnpm test
 
       - name: Python test suite -- pull request fast subset
@@ -225,10 +238,10 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$SCOPE" = "NONE" ]; then
-            echo "pr-test-scope: no agent/agent_webui/tests change in this diff; skipping pytest"
+            echo "pr-test-scope: no affected Python tests in the declared roots; skipping pytest"
           elif [ "$SCOPE" = "FULL" ]; then
             echo "pr-test-scope: unmapped source change (or an unreadable diff); running the full suite"
-            .venv/bin/python -m pytest tests -q --tb=short -m "not slow" --timeout=60
+            .venv/bin/python -m pytest -q --tb=short -m "not slow" --timeout=60
           else
             echo "pr-test-scope: running only the tests this diff affects:"
             echo "$SCOPE"
