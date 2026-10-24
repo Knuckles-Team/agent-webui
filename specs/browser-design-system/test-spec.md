@@ -165,3 +165,10 @@ The PR-only `workspace-browser` CI job runs the existing focused identity config
 It uses locked frontend dependencies, read-only repository permission and synthetic fixtures without live credentials.
 The job includes native task readability assertions rather than excluding the known glass gap.
 Its eventual rendered result must be recorded separately from local mounted test results.
+
+
+## Translucent glass muted text
+
+The token audit composites the glass page background over white before checking muted-text contrast at 4.5:1.
+It reuses the existing OKLCH conversion and contrast helpers rather than treating the background as opaque.
+The hosted identity journey remains the rendered check for native Operate descriptions and controls in each theme.

@@ -132,8 +132,17 @@ This result does not prove native task contrast or complete WEBUI-DESIGN-R002 ac
 - [x] Reproduce shortcut Escape, shortcut Close and desktop-to-narrow hidden-trigger failures in mounted Radix tests.
 - [x] Restore a reachable opener or visible More summary without reopening the compact disclosure.
 - [x] Cover removed opener and native destination focus preservation in mounted tests.
-- [ ] Run the focused three-theme rendered cancellation cases on a supported browser runner.
+- [x] Run the focused three-theme rendered cancellation cases on a supported browser runner.
 
 The three original mounted cases failed before the repair and passed afterward.
 All six new mounted cases and thirteen existing command tests passed locally.
 This evidence leaves native glass text contrast and broader design acceptance open.
+
+
+## Hosted palette and native contrast evidence
+
+The Ubuntu Chromium job on source `07138071486168669dbc7887591a08a4eaec630e` passed all three palette cancellation cases.
+Its light and dark identity journeys passed. Glass failed the native route description at 4.3300:1 against a 4.5:1 target.
+An alpha-aware token regression reproduced the insufficient glass muted-text contrast locally before the token change.
+The repair brightens only the glass muted-text token; dark and light palettes remain unchanged.
+Rendered confirmation of this repair remains pending. No whole-theme or full accessibility acceptance follows from this focused evidence.

@@ -42,8 +42,9 @@
         "a4c402f68f1b"
       ],
       "verified_by": [
-        "src/__tests__/design-tokens.test.ts:53",
-        "src/__tests__/design-tokens.test.ts:97",
+        "src/__tests__/design-tokens.test.ts:103",
+        "src/__tests__/design-tokens.test.ts:110",
+        "src/__tests__/design-tokens.test.ts:59",
         "src/components/__tests__/ThemeProvider.test.tsx:1"
       ],
       "rollup_of": [
@@ -88,7 +89,7 @@
         "a4c402f68f1b"
       ],
       "verified_by": [
-        "src/__tests__/design-tokens.test.ts:67"
+        "src/__tests__/design-tokens.test.ts:73"
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R005.1"
