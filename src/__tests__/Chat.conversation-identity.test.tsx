@@ -51,6 +51,9 @@ const pageContext: PageContextEnvelope = {
 }
 
 let pendingSend = false
+let responseMetadata: ((conversation: string) => unknown) | undefined
+let invalidateStreamUsage = false
+let partialStreamUsage: 'message-metadata' | 'finish' | undefined
 let sentBodies: Record<string, unknown>[] = []
 
 let fetchImpl: (path: string) => Promise<Response> | undefined
@@ -66,6 +69,9 @@ beforeEach(() => {
   caller.loading = false
   caller.needsSignIn = false
   pendingSend = false
+  responseMetadata = undefined
+  invalidateStreamUsage = false
+  partialStreamUsage = undefined
 
   vi.stubGlobal(
     'fetch',
@@ -81,8 +87,35 @@ beforeEach(() => {
               reject(new DOMException('Aborted', 'AbortError'))
             })
           })
+        const events: unknown[] = [{ type: 'start', messageId: 'reply' }]
+        if (responseMetadata) {
+          events.push(
+            { type: 'text-start', id: 'text' },
+            { type: 'text-delta', id: 'text', delta: 'Measured reply' },
+            { type: 'text-end', id: 'text' },
+            { type: 'message-metadata', messageMetadata: responseMetadata(String(sentBodies.at(-1)?.id)) },
+          )
+        }
+        if (invalidateStreamUsage) {
+          events.push({
+            type: 'message-metadata',
+            messageMetadata: { ...usageMetadata(String(sentBodies.at(-1)?.id)), arbora: { usage: null } },
+          })
+        }
+        if (partialStreamUsage) {
+          const metadata = usageMetadata(String(sentBodies.at(-1)?.id))
+          events.push({
+            type: partialStreamUsage,
+            messageMetadata: {
+              ...metadata,
+              arbora: { usage: { ...metadata.arbora.usage, counts: { total_tokens: 0 } } },
+            },
+          })
+        }
+        if (partialStreamUsage !== 'finish') events.push({ type: 'finish' })
+        const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('') + 'data: [DONE]\n\n'
         return Promise.resolve(
-          new Response('data: {"type":"start","messageId":"reply"}\n\ndata: {"type":"finish"}\n\ndata: [DONE]\n\n', {
+          new Response(body, {
             headers: { 'content-type': 'text/event-stream', 'x-vercel-ai-ui-message-stream': 'v1' },
           }),
         )
@@ -445,3 +478,158 @@ describe('current assistant response task wiring', () => {
     })
   })
 })
+
+function usageMetadata(conversation = '/usage') {
+  return {
+    arbora_run: {
+      conversation_context: `webui:${conversation}`,
+      task_id: 'task',
+      context_id: 'context',
+      run_id: 'run',
+    },
+    arbora: {
+      usage: {
+        runId: 'run',
+        taskId: 'task',
+        contextId: 'context',
+        scope: 'turn',
+        counts: { requests: 0, input_tokens: 23 },
+      },
+    },
+    // FunctionModel estimates must not masquerade as producer measurements.
+    usage: { prompt_tokens: 100, completion_tokens: 200, total_tokens: 300 },
+  }
+}
+
+function cacheUsage(messages: unknown[]) {
+  window.history.replaceState({}, '', '/chat?conversation=usage')
+  window.localStorage.setItem('chat:["owner-v1",null,"local"]:messages:/usage', JSON.stringify(messages))
+}
+
+function usageMessage(id: string, metadata: unknown = usageMetadata()) {
+  return { id, role: 'assistant', metadata, parts: [{ type: 'text', text: `Reply ${id}` }] }
+}
+
+it('renders only known canonical counts, including zero, once per task/run replay', async () => {
+  cacheUsage([usageMessage('first'), usageMessage('replay')])
+  renderWithProviders(<Chat pageContext={pageContext} />)
+  expect(await screen.findByRole('region', { name: 'Turn usage' })).toBeInTheDocument()
+  expect(screen.getAllByRole('region', { name: 'Turn usage' })).toHaveLength(1)
+  expect(screen.getByText('Requests:').parentElement).toHaveTextContent('Requests:0')
+  expect(screen.getByText('Input tokens:').parentElement).toHaveTextContent('Input tokens:23')
+  expect(screen.queryByText('Output tokens:')).not.toBeInTheDocument()
+  expect(screen.queryByText('Total tokens:')).not.toBeInTheDocument()
+  expect(screen.queryByText(/Provider estimate:/)).not.toBeInTheDocument()
+})
+
+it.each(['unavailable', 'denied', 'invalid', 'missing'])(
+  'clears prior canonical counts on a %s replay',
+  async (state) => {
+    const metadata = usageMetadata()
+    const usage =
+      state === 'invalid'
+        ? { ...metadata.arbora.usage, runId: 'foreign' }
+        : state === 'missing'
+          ? undefined
+          : { status: state }
+    cacheUsage([usageMessage('first'), usageMessage('replay', { ...metadata, arbora: { usage } })])
+    renderWithProviders(<Chat pageContext={pageContext} />)
+    expect(await screen.findByText('Turn usage: unavailable')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Turn usage' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Input tokens:')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Provider estimate:/)).not.toBeInTheDocument()
+  },
+)
+
+it('keeps generic provider estimates separate from canonical turn counts', async () => {
+  cacheUsage([
+    usageMessage('canonical'),
+    usageMessage('generic', { usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 } }),
+  ])
+  renderWithProviders(<Chat pageContext={pageContext} />)
+  expect(await screen.findByRole('region', { name: 'Turn usage' })).toBeInTheDocument()
+  expect(await screen.findByText(/Provider estimate: 5 tokens/)).toBeInTheDocument()
+  expect(screen.queryByText(/Provider estimate: 305/)).not.toBeInTheDocument()
+})
+
+it.each(retirements)('clears canonical usage immediately on %s', async (_label, retire) => {
+  cacheUsage([usageMessage('private')])
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const app = () => (
+    <QueryClientProvider client={client}>
+      <Chat pageContext={pageContext} />
+    </QueryClientProvider>
+  )
+  const view = render(app())
+  expect(await screen.findByRole('region', { name: 'Turn usage' })).toBeInTheDocument()
+  retire()
+  view.rerender(app())
+  expect(screen.queryByRole('region', { name: 'Turn usage' })).not.toBeInTheDocument()
+  expect(screen.queryByText('Input tokens:')).not.toBeInTheDocument()
+})
+
+it('does not show canonical usage from a different conversation', async () => {
+  cacheUsage([usageMessage('foreign', usageMetadata('/other'))])
+  renderWithProviders(<Chat pageContext={pageContext} />)
+  expect(await screen.findByText('Reply foreign')).toBeInTheDocument()
+  expect(screen.queryByRole('region', { name: 'Turn usage' })).not.toBeInTheDocument()
+  expect(screen.queryByText(/Provider estimate:/)).not.toBeInTheDocument()
+})
+
+it('shows and persists canonical metadata from the actual AI SDK message stream', async () => {
+  responseMetadata = usageMetadata
+  const { user } = renderWithProviders(<Chat pageContext={pageContext} />)
+  await user.type(await screen.findByRole('textbox', { name: /message input/i }), 'measure{Enter}')
+  expect(await screen.findByRole('region', { name: 'Turn usage' })).toBeInTheDocument()
+  expect(screen.getByText('Requests:').parentElement).toHaveTextContent('Requests:0')
+  expect(screen.queryByText(/Provider estimate:/)).not.toBeInTheDocument()
+  await waitFor(() => {
+    const stored = JSON.parse(
+      window.localStorage.getItem(`chat:["owner-v1",null,"local"]:messages:${String(sentBodies[0].id)}`) ?? '[]',
+    ) as { metadata?: unknown }[]
+    expect(stored).toHaveLength(2)
+    expect(stored.at(-1)?.metadata).toEqual(usageMetadata(String(sentBodies[0].id)))
+  })
+})
+
+it('clears a prior receipt when unavailable metadata updates the same streamed message', async () => {
+  responseMetadata = usageMetadata
+  invalidateStreamUsage = true
+  const { user } = renderWithProviders(<Chat pageContext={pageContext} />)
+  await user.type(await screen.findByRole('textbox', { name: /message input/i }), 'measure{Enter}')
+  expect(await screen.findByText('Turn usage: unavailable')).toBeInTheDocument()
+  expect(screen.queryByText('Input tokens:')).not.toBeInTheDocument()
+  expect(screen.queryByText(/Provider estimate:/)).not.toBeInTheDocument()
+})
+
+it.each([undefined, 'changed-run'])('clears stale counts on replay with outer run %s', async (runId) => {
+  const changed = usageMetadata()
+  const identity: { run_id?: string } = changed.arbora_run
+  identity.run_id = runId
+  if (runId) changed.arbora.usage.runId = runId
+  cacheUsage([usageMessage('first'), usageMessage('changed', changed)])
+  renderWithProviders(<Chat pageContext={pageContext} />)
+  expect(await screen.findByText('Turn usage: unavailable')).toBeInTheDocument()
+  expect(screen.queryByRole('region', { name: 'Turn usage' })).not.toBeInTheDocument()
+})
+
+it.each(['message-metadata', 'finish'] as const)(
+  'replaces valid receipts with partial %s metadata without retaining omitted counters',
+  async (chunk) => {
+    responseMetadata = usageMetadata
+    partialStreamUsage = chunk
+    const { user } = renderWithProviders(<Chat pageContext={pageContext} />)
+    await user.type(await screen.findByRole('textbox', { name: /message input/i }), 'measure{Enter}')
+    expect(await screen.findByText('Total tokens:')).toBeInTheDocument()
+    expect(screen.getByText('Total tokens:').parentElement).toHaveTextContent('Total tokens:0')
+    expect(screen.queryByText('Requests:')).not.toBeInTheDocument()
+    expect(screen.queryByText('Input tokens:')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Provider estimate:/)).not.toBeInTheDocument()
+    await waitFor(() => {
+      const stored = JSON.parse(
+        window.localStorage.getItem(`chat:["owner-v1",null,"local"]:messages:${String(sentBodies[0].id)}`) ?? '[]',
+      ) as { metadata?: { arbora?: { usage?: { counts: unknown } } } }[]
+      expect(stored.at(-1)?.metadata?.arbora?.usage?.counts).toEqual({ total_tokens: 0 })
+    })
+  },
+)

@@ -37,9 +37,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
+import { TurnUsage } from '@/components/TurnUsage'
+import { isArboraMetadata, turnUsageByMessage } from '@/lib/turn-usage'
 import { ApprovalCard, type ApprovalCardProps } from '@/components/ApprovalCard'
 import { useChat, type UIMessage } from '@ai-sdk/react'
-import { DefaultChatTransport, type UIDataTypes, type UIMessagePart, type UITools } from 'ai'
+import type { UIDataTypes, UIMessagePart, UITools } from 'ai'
+import { ReceiptChatTransport } from '@/lib/chat-transport'
 import {
   useEffect,
   useLayoutEffect,
@@ -302,7 +305,7 @@ function formatSweProvenance(actions: SweProvenanceAction[], mutated: SweMutated
 }
 
 /**
- * Rolling usage counters accumulated from AG-UI `usage` events.
+ * Legacy generic-provider estimates, separate from canonical Arbora receipts.
  *
  * Field names mirror the AG-UI/OpenAI snake_case convention; the extractor
  * also tolerates camelCase variants (`totalTokens`, `inputTokens`, etc.) so
@@ -463,13 +466,14 @@ function usageFromAnnotations(message: Record<string, unknown>): TokenUsage[] {
  *   2. Any sideband part with `type === 'data-usage'` or similar
  *   3. Any annotation with a `usage` field or `TokenUsageUpdate` event
  *
- * Returns the summed `TokenUsage` across the whole conversation. Pure (no
+ * Excludes canonical Arbora and non-assistant messages. Pure (no
  * hooks, no side effects) so `useMemo` can memoize on `throttledMessages`.
  */
 function sumSessionUsage(messages: readonly UIMessage[]): TokenUsage {
   const totals: TokenUsage = { ...ZERO_USAGE }
 
   for (const rawMessage of messages) {
+    if (rawMessage.role !== 'assistant' || isArboraMetadata(rawMessage.metadata)) continue
     const message = rawMessage as unknown as Record<string, unknown>
 
     const direct = usageFromMetadata(message)
@@ -961,20 +965,21 @@ function renderSweControls(
   )
 }
 
-/** The session token-usage/cost badge + tooltip breakdown. */
+/** Legacy generic-provider estimates, never canonical Arbora turn accounting. */
 function renderUsageBadge(hasUsage: boolean, sessionUsage: TokenUsage, estimatedCost: number | null): ReactNode {
   if (!hasUsage) return null
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Badge variant="secondary" className="font-mono text-xs">
-          {TOKEN_FORMATTER.format(sessionUsage.total_tokens)} tokens
+          Provider estimate: {TOKEN_FORMATTER.format(sessionUsage.total_tokens)} tokens
           {' · '}
           {estimatedCost !== null ? formatCost(estimatedCost) : '—'}
         </Badge>
       </TooltipTrigger>
       <TooltipContent>
         <div className="text-xs space-y-0.5">
+          <p>Generic provider estimates only. Excludes Arbora turn receipts.</p>
           <div>
             <strong>Prompt:</strong> {TOKEN_FORMATTER.format(sessionUsage.prompt_tokens)} tokens
           </div>
@@ -1165,7 +1170,7 @@ const OwnedChat = ({ pageContext, ownerKey, role }: ChatProps & { ownerKey: stri
   pageContextRef.current = pageContext
   const transport = useMemo(
     () =>
-      new DefaultChatTransport<UIMessage>({
+      new ReceiptChatTransport({
         api: '/api/chats/messages',
         prepareSendMessagesRequest: ({ messages, body, trigger, messageId }) => {
           const context = pageContextRef.current
@@ -1368,14 +1373,18 @@ const OwnedChat = ({ pageContext, ownerKey, role }: ChatProps & { ownerKey: stri
 
   const modelRegistry = modelRegistryQuery.data
 
-  // Running token totals for the whole session. Recomputed from throttled
-  // messages to avoid thrashing during a streaming response.
+  // Legacy generic-provider estimates exclude every canonical Arbora turn.
+  // Canonical receipts are shown once per admitted run, never accumulated.
   const sessionUsage = useMemo(() => sumSessionUsage(throttledMessages), [throttledMessages])
   const estimatedCost = useMemo(
     () => estimateCost(sessionUsage, model, modelRegistry),
     [sessionUsage, model, modelRegistry],
   )
   const hasUsage = sessionUsage.total_tokens > 0
+  const turnUsage = useMemo(
+    () => turnUsageByMessage(messages, requestConversationId),
+    [messages, requestConversationId],
+  )
 
   // Set default model once configuration is loaded. Prefer the registry's
   // default_id so the picker opens on the same model that the backend is
@@ -1891,6 +1900,8 @@ Available commands:
                     onReject={handleRejectToolCall}
                   />
                 ))}
+
+              {turnUsage.has(message.id) && <TurnUsage receipt={turnUsage.get(message.id) ?? null} />}
 
               {(message as unknown as { annotations?: AppAnnotation[] }).annotations?.map((ann, idx: number) => {
                 if (!isApprovalAnnotation(ann)) return null
