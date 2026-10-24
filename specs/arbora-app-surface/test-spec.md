@@ -1,5 +1,18 @@
 # Arbora shell and app verification
 
+## Loaded destination branches
+
+Partial WEBUI-APPS-R046.2.2 delivery uses the existing command catalog and typed
+selection dispatcher for branch cards, list search and native links. The rendered
+`WorkspaceCommandBranches.test.tsx` checks confirmed parent relationships without inventing task-to-trace associations.
+It checks modified links, breadcrumb focus and retirement. It also checks shared entity IDs at distinct loaded destination paths.
+`e2e/workspace-branches.browser.ts` exercises keyboard drill-in, global search,
+resizing, immediate return, native detail selection and real browser history.
+These synthetic identity/data fixtures do not qualify served authority, complete
+dynamic depth, all-leaf coverage or manual screen-reader acceptance.
+
+## General verification matrix
+
 | Case | Level/fixture | Pass |
 |---|---|---|
 | Product identity | Asset-generator check, metadata/route snapshots | All exposed names and generated hashes match |

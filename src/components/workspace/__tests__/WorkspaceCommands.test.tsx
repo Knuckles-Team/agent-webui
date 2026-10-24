@@ -47,10 +47,42 @@ function open() {
   fireEvent.click(screen.getByRole('button', { name: 'Find destination' }))
 }
 afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
   window.history.replaceState({}, '', '/')
   vi.restoreAllMocks()
 })
 describe('bounded workspace commands', () => {
+  it('keeps portal focus visible after keyboard occlusion and retires resize listeners on close', () => {
+    vi.useFakeTimers()
+    const viewport = Object.assign(new EventTarget(), { height: 700, scale: 1 })
+    vi.stubGlobal('visualViewport', viewport)
+    const reveal = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => undefined)
+    render(<Surface />)
+    open()
+    const input = screen.getByRole('textbox', { name: 'Search destinations' })
+    viewport.height = 260
+    act(() => {
+      viewport.dispatchEvent(new Event('resize'))
+      vi.runAllTimers()
+    })
+    expect(input).toHaveFocus()
+    expect(screen.getByRole('dialog')).toHaveStyle('--workspace-visible-height: 260px')
+    expect(reveal).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+    reveal.mockClear()
+    act(() => {
+      fireEvent.animationEnd(screen.getByRole('dialog'))
+      vi.runAllTimers()
+    })
+    expect(reveal).toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Close destination search' }))
+    reveal.mockClear()
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+      vi.runAllTimers()
+    })
+    expect(reveal).not.toHaveBeenCalled()
+  })
   it('searches loaded evidence and uses native typed destinations', () => {
     render(<Surface />)
     open()
@@ -163,7 +195,7 @@ describe('bounded workspace commands', () => {
     render(<Surface />)
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
     expect(screen.getByRole('textbox', { name: 'Search destinations' })).toHaveFocus()
-    expect(screen.getByRole('dialog')).toHaveClass('max-h-[85dvh]', 'overflow-auto')
+    expect(screen.getByRole('dialog')).toHaveClass('overflow-auto')
     fireEvent.click(screen.getByRole('button', { name: 'Close destination search' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
