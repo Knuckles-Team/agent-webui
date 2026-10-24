@@ -166,7 +166,7 @@ Unchecked tasks remain open. Definitions alone do not establish runtime delivery
 
 - [ ] WEBUI-APPS-R049.1.3: Bind the retained Work source tests and preserve one existing Chat instance.
 - [ ] WEBUI-APPS-R049.1.3: Check independent task/trace reads and typed navigation without claiming missing associations.
-- [ ] WEBUI-APPS-R049.1.2: Qualify real producer associations and installed-browser lifecycle before claiming complete correlated Work investigation.
+- [ ] WEBUI-APPS-R049.1.2: Qualify real producer associations and installed-browser lifecycle before claiming complete correlated Work investigation. Include the nested graph, public records and accessible deep-link journeys. Retain every earlier migration criterion.
 
 - [ ] WEBUI-APPS-R049.1.4: Bind the retained read-only Operate discovery source and its focused tests.
 - [ ] WEBUI-APPS-R049.1.4: Preserve filter focus, observed-admission isolation and partial catalog reporting.
@@ -302,3 +302,9 @@ The browser test writes these files into its configured output directory.
 - [ ] WEBUI-APPS-R049.1.2: Qualify served-provider and native-browser prompt authoring, full editor-tool parity, and remaining Work authoring destinations.
 
 - [ ] R046.2.2, R047 and R049.1.2: qualify loaded catalog navigation with installed providers. Source tests and the synthetic Chromium catalog journey do not close complete migration or dynamic-leaf acceptance.
+
+### Nested execution explorer
+
+- [ ] **WEBUI-APPS-R049.1.10:** Add explicit capability-gated active-child targeting without implicit Chat retargeting.
+- [ ] **WEBUI-APPS-R049.1.11:** Add completed-child continuation using its separate backend binding.
+- [ ] **WEBUI-APPS-R049.1.12:** Qualify both actions, reconnect and cancellation through the real Work route and released producer.

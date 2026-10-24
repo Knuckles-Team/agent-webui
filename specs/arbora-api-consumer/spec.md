@@ -38,3 +38,9 @@ WEBUI-API-R003 owns prompts, SDD, knowledge base, sessions, goals, MCP servers a
 The migration order is WEBUI-API-R001 client/host seam, WEBUI-API-R002 graph families, then WEBUI-API-R003 remaining families. Each slice can merge independently with its own fixture tests, but the status manifest remains `SPECIFIED` until an exact merged revision and evidence for the applicable slice is recorded. No historical source checkpoint alone establishes current-main delivery.
 
 Requirement IDs are defined in [requirements.md](requirements.md); delivery state per ID is in `status.json`.
+
+## Public execution projection
+
+R011.3 extends the existing identity-preserving adapter with the shared backend execution projection.
+Rendering components alone do not establish public summary, tool or child-transcript delivery.
+The browser and host must consume one released contract without deriving child targets or implementing orchestration.

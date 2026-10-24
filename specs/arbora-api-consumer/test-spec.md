@@ -42,3 +42,17 @@ Owner-key migration preserves old subject-only and global cache entries without 
 WEBUI-API-R011.2.1 binds the run-identity host fixtures and mounted chat source tests. Preserve their exact identity and refusal assertions. Source test linkage does not establish installed provider acceptance.
 
 WEBUI-API-R011.2.2 retains the full R011.2 acceptance matrix. Run real browser transport and host streaming against the installed Arbora provider. Verify caller and tenant isolation, first-turn identity, conflicting and missing identity, and exact returned references. This qualification remains planned.
+
+## Shared public execution adapter
+
+For WEBUI-API-R011.3, plan `test_execution_projection.py::test_public_execution_adapter` at the real host model seam.
+Plan `execution-projection.test.ts::binding_and_refusal` through the existing browser adapter.
+Use generated producer fixtures with parent/child/grandchild and fan-out/fan-in identities.
+Verify unchanged replay-v1 decoding before negotiating the new projection.
+Verify root tasks versus run-local steps, shared run IDs, owner/context mismatch and absent target bindings.
+Verify ordered replay, duplicate events, cursor gaps, partial snapshots and reconnect resnapshot.
+Assert public summary, tool and transcript categories remain distinct and private/unknown fields never reach browser state.
+Absent capabilities must disable controls; denial after success must withdraw previous records and bindings.
+Legacy final-text replies must remain readable without claiming rich-part delivery.
+Then qualify the installed host/browser/Arbora path with the same scenarios and exact producer versions.
+No mapping fixture alone establishes served capability availability or child messaging.

@@ -113,3 +113,33 @@ WEBUI-API-R003.2 remains the owner of populated domain-route census data and its
 ## Catalog and source discovery use graph queries
 
 Catalog, glossary, stewardship, lineage, prompt-candidate and virtual-source questions use Arbora `ask`/`find` intent routing to `query.nl`, or typed `query.uql` for programmatic clients. Do not introduce or regenerate a bespoke `catalog.search`, `glossary.list/get`, `stewardship.list/get`, `catalog.lineage`, `catalog.prompt_candidates` or `query.sources` operation family. Arbora owns intent routing and the governed source executor; EG owns ontology, relevance and graph query semantics. This follows merged [Arbora #432](https://github.com/Knuckles-Team/arbora/pull/432), ARBORA-OPS-R855.1/R855.4–R855.6 and ARBORA-FLEET-R043.2/R043.3/R043.7. The related [EG #739](https://github.com/Knuckles-Team/epistemic-graph/pull/739) correction owns EG-TYPED-PACKS-R106/R108 and EG-DECISION-ENGINE-R814; its still-open specification is not a delivered producer receipt. The route/action census binds these query operations, preserving typed tenant/purpose, pagination, refusal and cancellation behavior. A local component app catalog or dashboard save contract does not imply a new metadata catalog read API.
+
+## Amendment 2026-10-24: public execution adapter
+
+R011.2 retains its original conversation and root-task identity contract and recorded source evidence.
+R011.3 adds node-bound public execution records and capability projection without replacing that contract.
+
+Current path: `Chat.tsx` -> host model -> `orchestrator_model.py:220` `_run_turn` -> `agents.run`.
+`_reply_stream` at line 260 waits for `_run_turn`, then yields final text and identity/usage metadata.
+It does not currently yield rich summary, tool or child-transcript parts from the execution producer.
+Existing reasoning and tool widgets therefore do not prove live orchestration visibility.
+
+Extend that adapter and the existing typed browser client only after the generated producer contract is available.
+`ARBORA-OPS-R021.4.8` owns graph snapshots and updates; `ARBORA-OPS-R021.4.9` owns authorized records and capabilities.
+`ARBORA-RELEASE-R003.4.12` and `ARBORA-RELEASE-R003.4.13` own distinct active-message and completed-continuation effects.
+Use their registered operations and generated types; this specification does not assign speculative endpoint names.
+
+Preserve existing public replay v1 semantics and decoder invariants.
+Version or capability-negotiate graph, lineage and transcript projections separately; refuse unsupported versions without reinterpreting old events.
+Keep root request `task_id` separate from event-local `task_id`.
+Preserve structured `(run_id, node_kind, local_id)` keys and explicit owner, context and target bindings.
+A trace/span identifier or an agent name must never become a conversation target.
+Preserve snapshot schema version, completeness, covered cursor and per-run replay cursors without synthesizing global order.
+Capabilities default false when absent or unsupported; browser availability never replaces host/backend authorization.
+The adapter must reject mismatched identities and unknown schema versions before forwarding protected records or controls.
+
+Project only public summaries, redacted tool activity and authorized conversation records into the existing parts rendering path.
+Preserve event identity for deduplication and explicit fold choices.
+Private reasoning, unknown fields and service credentials must not enter browser parts, URLs, logs or local persistence.
+A missing or denied producer must remain unavailable; legacy text-only replies must continue without invented graph data.
+Keep installed-provider proof separate from pure mapping, mounted-widget and synthetic browser fixtures.
