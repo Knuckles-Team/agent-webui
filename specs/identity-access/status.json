@@ -167,8 +167,8 @@
       "title": "Explicit anonymous source refusal boundary",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "7aae3a74ceb0",
-        "7fae4bf34f52"
+        "7fae4bf34f52",
+        "fae3dc4fb8be"
       ],
       "verified_by": [
         "tests/test_explicit_auth_modes.py:104",
