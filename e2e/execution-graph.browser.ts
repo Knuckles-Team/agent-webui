@@ -157,6 +157,7 @@ for (const viewport of [
           contentType: 'application/json',
         })
         console.log(`${name}-${phase}-geometry ${JSON.stringify(geometry)}`)
+        if (name === 'diagram' && phase === 'native-focus') await expect(target).toBeInViewport({ ratio: 1 })
       }
       await page.screenshot({
         path: test
