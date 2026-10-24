@@ -42,3 +42,5 @@ Exercise real enhanced file/config/editor handlers in no-auth: the interim imple
 | WEBUI-IDENTITY-R003.3.2 | OIDC protocol fixtures and live provider acceptance remain open. |
 
 The source markers cover only configuration and refusal behavior. R003.1, R003.2 and R003.3 retain every original parent requirement. R010 renewal and mode-transition acceptance remains open.
+
+For the bounded R010 HTTP expiry repair, exercise `/auth/session` through the same session resolver as API traffic. An expired session with no usable renewal must report unauthenticated. Both session-status and API responses must expire its browser cookie chunks. Successful renewal must return the refreshed status and persist the renewed cookies. This does not close the full R010 concurrency, stream, WebSocket or mode-transition acceptance.
