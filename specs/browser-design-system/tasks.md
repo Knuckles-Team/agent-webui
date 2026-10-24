@@ -158,8 +158,19 @@ It retains the same 14-rem result and preference-persistence assertions. Fresh f
 
 ## Documentation screenshot refresh
 
-- [ ] WEBUI-DESIGN-R011: qualify all six synthetic workspace captures in hosted Chromium and inspect the actual pixels.
-- [ ] WEBUI-DESIGN-R011: commit the PNGs and provenance after pixel review. Update README/docs images and pass the integrity command and CI.
+- [x] WEBUI-DESIGN-R011: qualify all six synthetic workspace captures in hosted Chromium and inspect the actual pixels.
+- [x] WEBUI-DESIGN-R011: import the six reviewed PNGs and provenance; update README/docs images and pass the integrity command.
+- [ ] WEBUI-DESIGN-R011: pass final CI on the published assets and receipt.
 
-Initial source supplies capture, import and integrity commands. Rendered qualification and the documentation images remain pending.
+Hosted [run 40120522758](https://github.com/Knuckles-Team/agent-webui/actions/runs/40120522758)
+passed all six captures, the screenshot contract tests, and the existing identity/catalog browser journeys.
+The downloaded artifact passed archive digest verification. Pixel review covered all six PNGs before import.
+The clean rendered source is `167797965f7942f6849e44201fbb081f93ed37f1`, the Actions merge of `caf326ad` onto `99c31995`.
+The light-theme images use Linux Chromium 156.0.8078.4 and the fixed `workspace-docs-v1` fixture.
+Visible text and controls were readable with no unexpected overlap, horizontal clipping, loading state or error alert.
+Narrow views show their initial viewport; scrollable panels continue below it.
+The manifest and six image digests pass `pnpm screenshots:check`.
+
+Local Chromium cannot start in this environment. Full local ESLint hit the memory limit; hosted qualification was explicitly approved.
+The PR remains draft until final hosted lint, tests and browser verification pass.
 This bounded workflow does not complete the earlier design requirements.

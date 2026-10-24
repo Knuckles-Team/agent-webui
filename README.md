@@ -41,7 +41,9 @@
   <a href="https://knuckles-team.github.io/agent-webui/status/">Status</a>
 </p>
 
-![The Agent Web UI Atlas workspace presents graph, object, schema, data, document, and memory entry points in one browser surface.](docs/assets/screenshots/atlas-workspace.png)
+![The Explore workspace shows a synthetic evidence collection and selected research brief.](docs/assets/screenshots/explore-wide.png)
+
+Synthetic demo data. See the [workspace gallery and screenshot refresh guide](docs/screenshots.md).
 
 ## Overview
 

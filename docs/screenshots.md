@@ -4,6 +4,33 @@ Capture the real React workspace with fixed synthetic responses. No account,
 provider, production backend, or stored browser session is used. These images
 illustrate the interface, not live service availability or complete feature acceptance.
 
+## Workspace gallery
+
+These are real browser captures with synthetic demo data, not live accounts.
+Each pair shows the initial viewport at 1440 × 900 and 320 × 740 pixels.
+Scrollable panels continue below the visible area. The readiness and completion
+labels describe the fixture, not a live deployment.
+
+### Work
+
+An empty conversation contains an unsent draft, not a completed live chat.
+
+![Wide Work workspace with an empty conversation, synthetic tasks and an unsent draft.](assets/screenshots/work-wide.png)
+
+![Narrow Work workspace with empty-conversation controls and an unsent draft.](assets/screenshots/work-narrow.png)
+
+### Explore
+
+![Wide Explore workspace with a synthetic evidence collection and research brief.](assets/screenshots/explore-wide.png)
+
+![Narrow Explore workspace with the same synthetic evidence collection.](assets/screenshots/explore-narrow.png)
+
+### Operate
+
+![Wide Operate workspace with synthetic readiness and catalog data.](assets/screenshots/operate-wide.png)
+
+![Narrow Operate workspace with the same synthetic readiness snapshot.](assets/screenshots/operate-narrow.png)
+
 ## Refresh locally
 
 From the repository root, install the locked dependencies and Chromium once:
@@ -21,7 +48,7 @@ pnpm screenshots:check
 pnpm screenshots:test
 ```
 
-This command checks saved image bytes and metadata. It does not detect
+The `screenshots:check` command checks saved image bytes and metadata. It does not detect
 changes to the current UI. Refresh after UI changes, then review the images
 before updating the README.
 
