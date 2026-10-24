@@ -927,6 +927,39 @@ material, expanded-header, motion and fallback behavior. This is a staged theme 
 R045–R050 retain every broader obligation. Qualify remaining graph, editor, run,
 administration and authentication surfaces through their existing owners.
 
+
+## Native workspace assistant amendment — 2026-10-24
+
+Extend WEBUI-APPS-R005.4, R049.1.3 and R049.2 within the existing shared shell.
+Replace the floating chat launcher, backdrop and off-canvas drawer with one
+visible in-flow assistant. Reuse ChatPanel, Chat, the owner-scoped conversation
+store, canonical transport and page-context envelope. Retain transcript,
+composer, attachments, model/tool controls, streaming, approvals and task links.
+Use a bounded side dock only when the available task width fits it.
+Otherwise, stack a compact visible composer and real status without occlusion. The
+transcript and additional composer options expand explicitly at narrow widths
+without replacing their state. Expansion and focus controls are local presentation
+changes, not new authority or a second conversation. The task receives most
+available desktop width rather than a mandatory equal split. Delete the viewport exclusion and bottom padding reserved for the launcher.
+
+Preserve the mounted assistant and unsent draft through navigation and resize.
+The existing Chat admission boundary retires protected state on identity loss
+or owner change. Selection context follows the existing publisher. It does not
+imply task ownership, a chat target change or permission to execute a tool.
+Source tests cover real Chat retention, current context on send and owner
+retirement. Authored browser journeys cover geometry, keyboard, touch and
+short/narrow layouts separately from actual execution of those journeys.
+R045–R050 and WEBUI-DESIGN-R004.1/R004.2 retain full co-navigation, native WebMCP,
+mobile/device, all-route migration and installed-provider acceptance.
+
+Critical compact-state controls remain outside optional message tools: the
+existing Agent mode selector, SWE mode, live session and Stop controls. Pending
+approval renderers mark their actual review state. The shell exposes
+Review required approval, which only expands and focuses that same UI.
+No approval decision, execution path or provider is added. Clearing the existing
+review or retiring its owner deletes the cue. Hidden focus on disclosure or
+container resize moves to the persistent composer without remounting Chat.
+
 ### Hosted Explore focus correction — 2026-10-24
 
 R049.2.1 focus belongs to the active evidence journey: closing detail returns to

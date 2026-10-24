@@ -1,5 +1,5 @@
 .workspace-viewport:has(.workspace-frame) {
-  scroll-padding-bottom: 8rem;
+  scroll-padding-bottom: 1rem;
   --workspace-surface: var(--card);
   --workspace-canopy: var(--accent);
   --workspace-node: var(--surface-raised);
@@ -168,7 +168,7 @@
   flex: 1;
   flex-direction: column;
   min-width: 0;
-  min-height: 16rem;
+  min-height: 26rem;
   container-type: inline-size;
   container-name: workspace-frame;
 }
@@ -202,7 +202,7 @@
   display: grid;
   flex: 1;
   min-width: 0;
-  min-height: 16rem;
+  min-height: 26rem;
   grid-template-columns: minmax(0, 1fr);
 }
 .workspace-map {
@@ -210,8 +210,8 @@
   min-height: 12rem;
   max-height: min(24rem, 45dvh);
   overflow: auto;
-  padding: 0.75rem 0.75rem 6rem;
-  scroll-padding: 1rem 1rem 6rem;
+  padding: 0.75rem;
+  scroll-padding: 1rem;
   border-bottom: 1px solid var(--border);
   background: var(--workspace-surface);
   box-shadow: var(--material-shadow);
@@ -326,11 +326,11 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 16rem;
+  min-height: 26rem;
   overflow: hidden;
 }
 .workspace-task-surface > .workspace-body {
-  min-height: 16rem;
+  min-height: 26rem;
   flex: 1;
 }
 .workspace-frame :focus-visible {
@@ -416,12 +416,6 @@
   .workspace-map-node {
     min-height: 44px;
   }
-  .workspace-viewport:has(.workspace-frame):has(#chat-panel-toggle:not(:disabled)) {
-    height: calc(var(--workspace-visible-height, 100dvh) - 7.5rem);
-    max-height: calc(var(--workspace-visible-height, 100dvh) - 7.5rem);
-    scroll-padding-bottom: 1rem;
-    border-bottom: 1px solid var(--workspace-line);
-  }
 }
 @supports (backdrop-filter: blur(12px)) {
   .workspace-context-rail,
@@ -504,7 +498,7 @@
 .workspace-task-surface .workspace-route-content {
   padding-top: 0.75rem;
   padding-inline: 0.75rem;
-  scroll-padding: 1rem 1rem 6rem;
+  scroll-padding: 1rem;
 }
 .workspace-map-context p {
   margin-top: 0.25rem;

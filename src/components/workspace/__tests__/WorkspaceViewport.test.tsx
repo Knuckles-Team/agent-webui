@@ -66,6 +66,7 @@ it('leaves other surfaces alone and supports browsers without VisualViewport', (
     vi.runAllTimers()
   })
   expect(reveal).not.toHaveBeenCalled()
+  expect(container.firstElementChild).toHaveClass('overflow-auto')
   rerender(
     <WorkspaceViewport enabled>
       <input aria-label="Draft" />

@@ -1,10 +1,13 @@
 // spec: WEBUI-APPS-R049.1.5
+import { StrictMode } from 'react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import Chat from '@/Chat'
+import ChatPanel from '@/components/ChatPanel'
+import { PageContextProvider } from '@/lib/page-context'
 import { api } from '@/lib/api'
 import { renderWithProviders } from '@/__tests__/fixtures'
 import { conversationOwnerKey } from '@/lib/chat-store'
@@ -689,4 +692,140 @@ it('retires transport correlation on owner change before accepting the new owner
   expect(await screen.findByRole('region', { name: 'Turn usage' })).toBeInTheDocument()
   expect(screen.queryByText('Turn usage: unavailable')).not.toBeInTheDocument()
   expect(screen.getByText('Input tokens:').parentElement).toHaveTextContent('Input tokens:23')
+})
+
+// spec: WEBUI-APPS-R005.4, WEBUI-APPS-R049.1.3
+it('retains the real dock composer across context changes and sends the current page context', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const app = (context: string) => (
+    <QueryClientProvider client={client}>
+      <PageContextProvider route={`/workspace/${context}`} view={context}>
+        <ChatPanel currentView={context} isPrimary={false} />
+      </PageContextProvider>
+    </QueryClientProvider>
+  )
+  const view = render(app('work'))
+  const user = userEvent.setup()
+  const input = await screen.findByRole('textbox', { name: /message input/i })
+  await user.type(input, 'A retained workspace question')
+  for (const context of ['explore', 'operate', 'work', 'explore']) {
+    view.rerender(app(context))
+    expect(screen.getAllByRole('textbox', { name: /message input/i })).toHaveLength(1)
+    expect(screen.getByRole('textbox', { name: /message input/i })).toBe(input)
+    expect(input).toHaveFocus()
+    expect(input).toHaveValue('A retained workspace question')
+  }
+  const options = screen.getByRole('button', { name: 'Message options', hidden: true })
+  fireEvent.click(options)
+  expect(options).toHaveAttribute('aria-expanded', 'true')
+  expect(input).toHaveValue('A retained workspace question')
+  expect(sentBodies).toHaveLength(0)
+  fireEvent.click(options)
+  expect(options).toHaveAttribute('aria-expanded', 'false')
+  await user.click(screen.getByRole('button', { name: 'Expand chat' }))
+  await user.click(screen.getByRole('button', { name: 'Focus message input' }))
+  await user.keyboard('{Enter}')
+  await waitFor(() => {
+    expect(sentBodies).toHaveLength(1)
+  })
+  expect(JSON.stringify(sentBodies[0])).toContain('/workspace/explore')
+  expect(JSON.stringify(sentBodies[0])).not.toContain('/workspace/work')
+  expect(screen.getByRole('region', { name: 'Workspace assistant' })).toBeVisible()
+})
+
+it('retires the real native dock draft on owner change and session loss', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const app = () => (
+    <QueryClientProvider client={client}>
+      <PageContextProvider route="/workspace/explore" view="explore">
+        <ChatPanel currentView="explore" isPrimary={false} />
+      </PageContextProvider>
+    </QueryClientProvider>
+  )
+  const view = render(app())
+  const user = userEvent.setup()
+  await user.type(await screen.findByRole('textbox', { name: /message input/i }), 'Private owner draft')
+  caller.tenant = 'new-tenant'
+  view.rerender(app())
+  expect(screen.getByRole('textbox', { name: /message input/i })).toHaveValue('')
+  await user.type(screen.getByRole('textbox', { name: /message input/i }), 'Private new-owner draft')
+  caller.needsSignIn = true
+  view.rerender(app())
+  expect(screen.queryByRole('textbox', { name: /message input/i })).not.toBeInTheDocument()
+  expect(screen.queryByText(/Private.*draft/)).not.toBeInTheDocument()
+  expect(sentBodies).toHaveLength(0)
+})
+
+it('derives compact status from the canonical pending request and retires it with the owner', async () => {
+  pendingSend = true
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const app = () => (
+    <QueryClientProvider client={client}>
+      <Chat pageContext={pageContext} />
+    </QueryClientProvider>
+  )
+  const view = render(app())
+  const user = userEvent.setup()
+  await user.type(await screen.findByRole('textbox', { name: /message input/i }), 'Pending turn{Enter}')
+  await waitFor(() => {
+    expect(sentBodies).toHaveLength(1)
+  })
+  expect(screen.getByText('Waiting for reply…')).toHaveClass('chat-compact-status')
+  caller.needsSignIn = true
+  view.rerender(app())
+  expect(screen.queryByText('Waiting for reply…')).not.toBeInTheDocument()
+})
+
+it('retires the existing pending approval presence when the conversation owner changes', async () => {
+  window.history.replaceState({}, '', '/chat?conversation=pending-review')
+  localStorage.setItem(
+    'chat:["owner-v1",null,"local"]:messages:/pending-review',
+    JSON.stringify([
+      {
+        id: 'pending',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'Private review parameters' }],
+        annotations: [{ event: 'approval_required', data: { tool_call_id: 'review-1', tool_name: 'synthetic' } }],
+      },
+    ]),
+  )
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const app = () => (
+    <QueryClientProvider client={client}>
+      <Chat pageContext={pageContext} />
+    </QueryClientProvider>
+  )
+  const view = render(app())
+  expect(await screen.findByRole('group', { name: 'Required approval' })).toHaveAttribute('data-chat-approval-pending')
+  caller.tenant = 'new-owner'
+  view.rerender(app())
+  expect(document.querySelector('[data-chat-approval-pending]')).toBeNull()
+  expect(screen.queryByText('Private review parameters')).not.toBeInTheDocument()
+  expect(sentBodies).toHaveLength(0)
+})
+
+it('does not steal fresh task-entry focus for a native secondary assistant', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const app = (show: boolean) => (
+    <StrictMode>
+      <QueryClientProvider client={client}>
+        <div>
+          <button>Current task</button>
+          {show && (
+            <PageContextProvider route="/workspace/explore" view="explore">
+              <ChatPanel currentView="explore" isPrimary={false} />
+            </PageContextProvider>
+          )}
+        </div>
+      </QueryClientProvider>
+    </StrictMode>
+  )
+  const view = render(app(false))
+  const task = screen.getByRole('button', { name: 'Current task' })
+  task.focus()
+  view.rerender(app(true))
+  await screen.findByRole('textbox', { name: /message input/i })
+  expect(task).toHaveFocus()
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Focus message input' }))
+  expect(screen.getByRole('textbox', { name: /message input/i })).toHaveFocus()
 })

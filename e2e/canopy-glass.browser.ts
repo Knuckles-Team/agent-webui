@@ -257,11 +257,7 @@ test('Canopy keeps enlarged navigation and final detail actions reachable', asyn
         }),
       )
       .toBe(true)
-    expect(
-      await page
-        .locator('.workspace-route-content')
-        .evaluate((element) => parseFloat(getComputedStyle(element).paddingBottom)),
-    ).toBeGreaterThanOrEqual(96)
+    await expect(page.locator('#chat-panel-toggle')).toHaveCount(0)
     await page.screenshot({
       path: info.outputPath(`canopy-text-200-${size.width}x${size.height}.png`),
       animations: 'disabled',
@@ -278,7 +274,7 @@ test('Canopy dark security warning keeps its paired contrast', async ({ page }, 
   await search.hover()
   expect(await contrast(search)).toBeGreaterThanOrEqual(4.5)
   await page.screenshot({ path: info.outputPath('canopy-dark-security-warning.png'), animations: 'disabled' })
-  await page.getByRole('button', { name: 'Open chat', exact: true }).click()
+  await page.getByRole('button', { name: 'Focus message input', exact: true }).click()
   const send = page.getByRole('button', { name: 'Send message', exact: true })
   await expect(send).toBeDisabled()
   await expect(send).toHaveCSS('opacity', '1')

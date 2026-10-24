@@ -1,0 +1,184 @@
+/* One in-flow assistant, shared by every private route. No viewport overlay. */
+.workspace-chat-boundary {
+  container: workspace-chat / inline-size;
+  overflow: auto;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 26rem;
+}
+.workspace-chat-layout {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(14rem, 1fr) auto;
+}
+.workspace-context-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 14rem;
+  overflow: hidden;
+}
+.workspace-context-content[hidden] {
+  display: none;
+}
+.workspace-assistant {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+  color: var(--foreground);
+  background: var(--card);
+  border-top: 1px solid var(--border);
+}
+.workspace-assistant[data-expanded='true'] {
+  height: clamp(26rem, 65dvh, 42rem);
+}
+.workspace-assistant-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.workspace-assistant-context {
+  flex: 1 1 6rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.workspace-assistant-context h2 {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.workspace-assistant-context p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+.workspace-assistant-selection {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-assistant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.workspace-assistant-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 44px;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--input);
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+  background: var(--surface-raised);
+}
+.workspace-assistant .workspace-assistant-review {
+  display: none;
+}
+.workspace-assistant:has([data-chat-approval-pending]) .workspace-assistant-review {
+  display: inline-flex;
+  border-color: var(--ring);
+}
+.workspace-assistant-actions button:hover {
+  background: var(--accent);
+}
+.workspace-assistant :focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.workspace-assistant-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  scroll-padding: 0.75rem;
+}
+.workspace-assistant-purpose {
+  flex-shrink: 0;
+  padding: 0.5rem 0.75rem;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+.workspace-chat-layout[data-primary='true'] {
+  grid-template-rows: minmax(18rem, 1fr);
+}
+.workspace-assistant[data-primary='true'] {
+  height: auto;
+}
+/* Narrow workspaces keep conversation content available on explicit expansion,
+   while the existing composer and real status remain visible in normal flow. */
+@container workspace-chat (max-width: 51.999rem) {
+  .workspace-assistant[data-primary='false'][data-expanded='false'] .chat-transcript,
+  .workspace-assistant[data-primary='false'][data-expanded='false'] .chat-composer-options {
+    display: none;
+  }
+  .workspace-assistant[data-primary='false'][data-expanded='false'] .chat-composer-options[data-expanded='true'] {
+    display: flex;
+  }
+  .workspace-assistant[data-primary='false'][data-expanded='false'] .chat-compact-status {
+    display: block;
+  }
+  .workspace-assistant[data-primary='false'][data-expanded='false'] .chat-composer-options-toggle {
+    display: inline-flex;
+  }
+  .workspace-assistant[data-primary='false'][data-expanded='false'] .chat-flow {
+    height: auto;
+  }
+  .workspace-assistant[data-primary='false'][data-expanded='false'] .chat-composer {
+    padding: 0.5rem;
+  }
+  .workspace-assistant[data-primary='false'][data-expanded='false'] #chat-message-input {
+    min-height: 2.75rem;
+    padding: 0.5rem;
+  }
+  .workspace-assistant[data-primary='false'][data-expanded='false'] .chat-composer-options {
+    order: 3;
+    flex-basis: 100%;
+  }
+}
+@container workspace-chat (min-width: 52rem) {
+  .workspace-chat-layout {
+    grid-template-columns: minmax(0, 1fr) clamp(20rem, 28cqw, 24rem);
+    grid-template-rows: minmax(26rem, 1fr);
+  }
+  .workspace-chat-layout:not([data-primary='true']):has(.workspace-assistant[data-expanded='true']) {
+    grid-template-columns: minmax(0, 1fr) minmax(22rem, 42%);
+  }
+  .workspace-chat-layout[data-primary='true'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-assistant {
+    height: auto;
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
+  .workspace-assistant[data-expanded='true'] {
+    height: auto;
+  }
+}
+@media (forced-colors: active) {
+  .workspace-assistant {
+    border-color: CanvasText;
+  }
+  .workspace-assistant-actions button {
+    border-color: ButtonText;
+  }
+}

@@ -74,7 +74,7 @@ not establish authenticated service acceptance.
 
 ## Browser zoom and keyboard continuation
 
-- [x] Reserve scroll range and focus clearance for the floating assistant trigger in Explore and Operate.
+- [x] Reserve scroll range and focus clearance for the former floating assistant trigger in Explore and Operate. The native-assistant continuation supersedes that exclusion with normal document flow.
 - [ ] Complete WEBUI-DESIGN-R004.2 acceptance across all workspace journeys and native devices.
 
 The native Chromium zoom regression reproduces a partially obscured Run Query
