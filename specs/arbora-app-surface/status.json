@@ -219,7 +219,8 @@
     "WEBUI-APPS-R049.1.11",
     "WEBUI-APPS-R049.1.12",
     "WEBUI-APPS-R049.1.13",
-    "WEBUI-APPS-R049.2.1"
+    "WEBUI-APPS-R049.2.1",
+    "WEBUI-APPS-R049.2.2"
   ],
   "requirements": [
     {
@@ -2004,18 +2005,15 @@
     {
       "id": "WEBUI-APPS-R049.2",
       "title": "Measured ground-up redesign acceptance",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "93401c34a695",
         "ac86f2de9817"
       ],
-      "verified_by": [
-        "e2e/canopy-glass.browser.ts:4",
-        "src/components/workspace/__tests__/ExploreQueryWorkspace.test.tsx:210",
-        "src/components/workspace/__tests__/ExploreWorkspace.test.tsx:135"
-      ],
+      "verified_by": [],
       "rollup_of": [
-        "WEBUI-APPS-R049.2.1"
+        "WEBUI-APPS-R049.2.1",
+        "WEBUI-APPS-R049.2.2"
       ]
     },
     {
@@ -2213,6 +2211,13 @@
         "src/components/workspace/__tests__/ExploreQueryWorkspace.test.tsx:210",
         "src/components/workspace/__tests__/ExploreWorkspace.test.tsx:135"
       ]
+    },
+    {
+      "id": "WEBUI-APPS-R049.2.2",
+      "title": "Remaining measured redesign acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
     }
   ]
 }

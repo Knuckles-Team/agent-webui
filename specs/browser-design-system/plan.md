@@ -195,3 +195,12 @@ Its unobstructed scrollport can show physically fitting content edge to edge.
 Original wide and narrow whole-card visibility checks remain unchanged.
 All viewport cases must expose every details field through keyboard scrolling.
 Oversized low-height and enlarged-text cards require complete reachability, not simultaneous visibility.
+
+
+### Acceptance rollup correction — 2026-10-24
+
+The source-delivery children did not exhaust their original parent acceptance criteria.
+Explicit retained-acceptance children now preserve those obligations in canonical generated rollups.
+Parent requirement text and qualified child evidence remain unchanged.
+Regenerate every spec status and audit ancestor states after source and receipt commits.
+The metadata regression must not create feature-acceptance bindings for retained work.

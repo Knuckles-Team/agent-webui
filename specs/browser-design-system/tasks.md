@@ -195,3 +195,13 @@ This section records specification work only. Local implementation and synthetic
 source/browser results must be recorded separately when available. Earlier hosted
 screenshots and compact-header receipts remain historical, not Canopy Glass
 acceptance. No broader completion follows from the shared-shell/Explore slice.
+
+
+## Retained acceptance ledger correction — 2026-10-24
+
+- [ ] WEBUI-DESIGN-R002.1.2: Complete the remaining density, hierarchy, token documentation and contrast acceptance inherited from R002/R002.1.
+- [ ] WEBUI-DESIGN-R004.1.2: Complete the remaining all-route/action responsive acceptance inherited from R004.1.
+
+The original parent obligations and qualified source-child receipts remain intact.
+The generated ancestor state must remain open while either retained acceptance child remains open.
+Metadata guard tests preserve this distinction; they are not feature-acceptance evidence.

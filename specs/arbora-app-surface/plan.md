@@ -945,3 +945,12 @@ Qualify the diagram and step details at wide, narrow, low-height and enlarged-te
 sizes. Never weaken the viewport ratio or replace the equivalent dependency list
 to accommodate the new header. Read admission, lifecycle honesty and graph
 semantics remain unchanged.
+
+
+### Acceptance rollup correction — 2026-10-24
+
+The source-delivery children did not exhaust their original parent acceptance criteria.
+Explicit retained-acceptance children now preserve those obligations in canonical generated rollups.
+Parent requirement text and qualified child evidence remain unchanged.
+Regenerate every spec status and audit ancestor states after source and receipt commits.
+The metadata regression must not create feature-acceptance bindings for retained work.

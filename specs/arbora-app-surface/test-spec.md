@@ -599,3 +599,13 @@ Mounted fixtures are source proof. Synthetic browser history is not a live-provi
 R048/R049.1.2/R049.2/R050 keep their complete census, dynamic-leaf, native-tool,
 authority, migration, measured-redesign and served-provider obligations. Record
 native-browser, manual assistive-technology and physical-device gaps explicitly.
+
+
+## Retained acceptance verification
+
+WEBUI-APPS-R049.2.2 retains every original baseline/redesign comparison and native interaction criterion from R049.2.
+Record identical-fixture task results, navigation counts and scrolling distances for the complete composition.
+Keep Work/Operate and unqualified native interactions visible as gaps rather than inferring acceptance from the Explore slice.
+
+The gate-wrapper metadata tests keep broad ancestor rollups open and preserve qualified source receipts.
+Those data-only guards do not establish product acceptance.

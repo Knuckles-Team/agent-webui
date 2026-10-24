@@ -337,3 +337,12 @@ promote a broad row from scoped tests or historical documentation screenshots.
 - [ ] WEBUI-APPS-R049.2: Complete Work and Operate composition and real wide, narrow,
   low-height and ultrawide pixel review. A shared palette or the first Explore
   list/detail journey does not complete the three-context redesign.
+
+
+## Retained redesign ledger correction — 2026-10-24
+
+- [ ] WEBUI-APPS-R049.2.2: Complete the original measured redesign criteria beyond the bounded R049.2.1 source slice.
+
+Keep the Work/Operate, baseline comparison and native interaction obligations above open.
+Preserve the qualified source child without promoting its broader ancestor.
+Metadata guard tests are not evidence that the remaining redesign is accepted.

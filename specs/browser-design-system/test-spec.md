@@ -255,3 +255,14 @@ Narrow evidence interaction must click an actual result, then assert the selecte
 heading is focused and in the viewport. Close from that visible detail and assert
 the retained search is focused and visible. Do not first click a lower inspector
 control: Playwright scrolls it and mask missing application focus reveal.
+
+
+## Retained acceptance verification
+
+WEBUI-DESIGN-R002.1.2 retains the original density/hierarchy verification matrix and outstanding token/contrast review.
+WEBUI-DESIGN-R004.1.2 retains the complete registered-route/action and dynamic-leaf matrix from R004.1.
+Run the outstanding journeys with actual keyboard, touch, state and viewport coverage before claiming their acceptance.
+The scoped Canopy shell, evidence and Work diagram fixtures do not replace those journeys.
+
+The gate-wrapper metadata tests keep broad ancestor rollups open and preserve qualified source receipts.
+Those data-only guards do not establish product acceptance.

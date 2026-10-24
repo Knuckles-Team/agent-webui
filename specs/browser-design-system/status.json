@@ -21,7 +21,9 @@
     "WEBUI-DESIGN-R011",
     "WEBUI-DESIGN-R002.1.1",
     "WEBUI-DESIGN-R004.1.1",
-    "WEBUI-DESIGN-R005.2"
+    "WEBUI-DESIGN-R005.2",
+    "WEBUI-DESIGN-R002.1.2",
+    "WEBUI-DESIGN-R004.1.2"
   ],
   "requirements": [
     {
@@ -39,7 +41,7 @@
     {
       "id": "WEBUI-DESIGN-R002",
       "title": "Design tokens documented with contrast targets",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "12b5f5624953",
         "2c9874c2a559",
@@ -48,11 +50,9 @@
         "93401c34a695"
       ],
       "verified_by": [
-        "e2e/canopy-glass.browser.ts:1",
-        "e2e/workspace-density.spec.ts:1",
         "src/__tests__/design-tokens.test.ts:113",
-        "src/__tests__/design-tokens.test.ts:120",
-        "src/__tests__/design-tokens.test.ts:152"
+        "src/__tests__/design-tokens.test.ts:57",
+        "src/components/__tests__/ThemeProvider.test.tsx:1"
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R002.1"
@@ -162,27 +162,26 @@
     {
       "id": "WEBUI-DESIGN-R002.1",
       "title": "Purposeful density and Arbora visual hierarchy",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "12b5f5624953",
         "93401c34a695",
         "ac86f2de9817"
       ],
       "verified_by": [
-        "e2e/canopy-glass.browser.ts:1",
         "e2e/workspace-density.spec.ts:1",
-        "src/__tests__/design-tokens.test.ts:120",
-        "src/__tests__/design-tokens.test.ts:152",
-        "src/__tests__/design-tokens.test.ts:181"
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:156",
+        "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:1"
       ],
       "rollup_of": [
-        "WEBUI-DESIGN-R002.1.1"
+        "WEBUI-DESIGN-R002.1.1",
+        "WEBUI-DESIGN-R002.1.2"
       ]
     },
     {
       "id": "WEBUI-DESIGN-R004.1",
       "title": "Full mobile and arbitrary-aspect feature parity",
-      "delivery_state": "VERIFIED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "12b5f5624953",
         "19b439519a22",
@@ -191,14 +190,11 @@
         "ac86f2de9817"
       ],
       "verified_by": [
-        "e2e/canopy-glass.browser.ts:2",
-        "e2e/execution-graph.browser.ts:2",
-        "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:93",
-        "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:94",
-        "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:160"
+        "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:93"
       ],
       "rollup_of": [
-        "WEBUI-DESIGN-R004.1.1"
+        "WEBUI-DESIGN-R004.1.1",
+        "WEBUI-DESIGN-R004.1.2"
       ]
     },
     {
@@ -289,6 +285,20 @@
         "e2e/canopy-glass.browser.ts:3",
         "src/components/__tests__/ThemeProvider.test.tsx:89"
       ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R002.1.2",
+      "title": "Remaining density and hierarchy acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-DESIGN-R004.1.2",
+      "title": "Remaining full-route responsive parity acceptance",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
     }
   ]
 }
