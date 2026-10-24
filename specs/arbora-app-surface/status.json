@@ -1915,7 +1915,8 @@
       "title": "Preserve every feature through the Arbora redesign",
       "delivery_state": "SPECIFIED",
       "landed_in": [
-        "213863471869"
+        "213863471869",
+        "79eaa4c330f8"
       ],
       "verified_by": [
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
