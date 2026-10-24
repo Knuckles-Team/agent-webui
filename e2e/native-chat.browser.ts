@@ -122,10 +122,14 @@ test('one native assistant retains draft, controls and context through navigatio
       expect(taskBox!.width).toBeGreaterThan(chatBox!.width)
       expect(chatBox!.x).toBeGreaterThanOrEqual(taskBox!.x + taskBox!.width - 1)
     } else if (size.width === 320) {
-      expect(chatBox!.height).toBeLessThanOrEqual(224)
+      // A retained two-line draft measured 229px; intrinsic content must not be clipped to a fixture cap.
+      expect(taskBox!.height).toBeGreaterThanOrEqual(200)
+      expect(chatBox!.height).toBeLessThan(taskBox!.height)
       await expect(panel.locator('.chat-compact-status')).toBeVisible()
       await expect(panel.getByRole('log')).toHaveCount(0)
-      expect(chatBox!.y).toBeGreaterThanOrEqual(taskBox!.y + taskBox!.height - 1)
+      expect(Math.abs(chatBox!.y - (taskBox!.y + taskBox!.height))).toBeLessThanOrEqual(1)
+      await reachComposerByWheel(page, input)
+      await hitTarget(input, false)
     }
     const expand = page.getByRole('button', { name: 'Expand chat', exact: true })
     await hitTarget(expand)

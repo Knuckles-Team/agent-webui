@@ -280,3 +280,12 @@ The scoped Canopy shell, evidence and Work diagram fixtures do not replace those
 
 The gate-wrapper metadata tests keep broad ancestor rollups open and preserve qualified source receipts.
 Those data-only guards do not establish product acceptance.
+
+### Intrinsic compact draft sizing
+
+The retained two-line draft measures 229 CSS pixels in the 320-by-740 fixture.
+Its working pane remains 300 pixels high, with no overlay or reserved launcher band.
+Do not force that content into the old 224-pixel fixture cap.
+Instead, require a useful working pane larger than the compact assistant and at least 200 pixels high.
+Require adjacent task and assistant edges, ordinary scrolling, complete composer hit targets and retained draft text.
+Enlarged-text cases retain their full keyboard and wheel reachability checks without fixed-height assumptions.
