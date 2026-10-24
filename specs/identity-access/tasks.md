@@ -18,3 +18,12 @@ No task above names a requirement ID individually; together they must close ever
 - [ ] WEBUI-IDENTITY-R003.2: Implement built-in eg authentication through arbora with upstream producer bindings and the planned installed-stack evidence; remain SPECIFIED until delivered.
 - [ ] WEBUI-IDENTITY-R003.3: Implement external oidc provider interoperability with upstream producer bindings and the planned installed-stack evidence; remain SPECIFIED until delivered.
 - [ ] WEBUI-IDENTITY-R010: Implement long-session renewal and mode-transition coherence with upstream producer bindings and the planned installed-stack evidence; remain SPECIFIED until delivered.
+
+## Source-only delivery and open integration children
+
+- [ ] WEBUI-IDENTITY-R003.1.1: Explicit anonymous source refusal boundary. Source mode tests cover anonymous provenance, policy refusal and ambient-authority cleanup. This does not deliver full no-auth journeys.
+- [ ] WEBUI-IDENTITY-R003.1.2: Complete installed anonymous journeys. Installed positive and adversarial anonymous-policy journeys and native effect qualification remain required.
+- [ ] WEBUI-IDENTITY-R003.2.1: EG boundary configuration source refusal. Source factory tests reject missing and untyped EG callbacks without provisioning credentials.
+- [ ] WEBUI-IDENTITY-R003.2.2: Installed EG identity journeys. Installed real producer/browser qualification remains required; source configuration refusal is not login support.
+- [ ] WEBUI-IDENTITY-R003.3.1: OIDC configuration source refusal. Source factory tests reject incompatible owners and incomplete browser OIDC configuration.
+- [ ] WEBUI-IDENTITY-R003.3.2: External provider interoperability qualification. Protocol fixtures and each claimed live provider remain required; configuration tests do not qualify provider interoperability.

@@ -12,7 +12,7 @@ Elevation flow: user submits purpose, requested scope and bounded duration; Arbo
 
 ## Failure and migration
 
-Distinguish unauthenticated, forbidden, CSRF, expired session, challenge required, step-up mismatch, stale request and provider unavailable. Keep errors uniform for username existence. Support OIDC and local modes through one session abstraction; local bootstrap refuses public bind and displays a persistent warning. When replacing token-in-cookie behavior, preserve existing OIDC return flows but rotate to opaque server-side sessions, test logout invalidation and reject a previous cookie. No unrestricted fallback mode is permitted after an identity provider outage.
+Distinguish unauthenticated, forbidden, CSRF, expired session, challenge required, step-up mismatch, stale request and provider unavailable. Keep errors uniform for username existence. Support OIDC and local modes through one session abstraction; local bootstrap refuses public bind and displays a persistent warning. When replacing token-in-cookie behavior, preserve existing OIDC return flows but rotate to opaque server-side sessions. Test logout invalidation and reject a previous cookie. No unrestricted fallback mode is permitted after an identity provider outage.
 
 ## Independent checkout
 
@@ -32,6 +32,41 @@ Dependencies: WEBUI-API-R011/R011.1 and WEBUI-APPS-R048/R050 consume this contra
 
 ### Producer bindings and incomplete effect migration
 
-[ARBORA-IDENTITY-R004.3 through R004.6](https://github.com/Knuckles-Team/arbora/tree/main/specs/identity-access) own the producer contracts. They cover mode composition, HTTP browser admission, same-owner dispatch fencing and anonymous effect migration respectively. WEBUI-IDENTITY-R003.1–R003.3/R010 consume them without claiming those candidate rows are merged or qualified. The dispatcher binds the exact request/task/caller and revalidates use-time authority after awaits. It preserves validation, policy, CAS and effect journals. A helper that only schedules work in an executor is not this dispatcher.
+[ARBORA-IDENTITY-R004.7, R004.4, R004.5 and R004.6](https://github.com/Knuckles-Team/arbora/tree/main/specs/identity-access) own the producer contracts. They cover mode composition, HTTP browser admission, same-owner dispatch fencing and anonymous effect migration respectively. WEBUI-IDENTITY-R003.1–R003.3/R010 consume them without claiming those candidate rows are merged or qualified. The dispatcher binds the exact request/task/caller and revalidates use-time authority after awaits. It preserves validation, policy, CAS and effect journals. A helper that only schedules work in an executor is not this dispatcher.
 
 Current direct WebUI enhanced handlers include filesystem writes/deletes, configuration and editor operations. No-auth cannot bypass their route or effect checks. A conservative anonymous read-route policy is an interim refusal boundary, not full no-auth delivery. Direct enhanced effects remain denied until canonical operation/effect migration. Migration preserves containment, parameter/target/action binding and required confirmation. EG adapter activation and cookie WebSocket admission remain refused until their actual caller/use-time and WebSocket contracts are qualified. Source regressions or an inactive fence do not close login, renewal, streaming, writes or full three-mode acceptance.
+
+## Amendment: 2026-10-23 explicit deployment identity modes
+
+Extend WEBUI-IDENTITY-R003 with operator-selected `none`, `eg` and `oidc`
+serving modes. The default remains authenticated. Missing or failed authenticated
+configuration never selects `none`. The explicit no-auth listener is loopback
+only. It binds an unauthenticated request actor with no credential or grant.
+Arbora remains the authority for invoked operations. Host, origin, payload and
+WebMCP confirmation/attendance checks are not disabled. EG mode requires the
+host-owned session boundary; external OIDC retains complete verifier checks.
+Source-level contracts do not qualify a deployed issuer, browser login or EG
+session revocation. Those require installed-stack and browser acceptance.
+
+### Anonymous policy and shared dispatch qualification
+
+The initial exact read-route policy defaults empty. Direct enhanced workspace,
+configuration and browser-control handlers remain denied even when named in
+that interim policy. Mutations and WebSockets still require existing authority.
+This is partial scaffolding, not the final no-auth product. Full no-auth needs
+host-owned operation/effect policy, containment and confirmation through the
+same dispatcher for UI and WebMCP. Do not turn anonymous requests into a
+fabricated authenticated actor or kg:* grant. See the Arbora identity-access
+plan's shared admission/invocation contract; EG integration requires exact
+caller binding and a current-authority fence after asynchronous verification.
+
+The shared caller remains opaque and request/task-bound. Both host callbacks
+must belong to the exact same authority instance. Confirmation covers validated
+parameters, resource/tenant/graph targets and immutable action digest. The
+frontend never serializes that authority into browser state or reconstructs it
+from claims. Streaming, task hops, cancellation and duplicate invocation tests
+must prove lifetime/isolation; native effect CAS/consume-once remains upstream.
+
+### Narrow source ownership
+
+This candidate builds on the published identity definitions in PR 125. Source delivery binds R003.1.1, R003.2.1 and R003.3.1 only. The corresponding .2 children retain all installed, provider and native acceptance. Parent mode rows remain incomplete; R010 is not delivered by source configuration refusal tests.
