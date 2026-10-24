@@ -167,7 +167,7 @@
       "title": "Explicit anonymous source refusal boundary",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "e695dc9d3633"
+        "7fae4bf34f52"
       ],
       "verified_by": [
         "tests/test_explicit_auth_modes.py:103",
@@ -189,7 +189,7 @@
       "title": "EG boundary configuration source refusal",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "e695dc9d3633"
+        "7fae4bf34f52"
       ],
       "verified_by": [
         "tests/test_explicit_auth_modes.py:184"
@@ -207,7 +207,7 @@
       "title": "OIDC configuration source refusal",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "e695dc9d3633"
+        "7fae4bf34f52"
       ],
       "verified_by": [
         "tests/test_explicit_auth_modes.py:175"
