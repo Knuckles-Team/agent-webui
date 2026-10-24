@@ -185,10 +185,10 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "12b5f5624953",
+        "19b439519a22",
         "47885260902d",
         "93401c34a695",
-        "ac86f2de9817",
-        "dce97c2798ef"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
@@ -266,10 +266,10 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "12b5f5624953",
+        "19b439519a22",
         "47885260902d",
         "93401c34a695",
-        "ac86f2de9817",
-        "dce97c2798ef"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",

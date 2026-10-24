@@ -2189,10 +2189,10 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "12b5f5624953",
+        "19b439519a22",
         "47885260902d",
         "5069ca94e71e",
-        "bb56d874ef78",
-        "ce6e3d27c60c"
+        "bb56d874ef78"
       ],
       "verified_by": [
         "e2e/execution-graph.browser.ts:1",
