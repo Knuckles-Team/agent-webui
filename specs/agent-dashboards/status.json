@@ -49,7 +49,8 @@
       "title": "Pie, map and graph panels (remaining)",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [],
+      "priority": 0
     },
     {
       "id": "WEBUI-DASH-R004",
@@ -67,7 +68,8 @@
       "title": "Natural-language, fleet.call and EG panel queries (remaining)",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [],
+      "priority": 0
     },
     {
       "id": "WEBUI-DASH-R006",
@@ -119,7 +121,8 @@
       "title": "Save through arbora as catalog assets (remaining)",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [],
+      "priority": 0
     },
     {
       "id": "WEBUI-DASH-R011",
@@ -137,7 +140,8 @@
       "title": "Ownership and sharing (remaining)",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [],
+      "priority": 0
     },
     {
       "id": "WEBUI-DASH-R013",
@@ -177,7 +181,22 @@
       "title": "Catalog browse and search page (remaining)",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [],
+      "priority": 0
     }
+  ],
+  "frontier": [
+    "WEBUI-DASH-R003",
+    "WEBUI-DASH-R005",
+    "WEBUI-DASH-R010",
+    "WEBUI-DASH-R012",
+    "WEBUI-DASH-R016"
+  ],
+  "unserved": [
+    "WEBUI-DASH-R003",
+    "WEBUI-DASH-R005",
+    "WEBUI-DASH-R010",
+    "WEBUI-DASH-R012",
+    "WEBUI-DASH-R016"
   ]
 }
