@@ -6,7 +6,16 @@ from typing import Any
 def validate_local_browser_boundary(boundary: Any, mode: str) -> None:
     if boundary is None:
         return
-    from arbora.client.browser_boundary import LocalBrowserBoundary
+    try:
+        from arbora.client.browser_boundary import LocalBrowserBoundary
+    except ModuleNotFoundError as exc:
+        if exc.name not in {
+            'arbora',
+            'arbora.client',
+            'arbora.client.browser_boundary',
+        }:
+            raise
+        raise RuntimeError('Canonical local browser boundary is unavailable') from None
 
     if mode != 'none' or type(boundary) is not LocalBrowserBoundary:
         raise RuntimeError(

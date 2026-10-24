@@ -53,3 +53,40 @@ def test_factory_preserves_existing_positional_arguments(monkeypatch):
         frozenset(),
     )
     assert app.state.security_contract['auth_mode'] == 'none'
+
+
+@pytest.mark.parametrize(
+    'missing', ['arbora', 'arbora.client', 'arbora.client.browser_boundary']
+)
+def test_missing_optional_owner_refuses_before_factory_mount(monkeypatch, missing):
+    import builtins
+
+    original = builtins.__import__
+
+    def missing_owner(name, *args, **kwargs):
+        if name == 'arbora.client.browser_boundary':
+            raise ModuleNotFoundError(name=missing)
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, '__import__', missing_owner)
+    _no_verifier(monkeypatch)
+    with pytest.raises(
+        RuntimeError, match='Canonical local browser boundary is unavailable'
+    ):
+        _build(auth_mode='none', local_browser_boundary=object())
+
+
+def test_unrelated_transitive_import_error_is_not_hidden(monkeypatch):
+    import builtins
+
+    original = builtins.__import__
+
+    def broken_dependency(name, *args, **kwargs):
+        if name == 'arbora.client.browser_boundary':
+            raise ModuleNotFoundError(name='unrelated_dependency')
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, '__import__', broken_dependency)
+    with pytest.raises(ModuleNotFoundError) as failure:
+        validate_local_browser_boundary(object(), 'none')
+    assert failure.value.name == 'unrelated_dependency'
