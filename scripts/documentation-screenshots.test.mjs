@@ -22,6 +22,13 @@ test('captures exactly the three contexts at the existing wide and narrow viewpo
   for (const capture of captures) assert.ok(capture.path.startsWith('/workspace/'))
   assert.equal(responses['/auth/session'].tenant, 'synthetic')
   assert.equal(responses['/auth/session'].csrf_token, fixture)
+  assert.deepEqual(responses['/api/enhanced/mcp/servers/arbora/tools'], {
+    tools: [],
+    total: 0,
+    offset: 0,
+    limit: 200,
+    has_more: false,
+  })
   assert.equal(responses['/api/dashboard/readiness'].observed_at, fixedTime)
 })
 

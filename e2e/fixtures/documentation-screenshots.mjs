@@ -33,6 +33,7 @@ export const responses = {
   '/api/configure': { models: [], builtinTools: [] },
   '/api/enhanced/models': { models: [], default_id: '' },
   '/api/chats': [],
+  '/api/enhanced/mcp/servers/arbora/tools': { tools: [], total: 0, offset: 0, limit: 200, has_more: false },
   '/api/enhanced/sessions': [{ id: 'synthetic-research', status: { state: 'completed' } }],
   '/api/graph/traces': { result: [{ id: 'synthetic-trace', name: 'Synthetic research trace', status: 'completed' }] },
   '/api/enhanced/ontology/object-set/search': {
