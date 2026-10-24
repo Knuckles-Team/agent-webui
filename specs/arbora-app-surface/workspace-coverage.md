@@ -44,7 +44,7 @@ Each destination retains its role/capability restriction, compatible URL and dee
 | `knowledge.table-explorer` | `/table-explorer` | admin | unsupported | `@/components/views/TableExplorerView` |
 | `knowledge.base` | `/knowledge` | admin | full | `@/components/views/KnowledgeBaseView` |
 | `knowledge.memories` | `/memories` | user | adapted | `@/components/views/MemoryView` |
-| `observability.dashboard` | `/` | reader | full | `@/components/views/DashboardView` |
+| `observability.dashboard` | `/overview` | reader | full | `@/components/views/DashboardView` |
 | `observability.live-dashboards` | `/dashboards` | user | unsupported | `@/components/views/dashboards/LiveDashboardsView` |
 | `observability.system-status` | `/system-status` | reader | full | `@/components/views/SystemStatusView` |
 | `observability.arbora-readiness` | `/arbora-readiness` | reader | full | `@/components/views/ArboraReadinessView` |
@@ -160,7 +160,7 @@ WEBUI-APPS-R049.1 owns this migration. All 58 app destinations below become work
 | `knowledge.table-explorer` | `/table-explorer` | Explore. | Evidence / table lens. | Table projection, not separate page. |
 | `knowledge.base` | `/knowledge` | Explore. | Sources / knowledge base. | Ingestion/search/article context. |
 | `knowledge.memories` | `/memories` | Explore. | Sources / memory. | Memory collection and record inspector. |
-| `observability.dashboard` | `/` | Work. | Active work / overview. | Recent work and live run summary, no catalogue home. |
+| `observability.dashboard` | `/overview` | Work. | Active work / overview. | Recent work and live run summary, no catalogue home. |
 | `observability.live-dashboards` | `/dashboards` | Operate. | Health / dashboard lens. | Live telemetry composition. |
 | `observability.system-status` | `/system-status` | Operate. | Health / status. | Health indicators and dependency inspector. |
 | `observability.arbora-readiness` | `/arbora-readiness` | Operate. | Health / readiness. | Readiness diagnostics in same health context. |
@@ -189,6 +189,32 @@ The first redesign proof combines search results, selected entity, relationship 
 
 The Work prompts lens now composes the existing validated admin editor without a second
 page wrapper. It preserves investigation selection and in-memory edits across lenses.
-It retires editor state at admission changes and keeps the legacy `/prompts` route available.
+It retires editor state at admission changes and keeps `/prompts` as an admin-only compatibility entry into this shared lens.
 Lens navigation has manual/WebMCP parity and cannot save a document. Prompt document selection and editing remain local to the shared editor.
 Full semantic editor parity, served-provider and native-browser acceptance remain open under R049.1.2.
+
+## Workspace entry migration slice
+
+R045/R049.1/R049.1.2: `/` is now the registry-owned workspace entry, choosing
+Work for admitted user-or-higher identities and Operate for readers. Identity
+loading and sign-in do not redirect. The unmigrated dashboard remains intact
+at `/overview`, reachable through registry navigation. No dashboard feature is
+claimed absorbed into Work. `/prompts` resolves to the same Work prompt-authoring
+panel with the original admin guard; no other standalone capability is retired.
+
+Browser compatibility replaces the entry rather than adding a Back stop. It keeps
+query/fragment context and rejects malformed/conflicting Work state. Tool
+navigation uses the same resolution while still rejecting arbitrary provided
+query/fragment state. Mounted App tests cover entry, reader fallback, sign-in,
+Back/Forward, alias draft continuity and admission retirement. Existing prompt
+panel tests retain the manual field/create/save/validation contract. Native
+rendered acceptance and semantic prompt form-edit/save parity remain open.
+
+Reader Operate happy-path qualification depends on the narrow fleet-read
+classification repair in agent-webui #158. This entry change does not widen
+service grants or classify forbidden responses as available data.
+
+The entry tests now mount the actual persistent frame and map from the consolidated shell.
+An inert fragment survives entry without hiding the selected Work branch. Map
+presentation changes and compatibility links retain the same prompt editor DOM.
+This source-mounted integration does not replace native-browser acceptance.

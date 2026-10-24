@@ -1,6 +1,6 @@
 /** Shared same-origin navigation for the workspace and WebMCP. No new router. */
-import { useSyncExternalStore } from 'react'
-import { matchRoute, roleAtLeast, type Role } from '@/lib/nav-registry'
+import { useLayoutEffect, useSyncExternalStore } from 'react'
+import { matchRoute, roleAtLeast, ROUTE_REGISTRY, type Role } from '@/lib/nav-registry'
 
 export interface WebUiNavigationResult {
   navigated: true
@@ -51,14 +51,48 @@ function resolveAuthorizedRoute(pathname: string, role: Role): NonNullable<Retur
   return matched
 }
 
+/** Resolve only registry-declared compatibility entries. Preserve browser query and fragment context.
+ * Source admission is checked first, so an admin alias cannot lower its role via Work.
+ * Target entries cannot redirect again: no loops or parallel navigation authority.
+ */
+export function resolveWorkspaceRedirect(path: string, role: Role): string | null {
+  const url = new URL(path, 'https://workspace.invalid')
+  const source = matchRoute(url.pathname)?.route
+  if (!source?.redirects || !roleAtLeast(role, source.minRole)) return null
+  for (const destination of source.redirects) {
+    const target = ROUTE_REGISTRY.find((route) => route.id === destination.routeId)
+    if (!target || target.redirects || !roleAtLeast(role, target.minRole)) continue
+    url.pathname = target.path
+    for (const [key, value] of new URLSearchParams(destination.search)) {
+      // A conflicting value must remain invalid, not silently select a different lens.
+      if (url.searchParams.get(key) !== value) url.searchParams.append(key, value)
+    }
+    return `${url.pathname}${url.search}${url.hash}`
+  }
+  return null
+}
+
+/** Canonicalize the current entry only after identity admission, without adding a Back stop. */
+export function useWorkspaceEntry(role: Role, admitted: boolean): void {
+  const location = useWorkspaceLocation()
+  useLayoutEffect(() => {
+    if (!admitted) return
+    // Fragments remain browser context, not semantic workspace command state.
+    const target = resolveWorkspaceRedirect(`${location}${window.location.hash}`, role)
+    if (!target) return
+    window.history.replaceState(window.history.state, '', target)
+    window.dispatchEvent(new Event('history-state-changed'))
+  }, [location, role, admitted])
+}
+
 /** Validate a path against the declarative route registry and the signed-in role. */
 export function navigateWorkspace(path: string, role: Role, windowLike?: Window): WebUiNavigationResult {
   const targetWindow = currentWindow(windowLike)
   if (!targetWindow) throw new Error('WebMCP navigation is unavailable outside a browser window')
   const target = resolveNavigationTarget(path, targetWindow)
-  const matched = resolveAuthorizedRoute(target.pathname, role)
-
-  const normalizedPath = target.pathname
+  resolveAuthorizedRoute(target.pathname, role)
+  const normalizedPath = resolveWorkspaceRedirect(target.pathname, role) ?? target.pathname
+  const matched = resolveAuthorizedRoute(new URL(normalizedPath, targetWindow.location.origin).pathname, role)
   targetWindow.history.pushState({}, '', normalizedPath)
   targetWindow.dispatchEvent(new Event('history-state-changed'))
   return {
