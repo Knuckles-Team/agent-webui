@@ -158,3 +158,23 @@ R002.1.1 treats the stored `glass` theme as a compatibility alias for light. Sho
 light for either stored value, not two identical palette choices. Keep the existing
 independent Glass framing/Opaque framing material control.
 Assert effective classes, surface transparency and motion preferences in browsers.
+
+### Work diagram scrollport integration
+
+R004.1.1 must reveal an entire focused diagram scrollport. The expanded header
+exposed clipping in the legacy equal-row Work composition. Size containment on
+the graph-bearing route measures its actual grid/flex allocation. Cap only the
+diagram viewport against that task height and the screen, retaining the existing
+20rem maximum. An intrinsic 16rem block-size fallback prevents collapse in auto-height
+embeddings. Keep internal pan, the equivalent dependency list and outer
+workspace scrolling when content exceeds the screen. This is a bounded
+integration correction, not native-chat composition acceptance.
+
+### Forced-color selection readability
+
+R002.1.1 must preserve readable selected labels under forced colors. Hosted pixels
+exposed white text backplates over selected navigation labels. Use system Canvas
+and CanvasText for selected content, with Highlight borders and existing weight
+to mark selection. Keep automatic forced-color adjustment and recapture both
+light and dark system palettes. Computed contrast alone cannot detect backplate
+painting defects; actual screenshot review remains required.

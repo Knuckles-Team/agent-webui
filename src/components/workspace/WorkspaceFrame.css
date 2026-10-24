@@ -469,8 +469,8 @@
     --workspace-muted: CanvasText;
     --workspace-line: ButtonText;
     --workspace-branch: CanvasText;
-    --workspace-selection: Highlight;
-    --workspace-selection-ink: HighlightText;
+    --workspace-selection: Canvas;
+    --workspace-selection-ink: CanvasText;
     --workspace-ring: Highlight;
   }
   .workspace-context-rail,
@@ -479,6 +479,16 @@
   .glass .workspace-map {
     background: Canvas;
     backdrop-filter: none;
+  }
+  .workspace-context-rail nav a[aria-current],
+  .workspace-map-node[aria-current],
+  .workspace-map-toggle[aria-expanded='true'],
+  .workspace-frame-actions button[aria-pressed='true'] {
+    color: CanvasText;
+    background: Canvas;
+    border: 2px solid Highlight;
+    box-shadow: none;
+    font-weight: 700;
   }
 }
 
@@ -537,5 +547,17 @@
   }
   .workspace-map-context p {
     display: none;
+  }
+}
+
+/* The graph viewport must fit the task's actual allocated scrollport, not its
+   content height. The equivalent dependency list and diagram pan stay intact. */
+@supports (container-type: size) and (height: 1cqh) {
+  .workspace-route-content:has(.work-execution-diagram) {
+    container-type: size;
+    contain-intrinsic-block-size: 16rem;
+  }
+  .workspace-route-content .work-execution-diagram {
+    max-height: min(20rem, calc(100cqh - 2rem), calc(100dvh - 2rem));
   }
 }

@@ -1,4 +1,5 @@
 // spec: WEBUI-APPS-R049.1.13, WEBUI-API-R011.4
+// spec: WEBUI-DESIGN-R004.1.1
 // Real Work route with synthetic producer data, not installed-provider qualification.
 import { test, expect } from '@playwright/test'
 import fixture from '../src/lib/__tests__/fixtures/execution-graph.json' with { type: 'json' }
@@ -6,8 +7,12 @@ import fixture from '../src/lib/__tests__/fixtures/execution-graph.json' with { 
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 320, height: 740 },
+  { width: 844, height: 390 },
+  { width: 320, height: 740, textScale: 2 },
 ]) {
-  test(`flat dependencies remain inspectable by keyboard at ${viewport.width}px`, async ({ page }) => {
+  test(`flat dependencies remain inspectable by keyboard at ${viewport.width}x${viewport.height}px${'textScale' in viewport ? ' with 200% text' : ''}`, async ({
+    page,
+  }) => {
     let refused = false
     const graphRequests: unknown[] = []
     await page.route('**/auth/session', (route) =>
@@ -52,10 +57,29 @@ for (const viewport of [
     await page.goto(`/workspace/work?task=${encodeURIComponent(fixture.task_id)}`)
     const graph = page.getByRole('region', { name: 'Execution dependency graph', exact: true })
     await expect(graph.getByText('Complete declared topology · Incomplete lifecycle evidence')).toBeVisible()
+    if ('textScale' in viewport)
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = '200%'
+      })
     const refresh = graph.getByRole('button', { name: 'Refresh execution graph' })
     await refresh.focus()
     await page.keyboard.press('Tab')
-    await expect(graph.getByRole('region', { name: /Scrollable dependency diagram/ })).toBeFocused()
+    const scrollport = graph.getByRole('region', { name: /Scrollable dependency diagram/ })
+    await expect(scrollport).toBeFocused()
+    const overflow = await scrollport.evaluate((el) => ({
+      horizontal: el.scrollWidth > el.clientWidth,
+      vertical: el.scrollHeight > el.clientHeight,
+      left: el.scrollLeft,
+      top: el.scrollTop,
+    }))
+    if (overflow.horizontal) {
+      await page.keyboard.press('ArrowRight')
+      await expect.poll(() => scrollport.evaluate((el) => el.scrollLeft)).toBeGreaterThan(overflow.left)
+    }
+    if (overflow.vertical) {
+      await page.keyboard.press('ArrowDown')
+      await expect.poll(() => scrollport.evaluate((el) => el.scrollTop)).toBeGreaterThan(overflow.top)
+    }
     await page.keyboard.press('Tab')
     const first = graph.locator('summary').first()
     await expect(first).toBeFocused()
@@ -73,6 +97,21 @@ for (const viewport of [
     // The graph is taller than its nested scroll viewport. Element screenshots
     // would include clipped/blank regions rather than what a person can see.
     const diagram = graph.getByRole('region', { name: /Scrollable dependency diagram/ })
+    await expect(page.locator('.workspace-route-content')).toHaveCSS('container-type', 'size')
+    const task = page.locator('.workspace-route-content')
+    const fallback = await task.evaluate((el) => {
+      const previous = el.style.cssText
+      el.style.blockSize = 'auto'
+      el.style.flex = 'none'
+      el.style.alignSelf = 'start'
+      const height = el.clientHeight
+      const minimum = 16 * parseFloat(getComputedStyle(document.documentElement).fontSize)
+      el.style.cssText = previous
+      return { height, minimum }
+    })
+    expect(fallback.height).toBeGreaterThanOrEqual(fallback.minimum)
+    const taskHeight = await task.evaluate((el) => el.clientHeight)
+    expect((await diagram.boundingBox())!.height).toBeLessThanOrEqual(taskHeight)
     for (const [name, target, focus] of [
       ['diagram', diagram, diagram],
       ['details', join.locator('..'), join],
@@ -85,7 +124,11 @@ for (const viewport of [
       )
       await target.scrollIntoViewIfNeeded()
       await page.screenshot({
-        path: test.info().outputPath(`flat-execution-${name}-${viewport.width}.png`),
+        path: test
+          .info()
+          .outputPath(
+            `flat-execution-${name}-${viewport.width}x${viewport.height}${'textScale' in viewport ? '-text200' : ''}.png`,
+          ),
         animations: 'disabled',
         caret: 'hide',
       })

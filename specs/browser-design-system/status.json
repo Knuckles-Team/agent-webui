@@ -188,6 +188,7 @@
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
+        "e2e/execution-graph.browser.ts:2",
         "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:93",
         "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:94",
         "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:160"
@@ -264,6 +265,7 @@
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
+        "e2e/execution-graph.browser.ts:2",
         "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:94",
         "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:160"
       ]

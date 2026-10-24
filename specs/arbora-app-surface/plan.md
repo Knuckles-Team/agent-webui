@@ -939,3 +939,9 @@ steal focus or jump the viewport. Keep identity retirement and existing typed na
 
 Preserve R005.6.2's visible registry purpose in all workspace shells. Use a compact
 paragraph, not a redundant page hero; density must not delete required purpose.
+
+R049.1.13 retains its full-visibility keyboard test after shared-shell changes.
+Qualify the diagram and step details at wide, narrow, low-height and enlarged-text
+sizes. Never weaken the viewport ratio or replace the equivalent dependency list
+to accommodate the new header. Read admission, lifecycle honesty and graph
+semantics remain unchanged.

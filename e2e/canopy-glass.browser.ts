@@ -191,9 +191,30 @@ test('Canopy appearance preferences retain the task and remove effects', async (
   await expect(page.getByRole('textbox', { name: 'Find evidence' })).toHaveValue('forest')
   await expect(page.locator('.explore-detail-content')).toHaveCSS('animation-name', 'none')
   await page.screenshot({ path: info.outputPath('canopy-opaque-comfortable.png'), animations: 'disabled' })
-  await page.emulateMedia({ forcedColors: 'active' })
-  await expect(page.locator('.workspace-map')).toHaveCSS('backdrop-filter', 'none')
-  await page.screenshot({ path: info.outputPath('canopy-forced-colors.png') })
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ forcedColors: 'active', colorScheme })
+    await expect(page.locator('.workspace-map')).toHaveCSS('backdrop-filter', 'none')
+    const selected = page.locator(
+      '.workspace-context-rail nav a[aria-current], .workspace-map-node[aria-current], .workspace-map-toggle[aria-expanded="true"], .workspace-frame-actions button[aria-pressed="true"]',
+    )
+    expect(await selected.count()).toBeGreaterThan(3)
+    const palette = await page.evaluate(() => {
+      const probe = document.createElement('span')
+      probe.style.cssText = 'color:CanvasText;background:Canvas;border-color:Highlight'
+      document.body.append(probe)
+      const style = getComputedStyle(probe)
+      const result = { color: style.color, background: style.backgroundColor, border: style.borderTopColor }
+      probe.remove()
+      return result
+    })
+    for (const control of await selected.all()) {
+      await expect(control).toHaveCSS('color', palette.color)
+      await expect(control).toHaveCSS('background-color', palette.background)
+      await expect(control).toHaveCSS('border-top-color', palette.border)
+      expect(await contrast(control)).toBeGreaterThanOrEqual(4.5)
+    }
+    await page.screenshot({ path: info.outputPath(`canopy-forced-colors-${colorScheme}.png`) })
+  }
 })
 
 test('Canopy keeps enlarged navigation and final detail actions reachable', async ({ page }, info) => {
