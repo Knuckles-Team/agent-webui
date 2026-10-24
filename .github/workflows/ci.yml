@@ -85,6 +85,18 @@ jobs:
         run: pnpm exec playwright test --config e2e/workspace-identity.config.ts
       - name: Catalog destination history and responsive navigation
         run: pnpm exec playwright test --config e2e/workspace-branches.config.ts workspace-catalog
+      - name: Canopy Glass retained evidence and effects
+        run: pnpm exec playwright test --config e2e/canopy-glass.config.ts
+      - name: Native 200 percent zoom and keyboard reachability
+        run: pnpm exec playwright test --config e2e/workspace-zoom.config.ts --output=test-results/canopy-glass/zoom
+      - name: Preserve Canopy Glass browser evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: canopy-glass-browser
+          path: test-results/canopy-glass/
+          retention-days: 14
+          if-no-files-found: error
       - name: Documentation screenshot contract
         run: pnpm screenshots:test
       - name: Refresh synthetic documentation screenshots

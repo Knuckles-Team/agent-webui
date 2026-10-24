@@ -571,3 +571,31 @@ Cover fan-out/fan-in, hostile labels, missing metadata, selection aborts, identi
 The diagram and expandable dependency list stay inside the existing Work task; no graph selection retargets Chat.
 The separate `execution-graph.browser.ts` journey can capture wide/narrow presentation in hosted CI.
 Its authored source is not evidence of completed browser qualification. R049.1.2 retains every original acceptance obligation.
+
+## Canopy Glass shell and Explore presentation
+
+WEBUI-APPS-R049.2.1 extends existing shell, frame, command, palette-focus and
+Explore component suites. Render the actual route, not a replacement design mock.
+The [design-system matrix](../browser-design-system/test-spec.md) owns material,
+expanded-header, density, motion, contrast, fallback and viewport measurements.
+All new cases remain planned until an exact-source result is recorded.
+
+- Start with no selection: one useful collection surface, no placeholder inspector.
+- Search synthetic evidence; inspect actual returned properties, relationships and
+  history. Preserve query/results and semantic selection while returning, resizing,
+  navigating Back/Forward and following a modified-click/native deep link.
+- Keep labelled Work/Explore/Operate, current context, command/search entry and
+  main actions visible through row reflow. Main navigation never depends on More.
+- Resize the existing map with keyboard and pointer; close it and give its width
+  to the task. Narrow layouts preserve the same capabilities and reachable focus.
+- Change theme, density and effects while editing. Retain drafts, selected evidence,
+  mounted Chat, pending request ownership and command-dialog cancellation focus.
+- Exercise loading, empty, unavailable, denied and failed reads; no invented success,
+  blank decorative panel, confidence score or fake activity may replace real state.
+- Revoke identity and invoke a stale WebMCP handle after navigation. Preserve the
+  current typed dispatcher refusals; no presentation preference grants permission.
+
+Mounted fixtures are source proof. Synthetic browser history is not a live-provider test. Screenshot review is not full accessibility acceptance. R045/R046/R047/
+R048/R049.1.2/R049.2/R050 keep their complete census, dynamic-leaf, native-tool,
+authority, migration, measured-redesign and served-provider obligations. Record
+native-browser, manual assistive-technology and physical-device gaps explicitly.

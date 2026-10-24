@@ -1,8 +1,9 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 // spec: WEBUI-APPS-R049.1.6
 import { WorkspaceCommandsProvider, WorkspaceCommandPalette } from '../WorkspaceCommands'
 // spec: WEBUI-APPS-R049.1.1
 import { PageContextProvider, usePageContextEnvelope } from '@/lib/page-context'
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'
 import { api } from '@/lib/api'
@@ -129,6 +130,38 @@ describe('retained Explore investigation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Evidence collection' }))
     expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveFocus()
     expect(window.location.search).toBe('?q=sample+query')
+  })
+
+  // spec: WEBUI-APPS-R049.2.1
+  it('only opens detail for a selection and closes back to the retained searchable collection', async () => {
+    renderWorkspace()
+    expect(screen.queryByRole('region', { name: 'Selected evidence' })).not.toBeInTheDocument()
+    await searchAndOpen()
+    expect(screen.getByRole('region', { name: 'Selected evidence' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Close evidence details' }))
+    expect(screen.queryByRole('region', { name: 'Selected evidence' })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveFocus()
+    expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveValue('sample query')
+    expect(screen.getByRole('link', { name: /Evidence A/ })).toBeInTheDocument()
+  })
+
+  it('removes protected list and detail immediately on admission loss instead of animating a snapshot', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const surface = () => (
+      <QueryClientProvider client={client}>
+        <PageContextProvider route="/workspace/explore" view="workspace.explore-proof">
+          <ExploreWorkspace />
+          <ContextProbe />
+        </PageContextProvider>
+      </QueryClientProvider>
+    )
+    const view = render(surface())
+    await searchAndOpen()
+    state.role = 'reader'
+    view.rerender(surface())
+    expect(screen.queryByText('Body a')).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Evidence results' })).not.toBeInTheDocument()
+    expect(state.tools).toEqual([])
   })
 
   it('shares typed selection between manual navigation and mounted WebMCP without arbitrary targets', async () => {

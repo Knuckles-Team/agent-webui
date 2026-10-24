@@ -57,3 +57,24 @@ This extension is SPECIFIED, not an implementation or acceptance claim. It exten
 - WEBUI-DESIGN-R004.2: Resize, fold and visual viewport continuity.
 - WEBUI-DESIGN-R005.1: Accessible interruptible semantic zoom.
 - WEBUI-DESIGN-R010: Measured performance under representative load.
+
+## Canopy Glass theme completion path
+
+The original sage/ivory material language extends this specification, not a new
+owner or theme API. WEBUI-DESIGN-R002.1.1 defines material and density,
+R004.1.1 defines the fully expanded responsive header, and R005.2 defines
+meaningful interruptible motion. Their shared-shell and existing Explore journey
+slice is WEBUI-APPS-R049.2.1. The current component, token, logo, route, identity
+and WebMCP contracts remain authoritative.
+
+The header uses available width and reflows visibly into rows. It never becomes a centered capsule or hides main context navigation/search. Keep a useful resizable
+map, dominant center and only real selected-evidence detail. Opaque reading
+surfaces and reduced-motion/transparency/forced-color alternatives preserve
+information. No decorative panels, invented data or idle visual effects count as
+density or dynamism.
+
+Theme completion still includes all Work/Explore/Operate capabilities, graph,
+editor, run, administration and authentication surfaces. The existing R002–R006,
+R010, WEBUI-APPS-R049.1.2/R049.2/R050 obligations remain open. Source tests,
+synthetic rendered screenshots and a polished shell cannot establish full
+redesign, accessibility, mobile, performance or served-provider acceptance.

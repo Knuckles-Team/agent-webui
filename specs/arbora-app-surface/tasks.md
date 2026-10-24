@@ -313,3 +313,27 @@ The browser test writes these files into its configured output directory.
 
 - [x] WEBUI-APPS-R049.1.13: Qualify the bounded inline view with mounted Work and adapter fixtures.
 - [ ] R049.1.2: Keep actual browser, installed-provider and nested execution acceptance open after the source slice.
+
+## Canopy Glass presentation continuation — 2026-10-24
+
+- [x] Specify WEBUI-APPS-R049.2.1 within the existing redesign owner and preserve all parent acceptance obligations.
+- [ ] R049.2.1: Apply the shared full-width expanded shell and real Explore list/detail presentation without changing route, auth or WebMCP authority.
+- [ ] R049.2.1: Qualify search, selection, detail tools, return, denial, retained state and focus with source tests and separately recorded rendered journeys.
+- [ ] R049.2: Compare actual old/new tasks, navigation/scrolling effort and reviewed layout captures; the bounded presentation slice cannot close this row.
+- [ ] R049.1.2/R045/R046/R047/R048: Complete remaining migration, all-leaf navigation, mobile capability parity and native-tool/authority acceptance.
+- [ ] R050: Qualify noauth, EG and OIDC with the installed producers independently; synthetic theme fixtures do not establish served acceptance.
+
+The first implementation covers shared chrome and existing Explore evidence only.
+Graph, editor, run, administration, authentication and other native surfaces still
+need complete theme and interaction review under their existing owners. Do not
+promote a broad row from scoped tests or historical documentation screenshots.
+
+### Remaining composition acceptance after the Canopy shell slice
+
+- [ ] WEBUI-APPS-R049.2: Rebalance the real Work conversation/task split so an empty
+  conversation does not reserve most of the center while selected-task details
+  are squeezed into a narrow column. Preserve the mounted conversation, drafts,
+  execution selection and safe disclosure behavior; do not manufacture content.
+- [ ] WEBUI-APPS-R049.2: Complete Work and Operate composition and real wide, narrow,
+  low-height and ultrawide pixel review. A shared palette or the first Explore
+  list/detail journey does not complete the three-context redesign.

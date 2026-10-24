@@ -53,14 +53,14 @@ test('workspace panes use available width and keep collection drafts through dis
         width: element.getBoundingClientRect().width,
         columns: getComputedStyle(panels).gridTemplateColumns.split(' ').length,
         overflow: element.scrollWidth > element.clientWidth,
-        sameRow: Math.abs(children[0].top - children[1].top) < 1,
+        children: children.length,
         fontSize: getComputedStyle(element.querySelector('input')!).fontSize,
       }
     })
     expect(geometry.overflow).toBe(false)
-    expect(geometry.width).toBeLessThanOrEqual(1600)
-    expect(geometry.columns).toBe(geometry.width >= 832 ? 2 : 1)
-    expect(geometry.sameRow).toBe(geometry.width >= 832)
+    // No selected record means no empty inspector, even on ultrawide screens.
+    expect(geometry.columns).toBe(1)
+    expect(geometry.children).toBe(1)
     await info.attach(`density-${viewport.width}x${viewport.height}`, {
       body: JSON.stringify(geometry),
       contentType: 'application/json',

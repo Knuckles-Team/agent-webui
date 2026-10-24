@@ -383,7 +383,7 @@ export default function SchedulingView() {
                         <div
                           className={cn(
                             'text-[10px] font-bold mb-1 w-5 h-5 flex items-center justify-center rounded-full',
-                            isToday && 'bg-primary text-white',
+                            isToday && 'bg-primary text-primary-foreground',
                           )}
                         >
                           {day.getDate()}

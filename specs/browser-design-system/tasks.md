@@ -178,3 +178,20 @@ A second artifact reproduced five PNGs byte-for-byte. Operate wide differed only
 Pixel review confirmed the second output. No bit-exact cross-run rasterization guarantee is made.
 Only R011 qualifies for delivery; final PR validation and review remain merge requirements.
 This bounded workflow does not complete the earlier design requirements.
+
+## Canopy Glass continuation — 2026-10-24
+
+- [x] Define WEBUI-DESIGN-R002.1.1/R004.1.1/R005.2 and the original material, expanded-header, density, motion and fallback contract before runtime changes.
+- [ ] R002.1.1: Implement shared token/material and compact/comfortable appearance behavior; qualify actual contrast, coarse-pointer sizing and storage fallback.
+- [ ] R004.1.1: Implement full-width visible context/search/action rows and optional real detail; qualify resize, map sizing, focus, zoom and retained drafts.
+- [ ] R005.2: Implement interruptible state-linked motion and system/in-app reduced effects; qualify initial paint, repeated input, cancellation and idle behavior.
+- [ ] Record exact source, scoped validation results and reviewed rendered artifacts for WEBUI-APPS-R049.2.1. Never mark a planned browser test as passed.
+- [ ] R002/R003/R004/R005/R006: Complete graph, editor, run, administration, authentication and remaining route theme/state/accessibility rollout.
+- [ ] R004.1/R004.2/R005.1: Complete all-route mobile, arbitrary-aspect, native zoom/keyboard/fold, touch and manual screen-reader acceptance.
+- [ ] R010: Qualify declared representative loads, interaction/frame budgets, memory/idle behavior and constrained-device fallback.
+- [ ] WEBUI-APPS-R049.1.2/R049.2/R050: Complete capability migration, measured redesign and composed-provider acceptance.
+
+This section records specification work only. Local implementation and synthetic
+source/browser results must be recorded separately when available. Earlier hosted
+screenshots and compact-header receipts remain historical, not Canopy Glass
+acceptance. No broader completion follows from the shared-shell/Explore slice.

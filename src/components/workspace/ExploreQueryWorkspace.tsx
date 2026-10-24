@@ -104,26 +104,28 @@ function OwnedExplore({ state, role }: { state: ExploreLensState; role: Role }) 
   }
   return (
     <section aria-label="Explore workspace lenses" className="workspace-surface min-w-0 space-y-3">
-      <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
-        Explore
-      </h1>
-      <nav aria-label="Explore lenses" className="flex flex-wrap gap-2">
-        {available.map((lens) => (
-          <a
-            key={lens}
-            href={exploreLensHref({ ...state, lens })}
-            aria-current={state.lens === lens ? 'page' : undefined}
-            className="inline-flex min-h-11 items-center rounded border px-3 capitalize"
-            onClick={(event) => {
-              if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
-              event.preventDefault()
-              select(lens)
-            }}
-          >
-            {lens}
-          </a>
-        ))}
-      </nav>
+      <div className="explore-lens-header">
+        <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
+          Explore
+        </h1>
+        <nav aria-label="Explore lenses" className="flex flex-wrap gap-2">
+          {available.map((lens) => (
+            <a
+              key={lens}
+              href={exploreLensHref({ ...state, lens })}
+              aria-current={state.lens === lens ? 'page' : undefined}
+              className="inline-flex min-h-11 items-center rounded border px-3 capitalize"
+              onClick={(event) => {
+                if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+                event.preventDefault()
+                select(lens)
+              }}
+            >
+              {lens}
+            </a>
+          ))}
+        </nav>
+      </div>
       <div hidden={state.lens !== 'evidence'}>
         <EvidenceWorkspace showHeading={false} active={state.lens === 'evidence'} />
       </div>

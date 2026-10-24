@@ -898,3 +898,31 @@ Inspection never changes the Chat target or conversation selection.
 Mounted Work and adapter contract fixtures qualify this source slice only.
 The producer is unreleased; no installed-provider, browser rendering, nested
 execution, chat-targeting or full R049.1.2 completion is claimed.
+
+## Canopy Glass shared-shell and Explore slice — 2026-10-24
+
+WEBUI-APPS-R049.2.1 applies the existing design-system children
+WEBUI-DESIGN-R002.1.1/R004.1.1/R005.2 to the shared workspace and retained Explore
+journey. Extend `WorkspaceContextRail`, `WorkspaceFrame`, `WorkspaceCommands` and
+`ExploreWorkspace`; retain their existing authority, state and focus seams.
+
+Keep a single full-width header with visibly labelled context navigation,
+current context, search/commands and main actions. Reflow into rows instead of
+hiding main navigation in a compact menu. Retain the resizable map and give the
+main task the remaining width. Collection-only mode must not reserve an empty
+inspector. A selected record exposes actual detail and its existing overview, relationships and history controls. Returning to the collection preserves query and results. Small layouts stack or focus the same capabilities with keyboard
+access, not a mobile subset. Avoid decorative filler or a second assistant tray.
+
+Keep existing typed URL parsing, native/modified links, mounted query/chat state,
+identity admission and manual/WebMCP dispatch. A visual selection changes neither
+backend authority nor the set of callable capabilities. No new data read, endpoint,
+router, credential store or invented relationship is needed. Revoked identity,
+stale handles, denied data and superseded selection retain their existing refusal
+behavior. Preserve noauth, EG and OIDC as authority modes rather than themes.
+
+The design is original and uses existing brand artwork and same-origin fonts.
+Reuse the current provider for density and appearance preferences. The companion
+[interaction contract](../browser-design-system/interaction-contract.md) defines
+material, expanded-header, motion and fallback behavior. This is a staged theme implementation. The 58-destination migration, nested execution, all-leaf semantic navigation, native WebMCP equivalence and real-provider evidence remain incomplete.
+R045–R050 retain every broader obligation. Qualify remaining graph, editor, run,
+administration and authentication surfaces through their existing owners.
