@@ -29,6 +29,8 @@ import ast
 import subprocess
 from pathlib import Path
 
+import pytest
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]  # .../agent-webui
 
 
@@ -88,9 +90,26 @@ def _is_test_path(path: Path) -> bool:
     exists to protect.
     """
     parts = path.parts
+    if parts[:2] == ('e2e', 'fixtures'):
+        return True
     if '__tests__' in parts or 'tests' in parts or 'test' in parts:
         return True
     return path.name.startswith('test_') or path.name.endswith('_test.py')
+
+
+@pytest.mark.parametrize(
+    ('path', 'expected'),
+    [
+        ('e2e/fixtures/operate-qualification/catalog_served.py', True),
+        ('agent/agent_webui/__tests__/negative_host.py', True),
+        ('e2e/production_bridge.py', False),
+        ('agent/agent_webui/server.py', False),
+        ('agent/e2e/fixtures/production_bridge.py', False),
+        ('scripts/fixtures_bridge.py', False),
+    ],
+)
+def test_only_declared_test_locations_are_exempt(path: str, expected: bool) -> None:
+    assert _is_test_path(Path(path)) is expected
 
 
 def _tracked_python_files() -> list[Path]:
@@ -117,7 +136,7 @@ def _tracked_python_files() -> list[Path]:
 def _production_violations() -> list[str]:
     violations: list[str] = []
     for path in _tracked_python_files():
-        if _is_test_path(path):
+        if _is_test_path(path.relative_to(_REPO_ROOT)):
             continue
         if not path.is_file():
             continue  # a tracked path git still lists after a local deletion

@@ -10,6 +10,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / 'scripts' / 'release' / 'check_pypi_artifacts.py'
@@ -175,4 +176,30 @@ def test_release_workflow_preflights_and_rechecks_without_skip_existing() -> Non
     assert (
         'uses: ./.pipeline-contract/.github/actions/create-version-release' in workflow
     )
-    assert 'needs: [release-intent, publish-pypi]' in workflow
+    # The PyPI-only workflow creates the release in the same job after publish.
+    # Retain the dependency and success-only ordering, not an obsolete job name.
+    publish = yaml.safe_load(workflow)['jobs']['publish-pypi']
+    assert publish['needs'] == ['release-intent']
+    assert not publish.get('continue-on-error', False)
+    steps = publish['steps']
+    preflight = next(
+        index for index, step in enumerate(steps) if step.get('id') == 'pypi_preflight'
+    )
+    upload = next(
+        index
+        for index, step in enumerate(steps)
+        if 'twine upload' in step.get('run', '')
+    )
+    release = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get('uses')
+        == './.pipeline-contract/.github/actions/create-version-release'
+    )
+    assert preflight < upload < release
+    assert steps[release].get('if') is None  # GitHub's default success() condition.
+    assert all(
+        not steps[index].get('continue-on-error', False)
+        for index in (preflight, upload, release)
+    )
+    assert '--expect-existing' in steps[upload]['run']
