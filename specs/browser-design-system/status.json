@@ -37,6 +37,7 @@
       "title": "Design tokens documented with contrast targets",
       "delivery_state": "SPECIFIED",
       "landed_in": [
+        "2c9874c2a559",
         "2d3f1b884e39",
         "a4c402f68f1b"
       ],
