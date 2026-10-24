@@ -24,6 +24,7 @@ export const WorkStateSchema = z
     task: id.nullable(),
     run: id.nullable(),
     node: id.nullable(),
+    lens: z.enum(['investigation', 'prompts']).optional(),
   })
   .strict()
   .refine((state) => !state.node || Boolean(state.run), 'A node requires a run')
@@ -33,8 +34,8 @@ export function parseWorkState(location: string): WorkState {
   const url = new URL(location, 'https://workspace.invalid')
   if (
     url.pathname !== WORK_PATH ||
-    [...url.searchParams.keys()].some((key) => !['conversation', 'task', 'run', 'node'].includes(key)) ||
-    ['conversation', 'task', 'run', 'node'].some((key) => url.searchParams.getAll(key).length > 1)
+    [...url.searchParams.keys()].some((key) => !['conversation', 'task', 'run', 'node', 'lens'].includes(key)) ||
+    ['conversation', 'task', 'run', 'node', 'lens'].some((key) => url.searchParams.getAll(key).length > 1)
   )
     throw new Error('Invalid Work destination')
   return WorkStateSchema.parse({
@@ -42,17 +43,19 @@ export function parseWorkState(location: string): WorkState {
     task: url.searchParams.get('task'),
     run: url.searchParams.get('run'),
     node: url.searchParams.get('node'),
+    ...(url.searchParams.has('lens') ? { lens: url.searchParams.get('lens') } : {}),
   })
 }
 export function workHref(state: WorkState): string {
   const parsed = WorkStateSchema.parse(state)
   const url = new URL(WORK_PATH, 'https://workspace.invalid')
-  for (const key of ['conversation', 'task', 'run', 'node'] as const)
+  for (const key of ['conversation', 'task', 'run', 'node', 'lens'] as const)
     if (parsed[key]) url.searchParams.set(key, parsed[key])
   return `${url.pathname}${url.search}`
 }
 export function navigateWork(state: WorkState, role: Role): WorkState {
-  if (!roleAtLeast(role, 'user')) throw new Error('Work is not permitted for this role')
+  if (!roleAtLeast(role, state.lens === 'prompts' ? 'admin' : 'user'))
+    throw new Error('Work is not permitted for this role')
   const href = workHref(state)
   if (`${window.location.pathname}${window.location.search}` !== href) {
     window.history.pushState({}, '', href)

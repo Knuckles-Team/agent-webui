@@ -875,8 +875,8 @@ interface EditorHeaderProps {
 function renderEditorHeader(props: EditorHeaderProps) {
   const { isNew, promptDetail, selectedName, editMode, onSetEditMode, saving, jsonError, onSave } = props
   return (
-    <div className="flex items-center justify-between">
-      <div>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0">
         <CardTitle className="text-lg font-bold text-foreground">
           {editorTitle(isNew, promptDetail, selectedName)}
         </CardTitle>
@@ -885,7 +885,7 @@ function renderEditorHeader(props: EditorHeaderProps) {
           edits.
         </CardDescription>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <div
           role="group"
           aria-label="Prompt editor mode"
@@ -1154,7 +1154,7 @@ function filterPrompts(prompts: PromptSummary[], searchQuery: string): PromptSum
   return prompts.filter((prompt) => matchesPromptSearch(prompt, searchQuery))
 }
 
-export default function PromptsView() {
+export function PromptAuthoringPanel({ contextual = false }: { contextual?: boolean }) {
   const [prompts, setPrompts] = useState<PromptSummary[]>([])
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [promptDetail, setPromptDetail] = useState<PromptDetail | null>(null)
@@ -1412,7 +1412,13 @@ export default function PromptsView() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-12rem)]">
+    <div
+      className={
+        contextual
+          ? 'grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3'
+          : 'grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-12rem)]'
+      }
+    >
       {/* 1. Sidebar - Prompt List */}
       <Card className="lg:col-span-1 border-border/40 bg-card/60 backdrop-blur-md flex flex-col overflow-hidden">
         <CardHeader className="pb-3">
@@ -1519,4 +1525,8 @@ export default function PromptsView() {
       </Card>
     </div>
   )
+}
+
+export default function PromptsView() {
+  return <PromptAuthoringPanel />
 }

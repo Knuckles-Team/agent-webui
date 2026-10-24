@@ -662,3 +662,17 @@ Use visible attended review for these changes, including the loss of an unsent d
 Bind reviews and semantic review requests to the current owner, conversation and local-copy snapshot.
 Retire reviews when that context changes. Check local storage readback before reporting success.
 Keep the existing conversation selector, legacy links and one retained Chat instance.
+
+### Contextual Work prompt authoring
+
+Extend WEBUI-APPS-R049.1.2 and R049.1.3 with an admin-only prompts lens.
+Reuse the existing validated prompt editor and its canonical list/read/upsert adapter.
+Do not add a backend API or infer a task association.
+Keep conversation, task and independent trace selection in typed Work URLs.
+Keep prompt documents and unsaved edits out of URLs and semantic navigation.
+Share lens selection between native links and WebMCP. Selecting a lens must
+not save a prompt. Preserve drafts while switching lenses in the admitted
+Work workspace, and retire the editor when the identity admission changes.
+Retain the legacy prompts route and its existing editor behavior. This slice
+does not claim full authoring-tool parity, provider acceptance, plan metrics,
+harness discovery, or complete Work destination migration.
