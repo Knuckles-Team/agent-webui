@@ -261,3 +261,5 @@ uses origin-root asset URLs. Direct workspace URLs do not resolve scripts
 and styles beneath the route directory. Explicit Vite deployment-base overrides
 remain supported for asset hosting. This repair alone does not qualify dynamic
 leaves, history, semantic zoom, provider behavior or complete redesign.
+
+Readiness alias retirement follows the supported dashboard contract. Unavailable graph `refresh.mode` and `principal` fields are explicitly retired.

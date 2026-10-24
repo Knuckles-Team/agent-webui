@@ -332,3 +332,20 @@ host, never Vite dev. Open Work, Explore and Operate in fresh browser contexts.
 Check successful document/assets and rendered headings. Reload with the query
 retained. Only identity and API responses are synthetic. These tests do
 not prove authentication, real providers, full migration or R050 acceptance.
+
+### Readiness producer parity boundary
+
+This is a supported-contract migration, not equivalence with the unavailable graph readiness producer.
+Arbora v0.1.7 resolves to commit `4a7f71c4c8c4d9911f5f12cfa8f6530acf1c50ad`.
+Current Arbora inspection used commit `d18028683e44734d794246f455a60f4668bc250d`.
+At both revisions, `arbora/mcp_server/backing/tools/analysis_tools.py:1383` unconditionally raises `not_served` for the readiness action.
+Its action dispatch entry is at line 1441.
+The supported GET producer is `arbora/gateway/dashboard_api.py:226`.
+Its collector, `arbora/observability/readiness.py:74`, returns dynamic checks, rollup, snapshot identity, observation time, failures and reasons.
+It does not return top-level `refresh` or `principal` fields.
+
+The retired page showed `snapshot.refresh.mode`; its legacy client also required `principal` and seven fixed checks.
+Those unavailable fields and fixed-check assumptions are retired, not fabricated or inferred from dashboard evidence.
+The old client required principal metadata, but the retired page did not show it.
+Reprobe invokes the supported collector again; it does not claim the old refresh-mode semantics.
+Full provider, authentication and operational migration acceptance remain open.
