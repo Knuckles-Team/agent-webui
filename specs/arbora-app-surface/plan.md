@@ -600,3 +600,12 @@ Installed scheduling, pipeline, maintenance and model-management facades refuse 
 Fleet load/unload require authenticated MCP sessions and are not HTTP actions.
 Legacy broker topic/message requests do not match its advertised queue/publish contract.
 Readiness diagnosis uses the supported dashboard collector rather than those unavailable journeys.
+
+## Cold-entry asset resolution amendment
+
+Fix nested workspace entry in the existing Vite configuration. Keep the static
+host and admission behavior unchanged. Exercise generated asset references for
+the default origin root and an explicit asset prefix. Drive the production
+bundle through the installed Arbora application composer and WebUI static mount.
+Use synthetic identity/data only; retain the full R046.2.2 and R050 acceptance
+obligations. No additional requirement decomposition is introduced.
