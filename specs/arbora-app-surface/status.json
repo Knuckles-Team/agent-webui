@@ -2003,9 +2003,9 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "6592af62bedb",
-        "c0c93eeb157b",
-        "c767b6a5b17f",
-        "f0808a9f133e"
+        "983742bbd5e7",
+        "ba2f48fd0166",
+        "c767b6a5b17f"
       ],
       "verified_by": [
         "e2e/workspace-task-lifecycle.spec.ts:1",
