@@ -311,3 +311,11 @@ host, never Vite dev. Open Work, Explore and Operate in fresh browser contexts.
 Check successful document/assets and rendered headings. Reload with the query
 retained. Only identity and API responses are synthetic. These tests do
 not prove authentication, real providers, full migration or R050 acceptance.
+
+WEBUI-APPS-R049.1.3 continuation uses mounted WorkWorkspace tests for selected
+trace refresh, failed-refresh evidence withdrawal, retry, loaded-parent
+navigation and return to trace. Preserve conversation/task URL fields. A
+missing parent has no navigation control.
+The trace-inspection scenario in e2e/workspace-task-lifecycle.spec.ts drives the mounted app in Chromium with synthetic API responses.
+It checks actual browser Back, parent selection, refusal and retry. These fixtures do not prove served provider behavior,
+native WebMCP or the complete mobile geometry matrix.
