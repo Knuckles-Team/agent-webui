@@ -158,6 +158,7 @@ it('selects the real frame Work branch after entry while retaining an inert frag
   window.history.replaceState({}, '', '/#context')
   render(<App />)
   await screen.findByRole('heading', { name: 'Work' })
+  fireEvent.click(screen.getByRole('button', { name: 'Focus map' }))
   const map = screen.getByRole('complementary', { name: 'Workspace map' })
   expect(
     within(map)
@@ -172,6 +173,7 @@ it('retains the real editor DOM across frame presentation and compatibility navi
   const field = await screen.findByRole('textbox', { name: 'Role / Title' })
   fireEvent.change(field, { target: { value: 'Retained in the real frame' } })
   const length = window.history.length
+  fireEvent.click(screen.getByRole('button', { name: 'Focus map' }))
   fireEvent.click(screen.getByRole('button', { name: 'Hide map' }))
   fireEvent.click(screen.getByRole('button', { name: 'Focus current task' }))
   expect(screen.getByRole('region', { name: 'Current workspace task' })).toHaveFocus()
