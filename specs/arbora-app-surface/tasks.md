@@ -188,3 +188,7 @@ Unchecked tasks remain open. Definitions alone do not establish runtime delivery
 - [ ] WEBUI-APPS-R049.1.9: Bind loaded Work and Operate command adapters. Keep capability discovery separate from permission to call tools.
 
 - [ ] WEBUI-APPS-R049.1.3: Qualify task refresh and attended cancellation against the served provider. Retain separate native browser and complete migration acceptance.
+
+## R048 retained callback repair
+
+- [x] Validate the R048 registration-lifetime guard with the document adapter and rendered navigation observer (99 focused WebMCP/navigation tests passed). Keep native browser, hidden-page retirement, replay, cross-origin, in-flight cancellation and served authority acceptance open. This partial repair does not complete R048.
