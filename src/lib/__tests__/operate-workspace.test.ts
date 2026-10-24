@@ -29,6 +29,11 @@ describe('Operate typed navigation', () => {
   it.each([
     '/workspace/operate?server=a&server=b',
     '/workspace/operate?item=a',
+    '/workspace/operate?definition=a',
+    '/workspace/operate?connector=a&connector=b',
+    '/workspace/operate?connector=a&definition=a&definition=b',
+    '/workspace/operate?connector=%00',
+    '/workspace/operate?connector=',
     '/workspace/operate?token=x',
     '/workspace/operate#secret',
     'https://evil.invalid/workspace/operate',
@@ -78,4 +83,18 @@ describe('Operate typed navigation', () => {
     const calls = fetcher.mock.calls as unknown as [string, RequestInit][]
     expect(JSON.parse(calls[1][1].body as string)).toEqual({ browse: true, limit: 100, cursor: null })
   })
+})
+
+// spec: WEBUI-APPS-R046.2.2
+it('round trips catalog identities independently of retained fleet context', () => {
+  const state = {
+    server: 'fleet',
+    item: 'capability',
+    q: 'filter',
+    connector: 'catalog:records',
+    definition: 'tool:one/two',
+  }
+  expect(parseOperateState(operateHref(state))).toEqual(state)
+  navigateOperate(state, 'reader')
+  expect(parseOperateState(window.location.pathname + window.location.search)).toEqual(state)
 })
