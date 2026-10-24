@@ -2093,7 +2093,11 @@
       "id": "WEBUI-APPS-R049",
       "title": "Preserve every feature through the Arbora redesign",
       "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "landed_in": [
+        "213863471869",
+        "292e0c183590",
+        "79eaa4c330f8"
+      ],
       "verified_by": [
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
         "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:113",
@@ -2199,10 +2203,10 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "158591a6bcef",
+        "213863471869",
         "6592af62bedb",
         "80061c0d6501",
-        "b95cabd555b2",
-        "c767b6a5b17f"
+        "b95cabd555b2"
       ],
       "verified_by": [
         "e2e/workspace-task-lifecycle.spec.ts:1",
