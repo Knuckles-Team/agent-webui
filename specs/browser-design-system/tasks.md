@@ -160,7 +160,7 @@ It retains the same 14-rem result and preference-persistence assertions. Fresh f
 
 - [x] WEBUI-DESIGN-R011: qualify all six synthetic workspace captures in hosted Chromium and inspect the actual pixels.
 - [x] WEBUI-DESIGN-R011: import the six reviewed PNGs and provenance; update README/docs images and pass the integrity command.
-- [ ] WEBUI-DESIGN-R011: pass final CI on the published assets and receipt.
+- [x] WEBUI-DESIGN-R011: qualify the published asset head with hosted lint, tests, hooks and browser verification.
 
 Hosted [run 40120522758](https://github.com/Knuckles-Team/agent-webui/actions/runs/40120522758)
 passed all six captures, the screenshot contract tests, and the existing identity/catalog browser journeys.
@@ -172,5 +172,9 @@ Narrow views show their initial viewport; scrollable panels continue below it.
 The manifest and six image digests pass `pnpm screenshots:check`.
 
 Local Chromium cannot start in this environment. Full local ESLint hit the memory limit; hosted qualification was explicitly approved.
-The PR remains draft until final hosted lint, tests and browser verification pass.
+Asset head `033e3154911e595f7bf899cc6274cdee8a97964c` passed
+[run 40121492380](https://github.com/Knuckles-Team/agent-webui/actions/runs/40121492380), including full lint/typecheck, PR tests, hooks, Python compatibility and browser verification.
+A second artifact reproduced five PNGs byte-for-byte. Operate wide differed only at 20 border pixels by one RGB level, with no content or layout change.
+Pixel review confirmed the second output. No bit-exact cross-run rasterization guarantee is made.
+Only R011 qualifies for delivery; final PR validation and review remain merge requirements.
 This bounded workflow does not complete the earlier design requirements.
