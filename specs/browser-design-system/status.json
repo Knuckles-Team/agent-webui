@@ -41,11 +41,11 @@
       "title": "Design tokens documented with contrast targets",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "12b5f5624953",
         "2c9874c2a559",
         "2d3f1b884e39",
         "46b60b8fbd48",
-        "93401c34a695",
-        "a4c402f68f1b"
+        "93401c34a695"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
@@ -164,6 +164,7 @@
       "title": "Purposeful density and Arbora visual hierarchy",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "12b5f5624953",
         "93401c34a695",
         "ac86f2de9817"
       ],
@@ -183,6 +184,7 @@
       "title": "Full mobile and arbitrary-aspect feature parity",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "12b5f5624953",
         "93401c34a695",
         "ac86f2de9817"
       ],
@@ -244,6 +246,7 @@
       "title": "Canopy Glass material and density",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "12b5f5624953",
         "93401c34a695",
         "ac86f2de9817"
       ],
@@ -260,6 +263,7 @@
       "title": "Fully expanded responsive shell",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "12b5f5624953",
         "93401c34a695",
         "ac86f2de9817"
       ],
