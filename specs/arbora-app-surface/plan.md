@@ -715,6 +715,12 @@ durable completion. Bind the receipt's `runId`, `taskId`, `contextId` and
 `scope: turn` to the returned task identity. Bind its presentation to the current
 conversation. Preserve the exact receipt through model and Vercel message metadata.
 
+The transport retains explicit run bindings across same-message replacement.
+Seed and prune correlation from committed, current-owner conversation history at
+stream entry. Absent messages and retired conversations cannot seed new state.
+A conflicting run clears usage without changing the returned outer identity.
+This temporary presentation correlation creates no accounting ledger or authorization.
+
 The transport adapter resets canonical metadata before the AI SDK deep merge.
 A later partial receipt cannot retain omitted counters. The five optional counts
 are requests, tool calls, input tokens, output tokens and total tokens.

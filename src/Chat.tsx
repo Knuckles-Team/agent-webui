@@ -1168,35 +1168,44 @@ const OwnedChat = ({ pageContext, ownerKey, role }: ChatProps & { ownerKey: stri
 
   const pageContextRef = useRef(pageContext)
   pageContextRef.current = pageContext
+  // Each transport reads only its own committed conversation history.
+  const transportHistory = useMemo(() => ({ messages: [] as UIMessage[] }), [requestConversationId])
   const transport = useMemo(
     () =>
-      new ReceiptChatTransport({
-        api: '/api/chats/messages',
-        prepareSendMessagesRequest: ({ messages, body, trigger, messageId }) => {
-          const context = pageContextRef.current
-          const contextMessage: UIMessage = {
-            id: 'agent-webui-page-context',
-            role: 'system',
-            parts: [{ type: 'text', text: pageContextSystemPrompt(context) }],
-          }
-          return {
-            body: {
-              ...body,
-              id: requestConversationId,
-              trigger,
-              messages: [contextMessage, ...messages],
-              ...(messageId ? { messageId } : {}),
-              pageContext: context,
-            },
-          }
+      new ReceiptChatTransport(
+        {
+          api: '/api/chats/messages',
+          prepareSendMessagesRequest: ({ messages, body, trigger, messageId }) => {
+            const context = pageContextRef.current
+            const contextMessage: UIMessage = {
+              id: 'agent-webui-page-context',
+              role: 'system',
+              parts: [{ type: 'text', text: pageContextSystemPrompt(context) }],
+            }
+            return {
+              body: {
+                ...body,
+                id: requestConversationId,
+                trigger,
+                messages: [contextMessage, ...messages],
+                ...(messageId ? { messageId } : {}),
+                pageContext: context,
+              },
+            }
+          },
         },
-      }),
-    [requestConversationId],
+        requestConversationId,
+        () => transportHistory.messages,
+      ),
+    [requestConversationId, transportHistory],
   )
   const { messages, sendMessage, status, setMessages, regenerate, addToolOutput, error, stop } = useChat({
     id: JSON.stringify([userKey, requestConversationId]),
     transport,
   })
+  useLayoutEffect(() => {
+    transportHistory.messages = messages
+  }, [messages, transportHistory])
   useEffect(
     () => () => {
       void stop()

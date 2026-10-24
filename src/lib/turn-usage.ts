@@ -58,3 +58,41 @@ export function turnUsageByMessage(
   }
   return new Map([...latest.values()].map(({ messageId, usage }) => [messageId, usage]))
 }
+
+/** Presentation correlation for the active conversation, not run authority. */
+export class TurnRunBindings {
+  private readonly runs = new Map<string, string>()
+
+  private readonly conversationId: string
+
+  constructor(conversationId: string) {
+    this.conversationId = conversationId
+  }
+
+  private key(identity: RunIdentity): string {
+    return JSON.stringify([identity.context_id, identity.task_id])
+  }
+
+  retain(messages: readonly UIMessage[]): void {
+    const active = new Set<string>()
+    for (const message of messages) {
+      if (message.role !== 'assistant') continue
+      const identity = readRunIdentity(message.metadata, this.conversationId)
+      if (!identity) continue
+      active.add(this.key(identity))
+      this.conflicts(message.metadata)
+    }
+    for (const key of this.runs.keys()) {
+      if (!active.has(key)) this.runs.delete(key)
+    }
+  }
+
+  conflicts(metadata: unknown): boolean {
+    const identity = readRunIdentity(metadata, this.conversationId)
+    if (!identity?.run_id) return false
+    const key = this.key(identity)
+    const bound = this.runs.get(key)
+    if (bound === undefined) this.runs.set(key, identity.run_id)
+    return bound !== undefined && bound !== identity.run_id
+  }
+}

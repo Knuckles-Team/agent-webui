@@ -10,11 +10,23 @@ function metadata(counts: Record<string, number> = { requests: 1, input_tokens: 
   }
 }
 
+function connection(messages: UIMessage[] = []) {
+  const state = { body: '', messages }
+  const fetcher = vi.fn(async () => new Response(state.body, { headers: { 'content-type': 'text/event-stream' } }))
+  const transport = new ReceiptChatTransport(
+    { api: '/api/chats/messages', fetch: fetcher },
+    'chat',
+    () => state.messages,
+  )
+  return { state, fetcher, transport }
+}
+
 async function receive(
   method: 'send' | 'reconnect',
   first: unknown,
   second: unknown,
   chunk: 'start' | 'message-metadata' | 'finish' = 'message-metadata',
+  session = connection(),
 ) {
   const events = [
     { type: 'start', messageId: 'reply', messageMetadata: first },
@@ -24,9 +36,8 @@ async function receive(
     { type: chunk, ...(chunk === 'start' ? { messageId: 'reply' } : {}), messageMetadata: second },
     ...(chunk === 'finish' ? [] : [{ type: 'finish' }]),
   ]
-  const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('') + 'data: [DONE]\n\n'
-  const fetcher = vi.fn(async () => new Response(body, { headers: { 'content-type': 'text/event-stream' } }))
-  const transport = new ReceiptChatTransport({ api: '/api/chats/messages', fetch: fetcher })
+  const { state, fetcher, transport } = session
+  state.body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('') + 'data: [DONE]\n\n'
   const stream =
     method === 'send'
       ? await transport.sendMessages({
@@ -48,6 +59,7 @@ async function receive(
     last = message
   }
   expect(last?.parts).toEqual([{ type: 'text', text: 'Measured reply', state: 'done' }])
+  state.messages = [...state.messages.filter((message) => message.id !== last!.id), last!]
   return last!
 }
 
@@ -59,6 +71,17 @@ describe.each(['send', 'reconnect'] as const)('canonical metadata replacement on
       const message = await receive(method, metadata(), partial, chunk)
       expect(message.metadata).toEqual(partial)
       expect(turnUsageByMessage([message], 'chat').get(message.id)?.counts).toEqual({ total_tokens: 0 })
+    },
+  )
+
+  it.each(['start', 'message-metadata', 'finish'] as const)(
+    'refuses a changed run binding on the same message in %s metadata',
+    async (chunk) => {
+      const changed = metadata({ total_tokens: 99 })
+      changed.arbora_run.run_id = 'other-run'
+      changed.arbora.usage.runId = 'other-run'
+      const message = await receive(method, metadata(), changed, chunk)
+      expect(turnUsageByMessage([message], 'chat').get(message.id)).toBeNull()
     },
   )
 
@@ -84,4 +107,57 @@ describe.each(['send', 'reconnect'] as const)('canonical metadata replacement on
       expect(message.metadata).toEqual({ usage: { inputTokens: 2, outputTokens: 3 } })
     },
   )
+})
+
+function changedRun() {
+  const changed = metadata({ total_tokens: 99 })
+  changed.arbora_run.run_id = 'other-run'
+  changed.arbora.usage.runId = 'other-run'
+  return changed
+}
+
+it('retains the committed binding across sequential send and reconnect on one transport', async () => {
+  const session = connection()
+  await receive('send', metadata(), metadata(), 'finish', session)
+  const replay = await receive('reconnect', changedRun(), changedRun(), 'finish', session)
+  expect(turnUsageByMessage([replay], 'chat').get(replay.id)).toBeNull()
+  expect((replay.metadata as { arbora_run: unknown }).arbora_run).toEqual(changedRun().arbora_run)
+})
+
+it('seeds a new transport only from validated current-conversation assistant history', async () => {
+  const history: UIMessage = { id: 'reply', role: 'assistant', parts: [], metadata: metadata() }
+  const replay = await receive('reconnect', changedRun(), changedRun(), 'finish', connection([history]))
+  expect(turnUsageByMessage([replay], 'chat').get(replay.id)).toBeNull()
+  const foreign = metadata()
+  foreign.arbora_run.conversation_context = 'webui:other'
+  for (const prior of [
+    { ...history, metadata: foreign },
+    { ...history, role: 'user' as const },
+  ]) {
+    const current = await receive('reconnect', changedRun(), changedRun(), 'finish', connection([prior]))
+    expect(turnUsageByMessage([current], 'chat').get(current.id)?.counts).toEqual({ total_tokens: 99 })
+  }
+})
+
+it('allows same-run refresh and an independently bound new task', async () => {
+  const session = connection()
+  await receive('send', metadata(), metadata(), 'finish', session)
+  const partial = metadata({ total_tokens: 0 })
+  const refreshed = await receive('reconnect', partial, partial, 'finish', session)
+  expect(turnUsageByMessage([refreshed], 'chat').get(refreshed.id)?.counts).toEqual({ total_tokens: 0 })
+  const next = changedRun()
+  next.arbora_run.task_id = 'next-task'
+  next.arbora.usage.taskId = 'next-task'
+  const newTask = await receive('send', next, next, 'finish', session)
+  expect(turnUsageByMessage([newTask], 'chat').get(newTask.id)?.counts).toEqual({ total_tokens: 99 })
+})
+
+it('retires removed history and does not invent continuity in a new owner transport', async () => {
+  const session = connection()
+  await receive('send', metadata(), metadata(), 'finish', session)
+  session.state.messages = []
+  for (const current of [session, connection()]) {
+    const message = await receive('reconnect', changedRun(), changedRun(), 'finish', current)
+    expect(turnUsageByMessage([message], 'chat').get(message.id)?.counts).toEqual({ total_tokens: 99 })
+  }
 })

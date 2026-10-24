@@ -468,6 +468,9 @@ open. No producer or full-session accounting acceptance is claimed.
   values, valid zero, replay replacement and distinct tasks.
 - `src/lib/__tests__/chat-transport.test.ts` checks actual SDK send and reconnect
   streams. Canonical start, metadata and finish chunks replace partial receipts
-  without retained counters or identity. Generic provider metadata stays unchanged.
+  without retained counters or identity. Self-consistent run substitution clears
+  usage on the same message. Sequential send/reconnect, seeded history, same-run
+  refresh, new tasks and removed-message retirement preserve the presentation boundary.
+  Generic provider metadata stays unchanged.
 - `src/__tests__/Chat.conversation-identity.test.tsx` checks rendered counts,
   stream persistence, replay invalidation and caller, tenant or session changes.

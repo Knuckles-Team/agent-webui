@@ -52,6 +52,7 @@ const pageContext: PageContextEnvelope = {
 
 let pendingSend = false
 let responseMetadata: ((conversation: string) => unknown) | undefined
+let changedStreamRun = false
 let invalidateStreamUsage = false
 let partialStreamUsage: 'message-metadata' | 'finish' | undefined
 let sentBodies: Record<string, unknown>[] = []
@@ -70,6 +71,7 @@ beforeEach(() => {
   caller.needsSignIn = false
   pendingSend = false
   responseMetadata = undefined
+  changedStreamRun = false
   invalidateStreamUsage = false
   partialStreamUsage = undefined
 
@@ -95,6 +97,12 @@ beforeEach(() => {
             { type: 'text-end', id: 'text' },
             { type: 'message-metadata', messageMetadata: responseMetadata(String(sentBodies.at(-1)?.id)) },
           )
+        }
+        if (changedStreamRun) {
+          const metadata = usageMetadata(String(sentBodies.at(-1)?.id))
+          metadata.arbora_run.run_id = 'other-run'
+          metadata.arbora.usage.runId = 'other-run'
+          events.push({ type: 'message-metadata', messageMetadata: metadata })
         }
         if (invalidateStreamUsage) {
           events.push({
@@ -633,3 +641,52 @@ it.each(['message-metadata', 'finish'] as const)(
     })
   },
 )
+
+it('refuses self-consistent run substitution within one streamed assistant message', async () => {
+  responseMetadata = usageMetadata
+  changedStreamRun = true
+  const { user } = renderWithProviders(<Chat pageContext={pageContext} />)
+  await user.type(await screen.findByRole('textbox', { name: /message input/i }), 'measure{Enter}')
+  expect(await screen.findByText('Turn usage: unavailable')).toBeInTheDocument()
+  expect(screen.queryByText('Input tokens:')).not.toBeInTheDocument()
+  await waitFor(() => {
+    const stored = JSON.parse(
+      window.localStorage.getItem(`chat:["owner-v1",null,"local"]:messages:${String(sentBodies[0].id)}`) ?? '[]',
+    ) as { metadata?: { arbora_run?: { run_id: string }; arbora?: { usage: unknown } } }[]
+    expect(stored).toHaveLength(2)
+    expect(stored.at(-1)?.metadata?.arbora?.usage).toBeNull()
+    expect(stored.at(-1)?.metadata?.arbora_run?.run_id).toBe('other-run')
+  })
+})
+
+it('retires transport correlation on owner change before accepting the new owner receipt', async () => {
+  cacheUsage([usageMessage('initial', {})])
+  window.localStorage.setItem(
+    'chat:["owner-v1",null,"other-owner"]:messages:/usage',
+    JSON.stringify([usageMessage('other-initial', {})]),
+  )
+  responseMetadata = usageMetadata
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const app = () => (
+    <QueryClientProvider client={client}>
+      <Chat pageContext={pageContext} />
+    </QueryClientProvider>
+  )
+  const view = render(app())
+  const user = userEvent.setup()
+  await user.type(await screen.findByRole('textbox', { name: /message input/i }), 'first{Enter}')
+  expect(await screen.findByRole('region', { name: 'Turn usage' })).toBeInTheDocument()
+  caller.userKey = 'other-owner'
+  view.rerender(app())
+  expect(screen.queryByRole('region', { name: 'Turn usage' })).not.toBeInTheDocument()
+  responseMetadata = (conversation) => {
+    const metadata = usageMetadata(conversation)
+    metadata.arbora_run.run_id = 'other-owner-run'
+    metadata.arbora.usage.runId = 'other-owner-run'
+    return metadata
+  }
+  await user.type(await screen.findByRole('textbox', { name: /message input/i }), 'second{Enter}')
+  expect(await screen.findByRole('region', { name: 'Turn usage' })).toBeInTheDocument()
+  expect(screen.queryByText('Turn usage: unavailable')).not.toBeInTheDocument()
+  expect(screen.getByText('Input tokens:').parentElement).toHaveTextContent('Input tokens:23')
+})
