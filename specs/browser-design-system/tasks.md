@@ -126,3 +126,14 @@ The browser test writes these files into its configured output directory.
 
 All four mounted cases failed before class cleanup and passed after it.
 This result does not prove native task contrast or complete WEBUI-DESIGN-R002 acceptance.
+
+## Palette cancellation focus
+
+- [x] Reproduce shortcut Escape, shortcut Close and desktop-to-narrow hidden-trigger failures in mounted Radix tests.
+- [x] Restore a reachable opener or visible More summary without reopening the compact disclosure.
+- [x] Cover removed opener and native destination focus preservation in mounted tests.
+- [ ] Run the focused three-theme rendered cancellation cases on a supported browser runner.
+
+The three original mounted cases failed before the repair and passed afterward.
+All six new mounted cases and thirteen existing command tests passed locally.
+This evidence leaves native glass text contrast and broader design acceptance open.

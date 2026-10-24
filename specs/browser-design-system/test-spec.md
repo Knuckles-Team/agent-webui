@@ -147,3 +147,21 @@ This planned check does not establish browser acceptance or repair the reported 
 Four cases switch repeatedly to light, dark, system-light and system-dark, then return to glass.
 Each case requires exactly one theme class, persistent selection and preservation of unrelated root classes.
 These mounted tests prove class retirement, not rendered palette contrast.
+
+## Palette focus return
+
+`WorkspacePaletteFocus.test.tsx` mounts the real Radix dialog and header disclosure.
+Mock only layout rectangles because jsdom does not render responsive geometry.
+Require native task focus after shortcut Escape and Close.
+Require visible More after a desktop opener becomes hidden.
+Compact-trigger cancellation must preserve the deliberately open disclosure and its visible trigger. Removing the opener must leave a reachable focus target.
+Selection must preserve focus assigned by the native destination.
+The existing identity browser fixture adds light, dark and glass cancellation cases at 390 and 1440 pixels.
+Those cases assert focus after shortcut, compact-trigger and desktop-to-narrow cancellation.
+Cancellation preserves each disclosure state rather than reopening a closed menu.
+Mounted proof does not replace this pending rendered check or resolve native glass text contrast.
+
+The PR-only `workspace-browser` CI job runs the existing focused identity configuration on Ubuntu Chromium.
+It uses locked frontend dependencies, read-only repository permission and synthetic fixtures without live credentials.
+The job includes native task readability assertions rather than excluding the known glass gap.
+Its eventual rendered result must be recorded separately from local mounted test results.

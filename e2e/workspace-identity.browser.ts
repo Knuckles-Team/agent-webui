@@ -2,58 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 
 for (const theme of ['light', 'dark', 'glass']) {
   test(`Arbora shell identity and contrast in ${theme}`, async ({ page }, info) => {
-    await page.route('**/auth/session', (route) =>
-      route.fulfill({
-        json: {
-          authenticated: true,
-          subject: 'workspace-reader',
-          tenant: 'synthetic',
-          webui_role: 'maintainer',
-          roles: ['kg:read'],
-          csrf_token: crypto.randomUUID(),
-        },
-      }),
-    )
-    await page.route('**/api/**', (route) => {
-      const path = new URL(route.request().url()).pathname
-      const result = (value: unknown) =>
-        route.fulfill({
-          json: { ok: true, result: { value }, meta: { registry_digest: 'synthetic', api_version: '1' } },
-        })
-      if (path === '/api/v1/ops/fleet.status')
-        return result({ children: { catalog: { state: 'up' }, documents: { state: 'idle' } } })
-      if (path === '/api/v1/ops/fleet.catalog.list')
-        return result({
-          items: [
-            {
-              id: 'search',
-              server: 'catalog',
-              name: 'Search',
-              kind: 'tool',
-              description: 'Synthetic search capability',
-            },
-            {
-              id: 'lookup',
-              server: 'catalog',
-              name: 'Lookup',
-              kind: 'tool',
-              description: 'Synthetic lookup capability',
-            },
-          ],
-          next_cursor: null,
-        })
-      if (path.startsWith('/api/configure')) return route.fulfill({ json: { models: [], builtinTools: [] } })
-      if (path === '/api/enhanced/models') return route.fulfill({ json: { models: [], default_id: '' } })
-      if (path === '/api/chats') return route.fulfill({ json: [] })
-      if (path.startsWith('/api/chats/')) return route.fulfill({ json: { messages: [] } })
-      return route.fulfill({ status: 501, json: { detail: 'Unavailable in the synthetic workspace fixture' } })
-    })
-    await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
-
-    await page.addInitScript((value) => localStorage.setItem('pydantic-chat-ui-theme', value), theme)
-    await page.emulateMedia({ reducedMotion: 'reduce' })
-    await page.goto('/workspace/operate?server=catalog&item=search')
-    await expect(page.locator('html')).toHaveClass(new RegExp(`(^| )${theme}( |$)`))
+    await prepareIdentity(page, theme)
     const map = page.getByRole('complementary', { name: 'Workspace map' })
     const selected = map
       .locator('.workspace-map-branches')
@@ -136,6 +85,98 @@ for (const theme of ['light', 'dark', 'glass']) {
     }
     await checkPrimaryWork(page)
   })
+}
+
+for (const theme of ['light', 'dark', 'glass']) {
+  test(`workspace palette cancellation in ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await prepareIdentity(page, theme)
+    const task = page.getByRole('region', { name: 'Current workspace task' })
+    const more = page.getByRole('button', { name: 'More workspace controls' })
+    const dialog = page.getByRole('dialog')
+    await expect(task.getByRole('heading', { name: 'Search', exact: true })).toBeVisible()
+    for (const close of ['Escape', 'Close']) {
+      await task.focus()
+      await page.keyboard.press('Control+k')
+      await expect(dialog).toBeVisible()
+      if (close === 'Escape') await page.keyboard.press('Escape')
+      else await dialog.getByRole('button', { name: 'Close destination search' }).click()
+      await expect(dialog).not.toBeVisible()
+      await expect(task).toBeFocused()
+      await expect(more).toHaveAttribute('aria-expanded', 'false')
+    }
+    await more.click()
+    const find = page.getByRole('button', { name: 'Find destination' })
+    await find.click()
+    await page.keyboard.press('Escape')
+    await expect(find).toBeFocused()
+    await expect(more).toHaveAttribute('aria-expanded', 'true')
+    await page.keyboard.press('Escape')
+    await expect(more).toBeFocused()
+    await expect(more).toHaveAttribute('aria-expanded', 'false')
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.getByRole('button', { name: 'Find destination' }).click()
+    await expect(dialog).toBeVisible()
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.keyboard.press('Escape')
+    await expect(more).toBeFocused()
+    await expect(more).toHaveAttribute('aria-expanded', 'false')
+  })
+}
+
+async function prepareIdentity(page: Page, theme: string) {
+  await page.route('**/auth/session', (route) =>
+    route.fulfill({
+      json: {
+        authenticated: true,
+        subject: 'workspace-reader',
+        tenant: 'synthetic',
+        webui_role: 'maintainer',
+        roles: ['kg:read'],
+        csrf_token: crypto.randomUUID(),
+      },
+    }),
+  )
+  await page.route('**/api/**', (route) => {
+    const path = new URL(route.request().url()).pathname
+    const result = (value: unknown) =>
+      route.fulfill({
+        json: { ok: true, result: { value }, meta: { registry_digest: 'synthetic', api_version: '1' } },
+      })
+    if (path === '/api/v1/ops/fleet.status')
+      return result({ children: { catalog: { state: 'up' }, documents: { state: 'idle' } } })
+    if (path === '/api/v1/ops/fleet.catalog.list')
+      return result({
+        items: [
+          {
+            id: 'search',
+            server: 'catalog',
+            name: 'Search',
+            kind: 'tool',
+            description: 'Synthetic search capability',
+          },
+          {
+            id: 'lookup',
+            server: 'catalog',
+            name: 'Lookup',
+            kind: 'tool',
+            description: 'Synthetic lookup capability',
+          },
+        ],
+        next_cursor: null,
+      })
+    if (path.startsWith('/api/configure')) return route.fulfill({ json: { models: [], builtinTools: [] } })
+    if (path === '/api/enhanced/models') return route.fulfill({ json: { models: [], default_id: '' } })
+    if (path === '/api/chats') return route.fulfill({ json: [] })
+    if (path.startsWith('/api/chats/')) return route.fulfill({ json: { messages: [] } })
+    return route.fulfill({ status: 501, json: { detail: 'Unavailable in the synthetic workspace fixture' } })
+  })
+  await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+
+  await page.addInitScript((value) => localStorage.setItem('pydantic-chat-ui-theme', value), theme)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/workspace/operate?server=catalog&item=search')
+  await expect(page.locator('html')).toHaveClass(new RegExp(`(^| )${theme}( |$)`))
 }
 
 async function tabTo(page: Page, target: Locator) {

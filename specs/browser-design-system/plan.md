@@ -90,3 +90,10 @@ The existing WEBUI-DESIGN-R002 token owner includes the glass palette in `src/in
 The provider must preserve unrelated root classes and resolve system selection from the current color preference.
 Mounted transition tests cover repeated glass-to-light, glass-to-dark and glass-to-system changes.
 These tests do not establish native task contrast or explain the reported glass screenshot defect.
+
+## Command palette cancellation focus
+
+Under WEBUI-DESIGN-R005.1, capture the actual focused opener when the modal opens.
+On cancellation, restore a connected, visible, enabled opener or the visible command trigger.
+If responsive layout hides both, focus the enclosing More summary without reopening its disclosure.
+Native selection and URL navigation retain destination-owned focus rather than restoring stale context.
