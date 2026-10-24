@@ -57,3 +57,14 @@ Presentation changes add no browser history. Preserve the stable chat instance
 and all existing controls during viewport changes. Narrow layouts stack the map
 and task surface with explicit focus controls. This bounded shell does not
 migrate legacy pages or prove all dynamic leaves and installed providers.
+
+## Scoped Arbora workspace identity
+
+Use local shell tokens for the existing R002.1 hierarchy requirement.
+Ivory surfaces, sage toolbar tones and forest selection distinguish the light workspace.
+Dark and glass themes use deep green surfaces and pale sage selection.
+Bark-colored relationship strokes show only the existing loaded branches.
+The context rail, map controls and selected paths share this vocabulary.
+Keep task content, assistant styling, global theme tokens and legacy pages unchanged.
+Keep current spacing, target sizes, focus clearance and responsive layout.
+Add no gradients, decorative motion or image assets.

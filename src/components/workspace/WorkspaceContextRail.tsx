@@ -29,7 +29,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
     return exploreLensHref(!roleAtLeast(role, 'maintainer') ? { ...state, lens: 'evidence' } : state)
   })()
   return (
-    <header className="shrink-0 border-b bg-background px-3 py-2">
+    <header className="workspace-context-rail shrink-0 border-b bg-background px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <a
           id="workspace-home"
