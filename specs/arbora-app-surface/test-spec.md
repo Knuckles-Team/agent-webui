@@ -332,3 +332,10 @@ Inspect the returned task, output and references, then select an independent tra
 Preserve the follow-up draft through navigation, browser Back, denial and retry.
 Capture desktop, portrait and short-landscape screenshots.
 These tests prove browser composition with synthetic responses, not live-provider execution or the complete migration.
+
+R049.1.3 conversation lifecycle tests exercise the real owner-scoped store in mounted controls.
+Check local rename and removal, remote-only refusal, failed storage writes and stale owner or conversation reviews.
+Semantic tools request visible review only; synthetic confirmation must not apply changes.
+The browser journey starts a new conversation, sends once, inspects its task, renames its local copy and removes that copy.
+Keep task and trace selections. Check that server history and another owner's cache remain unchanged.
+These fixtures do not qualify live-provider history or remote deletion.

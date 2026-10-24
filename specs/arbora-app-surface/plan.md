@@ -651,3 +651,14 @@ Component and synthetic browser fixtures qualify presentation only. Full migrati
 Task reads do not retry explicit 401, 403, 404 or 501 responses.
 Transient failures retain bounded retries. The caller can request another read explicitly.
 This avoids keeping cached output visible during retry backoff after an explicit refusal.
+
+### Work conversation lifecycle
+
+Extend R049.1.3 and the migration inventory under R049.1.2 with the existing owner-scoped chat store.
+Start a new conversation without leaving Work or clearing independent task and trace selection.
+Rename only a local index entry and delete only the selected owner's local index and message cache.
+Neither action mutates server history; remote records can remain in the selector.
+Use visible attended review for these changes, including the loss of an unsent draft when changing conversation.
+Bind reviews and semantic review requests to the current owner, conversation and local-copy snapshot.
+Retire reviews when that context changes. Check local storage readback before reporting success.
+Keep the existing conversation selector, legacy links and one retained Chat instance.

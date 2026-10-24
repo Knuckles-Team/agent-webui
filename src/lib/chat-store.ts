@@ -39,7 +39,7 @@ const rawConversationEntrySchema = z.object({
   timestamp: z.union([z.string(), z.number()]).optional(),
 })
 
-/** Fired whenever this module writes the conversation index, for same-tab listeners
+/** Fired whenever this module writes the conversation index or message cache, for same-tab listeners
  * (the native `storage` event only fires in OTHER tabs/windows). */
 export const CONVERSATIONS_CHANGED_EVENT = 'chat-store:conversations-changed'
 
@@ -105,6 +105,13 @@ function writeIndex(userKey: string, entries: ConversationEntry[]): void {
   window.dispatchEvent(new Event(CONVERSATIONS_CHANGED_EVENT))
 }
 
+/** Local provenance only: remote records do not become local rename targets. */
+export function readLocalConversationEntry(userKey: string, conversationId: string) {
+  const parsed = z.array(rawConversationEntrySchema).safeParse(readIndex(userKey))
+  if (!parsed.success) return null
+  return parsed.data.find((entry) => entry.id === conversationId) ?? null
+}
+
 /** Read a conversation's persisted message history, or `null` if none is cached. */
 export function readConversationMessages(userKey: string, conversationId: string): unknown[] | null {
   try {
@@ -126,11 +133,13 @@ export function writeConversationMessages(userKey: string, conversationId: strin
   } catch {
     // Storage may be disabled (private mode, quota) — non-fatal.
   }
+  window.dispatchEvent(new Event(CONVERSATIONS_CHANGED_EVENT))
 }
 
 export function removeConversationMessages(userKey: string, conversationId: string): void {
   window.localStorage.removeItem(messagesKey(userKey, conversationId))
   if (isDefaultUser(userKey)) window.localStorage.removeItem(conversationId)
+  window.dispatchEvent(new Event(CONVERSATIONS_CHANGED_EVENT))
 }
 
 /** Record a new conversation at the top of `userKey`'s index. */
