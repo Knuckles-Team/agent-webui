@@ -206,3 +206,8 @@ Unchecked tasks remain open. Definitions alone do not establish runtime delivery
 ### R048 native replacement routing
 
 Chromium 156 experimental WebMCP resolved a retained native Tool reference to a new same-name registration. Each native registration now has a unique routing name; the application registry retains the semantic tool ID. This prevents stale native references from selecting replacement callbacks. The rendered route, Back/Forward, deep-link and restoration matrix uses native discovery with synthetic backend responses. Authenticated served authority acceptance remains open; R048 is not complete.
+
+R005.3 source progress: `OperateCatalogPanel` renders the existing enhanced catalog server projection. Registration availability is not connection state; keep the requirement unchecked pending connection and served acceptance.
+
+R005.3 and R049.1.2 source progress includes selected connector definition inspection through the existing enhanced catalog adapter.
+Full operational migration and provider connection acceptance remain unchecked.

@@ -13,6 +13,9 @@ const state = vi.hoisted(() => ({
   csrf: 'session-a',
   roles: ['mcp:discover'],
 }))
+vi.mock('@/lib/operate-catalog', () => ({
+  readOperateCatalog: vi.fn(async () => ({ source: 'epistemic_graph', servers: [], components: [] })),
+}))
 vi.mock('@/lib/auth', () => ({
   useIdentity: () => ({
     identity: {
@@ -135,7 +138,7 @@ describe('Operate retained composition', () => {
   it('preserves filter input focus while changing the typed query', async () => {
     renderWithProviders(<OperateWorkspace />)
     await screen.findByRole('link', { name: 'source' })
-    const input = screen.getByRole('textbox')
+    const input = screen.getByRole('textbox', { name: 'Filter fleet children' })
     input.focus()
     fireEvent.change(input, { target: { value: 's' } })
     expect(input).toHaveFocus()
@@ -153,7 +156,7 @@ describe('Operate retained composition', () => {
     fireEvent.click(item)
     expect(await screen.findByRole('article', { name: 'Capability detail' })).toHaveTextContent('Read a record.')
     expect(screen.getByRole('link', { name: 'source' })).toBeVisible()
-    expect(screen.getByRole('textbox')).toHaveValue('sou')
+    expect(screen.getByRole('textbox', { name: 'Filter fleet children' })).toHaveValue('sou')
     expect(screen.queryByRole('button', { name: /^Execute$/ })).not.toBeInTheDocument()
   })
   it('manual and WebMCP use the same validated destination', async () => {
