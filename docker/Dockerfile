@@ -47,6 +47,7 @@ ARG BUILD_TIME=unknown
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 COPY package.json pnpm-lock.yaml .npmrc ./
+COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json vite.config.ts components.json index.html ./
 COPY public ./public
@@ -56,7 +57,10 @@ COPY src ./src
 # (BUG-008) after this stage's COPY list was last set, so the file was never
 # copied into the builder and every image build failed with MODULE_NOT_FOUND
 # before reaching any agent-utilities/epistemic-graph stage.
-COPY scripts/no_fabrication_gate.mjs ./scripts/no_fabrication_gate.mjs
+# `pnpm build` also runs the site asset, config, brand and publish scripts, so the
+# whole scripts directory is part of the builder context.
+COPY scripts ./scripts
+COPY mkdocs.yml README.md ./
 RUN pnpm build \
     && printf 'sha=%s\nbuilt_at=%s\n' "${BUILD_SHA}" "${BUILD_TIME}" > agent/agent_webui/dist/build-info.txt
 
