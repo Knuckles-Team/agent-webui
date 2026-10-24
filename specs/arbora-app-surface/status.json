@@ -1944,7 +1944,7 @@
       "verified_by": [
         "src/components/workspace/__tests__/ExploreShell.test.tsx:3",
         "src/components/workspace/__tests__/ExploreWorkspace.test.tsx:3",
-        "src/lib/webmcp/__tests__/provider.test.tsx:284"
+        "src/lib/webmcp/__tests__/provider.test.tsx:287"
       ]
     },
     {

@@ -242,3 +242,7 @@ Check caller isolation, pre-cancelled refusal, listener cleanup and preservation
 These tests supplement existing registration, navigation, validation, remote confirmation and cancellation suites.
 They do not establish native-browser scheduling, backend cancellation, or authority for served effects.
 R048 remains open until its native-browser and served authority acceptance passes.
+
+### R048 native replacement routing
+
+Chromium 156 experimental WebMCP resolved a retained native Tool reference to a new same-name registration. Each native registration now has a unique routing name; the application registry retains the semantic tool ID. This prevents stale native references from selecting replacement callbacks. The rendered route, Back/Forward, deep-link and restoration matrix uses native discovery with synthetic backend responses. Authenticated served authority acceptance remains open; R048 is not complete.

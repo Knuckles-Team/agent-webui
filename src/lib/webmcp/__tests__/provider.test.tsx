@@ -200,7 +200,10 @@ describe('WebMCP provider remote projection', () => {
     await waitFor(() => {
       expect(registered).toHaveLength(2)
     })
-    expect(registered.map(({ tool }) => tool.name)).toEqual(['agent-webui.get-page-context', 'agent-webui.navigate'])
+    expect(registered.map(({ tool }) => String(tool.name).split('__')[0])).toEqual([
+      'agent-webui.get-page-context',
+      'agent-webui.navigate',
+    ])
     expect(registered.every(({ tool }) => !('capability' in tool))).toBe(true)
     expect(TestSocket.instances).toHaveLength(0)
 

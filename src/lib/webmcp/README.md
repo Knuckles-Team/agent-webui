@@ -20,6 +20,11 @@ The initial namespaced surface is deliberately UI-local:
 - `agent-webui.atlas.set-filters` and `agent-webui.atlas.select` update only
   local Atlas editor/selection state. They do not run a query or write data.
 
+The names above are stable application IDs. Native registrations append a fresh
+UUID to each name so a retained browser Tool reference cannot resolve to a later
+registration. Native callers discover the current names from the browser; the
+Arbora registry continues to use the stable IDs.
+
 All tool inputs and outputs pass strict Zod validation. The executor accepts an
 object or the equivalent JSON string because draft implementations have used
 both callback forms. Invalid input or output rejects the tool call; arbitrary
