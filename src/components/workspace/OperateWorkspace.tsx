@@ -139,7 +139,7 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
     )
   }
   return (
-    <section aria-label="Operate workspace" className="flex min-w-0 flex-col gap-3">
+    <section aria-label="Operate workspace" className="workspace-surface flex min-w-0 flex-col gap-3">
       <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
         Operate
       </h1>
@@ -163,9 +163,11 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
               }}
             />
           </label>
-          <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(12rem,1fr)_minmax(0,2fr)]">
-            <section aria-label="Fleet children" className="flex min-w-0 flex-col gap-2 rounded border p-3">
-              <h2 className="font-medium">Fleet</h2>
+          <div className="workspace-panels">
+            <details open aria-label="Fleet children" className="min-w-0 space-y-2 rounded border p-3">
+              <summary className="workspace-pane-toggle">
+                <h2 className="inline font-semibold">Fleet</h2>
+              </summary>
               {status.isPending && <p role="status">Loading fleet…</p>}
               {status.isError && (
                 <p role="alert">
@@ -188,7 +190,7 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
               >
                 Refresh fleet
               </button>
-            </section>
+            </details>
             <section aria-label="Connector detail" className="min-w-0 space-y-3 rounded border p-3">
               <h2 className="break-words font-medium">{state.server ?? 'Choose a fleet child'}</h2>
               {state.server && !selectedServer && !status.isPending && (

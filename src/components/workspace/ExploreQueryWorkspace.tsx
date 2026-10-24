@@ -103,7 +103,7 @@ function OwnedExplore({ state, role }: { state: ExploreLensState; role: Role }) 
     },
   }
   return (
-    <section aria-label="Explore workspace lenses" className="min-w-0 space-y-3">
+    <section aria-label="Explore workspace lenses" className="workspace-surface min-w-0 space-y-3">
       <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
         Explore
       </h1>

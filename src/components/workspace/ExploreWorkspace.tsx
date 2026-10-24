@@ -48,6 +48,7 @@ export default function ExploreWorkspace({
   const [navigationError, setNavigationError] = useState('')
   const heading = useRef<HTMLHeadingElement>(null)
   const searchInput = useRef<HTMLInputElement>(null)
+  const collection = useRef<HTMLDetailsElement>(null)
   const previous = useRef(location)
   const results = useQuery<ObjectSetResult>({
     queryKey: ['explore-workspace-search', identity.userKey, identity.raw?.tenant, query],
@@ -170,13 +171,15 @@ export default function ExploreWorkspace({
   if (identityLoading) return <p role="status">Checking workspace access…</p>
   if (!canRead) return <p role="alert">Explore is not available for the current identity.</p>
   return (
-    <section aria-label="Explore workspace" className="flex min-h-0 min-w-0 flex-col gap-3">
+    <section aria-label="Explore workspace" className="workspace-surface flex min-h-0 min-w-0 flex-col gap-3">
       {showHeading && <h1 className="text-xl font-semibold">Explore</h1>}
       <nav aria-label="Evidence scope" className="flex flex-wrap items-center gap-2 text-sm">
         <button
           className={button}
           onClick={() => {
+            if (collection.current) collection.current.open = true
             transition({ entity: null, tool: 'overview' })
+            searchInput.current?.focus()
           }}
         >
           Evidence collection
@@ -191,11 +194,11 @@ export default function ExploreWorkspace({
         )}
       </nav>
       {(destinationError ?? navigationError) && <p role="alert">{destinationError ?? navigationError}</p>}
-      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(16rem,0.8fr)_minmax(0,2fr)]">
-        <aside
-          aria-label="Evidence collection"
-          className={`${state.entity ? 'hidden lg:block' : ''} min-w-0 rounded-lg border p-3`}
-        >
+      <div className="workspace-panels">
+        <details ref={collection} open aria-label="Evidence collection" className="min-w-0 rounded-lg border p-3">
+          <summary className="workspace-pane-toggle">
+            <h2 className="inline font-semibold">Evidence collection</h2>
+          </summary>
           <form
             className="flex flex-wrap gap-2"
             onSubmit={(event) => {
@@ -259,11 +262,8 @@ export default function ExploreWorkspace({
               </li>
             ))}
           </ul>
-        </aside>
-        <section
-          aria-label="Selected evidence"
-          className={`${!state.entity ? 'hidden lg:block' : ''} min-w-0 rounded-lg border p-3`}
-        >
+        </details>
+        <section aria-label="Selected evidence" className="min-w-0 rounded-lg border p-3">
           <h2 ref={heading} tabIndex={-1} className="break-words text-lg font-semibold">
             {state.entity ? (object.data?.title ?? state.entity) : 'Your evidence stays in context'}
           </h2>

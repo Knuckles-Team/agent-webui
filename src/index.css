@@ -371,3 +371,53 @@ body,
     scroll-behavior: auto !important;
   }
 }
+
+/* Workspace panes respond to their available width beside the assistant. */
+.workspace-surface {
+  --workspace-gap: calc(var(--spacing) * 3);
+  container-type: inline-size;
+  inline-size: 100%;
+  max-inline-size: 100rem;
+  margin-inline: auto;
+  overflow-wrap: anywhere;
+}
+
+.workspace-panels {
+  display: grid;
+  min-inline-size: 0;
+  align-items: start;
+  gap: var(--workspace-gap);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace-panels > * {
+  min-inline-size: 0;
+}
+
+.workspace-panels p {
+  max-inline-size: 70ch;
+}
+
+.workspace-pane-toggle {
+  min-block-size: 2.75rem;
+  padding-block: calc(var(--spacing) * 2);
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.workspace-pane-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+@container (min-width: 52rem) {
+  .workspace-panels {
+    grid-template-columns: minmax(14rem, 1fr) minmax(0, 2fr);
+  }
+
+  .workspace-panels-balanced {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
