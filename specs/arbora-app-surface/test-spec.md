@@ -360,3 +360,26 @@ It covers shared manual and semantic lens selection, stale-handle refusal, draft
 It also checks an explicit save through the existing prompt adapter. Existing `PromptsView.test.tsx`
 retains validation, create, overwrite and request-race coverage for the shared editor.
 These source tests do not qualify a real provider or native browser, nor complete editor-tool parity.
+
+
+## Persistent loaded workspace map evidence
+
+Run `pnpm exec playwright test --config e2e/workspace-persistent.config.ts`.
+The synthetic journey selects a fleet child and capability through the persistent map.
+It checks URL state, Back/Forward, native task focus and retained unsent chat DOM.
+Map/list presentation adds no history. Four viewports cover desktop, narrow, landscape and irregular dimensions.
+Each viewport checks focused link hit targets with normal and reduced motion.
+A separate isolated Chromium profile checks keyboard navigation at actual 200-percent tab zoom.
+The browser extension sets native zoom; it does not emulate CSS scaling.
+`WorkspaceFrame.test.tsx` checks callback retirement and stable task DOM across map and legacy layout changes.
+
+This evidence supports partial WEBUI-APPS-R046, WEBUI-APPS-R049 and WEBUI-DESIGN-R002.1/R005.1 delivery.
+The existing broad requirements and tasks remain open.
+The map includes loaded admitted destinations, not every legacy capability or dynamic leaf.
+Live authentication, installed providers, manual screen readers and physical fold hardware remain unverified.
+
+The persistent-map keyboard matrix also covers filter, list selection, breadcrumb return and three Back/Forward cycles.
+It runs at narrow width and native 200-percent zoom with normal and reduced motion.
+Edge hit tests include the fixed assistant trigger and its animated halo.
+The outer workspace scrollport reserves focus clearance when the persistent frame is active.
+This supplements the existing four-viewport continuity journey, including short landscape.

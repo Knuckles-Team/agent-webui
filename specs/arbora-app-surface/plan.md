@@ -676,3 +676,14 @@ Work workspace, and retire the editor when the identity admission changes.
 Retain the legacy prompts route and its existing editor behavior. This slice
 does not claim full authoring-tool parity, provider acceptance, plan metrics,
 harness discovery, or complete Work destination migration.
+
+## Persistent loaded workspace frame
+
+Extend the existing workspace requirements without new decomposition. Keep the
+three-context rail and task surfaces. Add a persistent map/list of loaded
+caller-visible destinations beside those surfaces. Let the URL select the map
+branch. Native links, breadcrumbs and search use the existing typed dispatchers.
+Presentation changes add no browser history. Preserve the stable chat instance
+and all existing controls during viewport changes. Narrow layouts stack the map
+and task surface with explicit focus controls. This bounded shell does not
+migrate legacy pages or prove all dynamic leaves and installed providers.

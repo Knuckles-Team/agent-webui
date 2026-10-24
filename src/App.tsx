@@ -51,6 +51,7 @@ import { conversationOwnerKey } from '@/lib/chat-store'
 import { WorkspaceCommandsProvider } from './components/workspace/WorkspaceCommands'
 import { WorkspaceContextRail } from './components/workspace/WorkspaceContextRail'
 import { WorkspaceViewport } from './components/workspace/WorkspaceViewport'
+import { WorkspaceFrame } from './components/workspace/WorkspaceFrame'
 import { WorkspaceNavigation } from './components/WorkspaceNavigation'
 import { useWorkspaceLocation } from './lib/workspace-navigation'
 import { WebMcpProvider, WorkspaceWebMcpControl } from './lib/webmcp/provider.tsx'
@@ -355,15 +356,17 @@ export function PrivateAppSurface({
 
           {/* Legacy dashboard remains mounted only outside the redesigned workspace contexts */}
           {!isWorkspaceProof(route) && <DashboardSurface isDashboard={routeContentProps.isDashboard} />}
-          <div className={workspaceBodyClass(route)}>
-            <RouteContentSurface route={route} {...routeContentProps} />
-            {/* One stable assistant instance across workspace contexts. */}
-            <ChatPanel
-              currentView={currentView}
-              purpose={routeContentProps.isChat ? route.blurb : undefined}
-              isPrimary={routeContentProps.isChat || route.id === 'workspace.work-proof'}
-            />
-          </div>
+          <WorkspaceFrame enabled={isWorkspaceProof(route)}>
+            <div className={workspaceBodyClass(route)}>
+              <RouteContentSurface route={route} {...routeContentProps} />
+              {/* One stable assistant instance across workspace contexts. */}
+              <ChatPanel
+                currentView={currentView}
+                purpose={routeContentProps.isChat ? route.blurb : undefined}
+                isPrimary={routeContentProps.isChat || route.id === 'workspace.work-proof'}
+              />
+            </div>
+          </WorkspaceFrame>
         </WorkspaceViewport>
       </SidebarProvider>
     </WorkspaceCommandsProvider>

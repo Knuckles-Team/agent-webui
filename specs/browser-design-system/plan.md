@@ -46,3 +46,14 @@ reveal and listener cleanup. Its height and placement follow the visual viewport
 at normal scale. Resizing must keep a retained focused leaf reachable. Pinch zoom
 does not reflow the workspace or force focus scrolling. Keyboard occlusion tests
 using an overridden viewport height remain simulated evidence.
+
+## Persistent loaded workspace frame
+
+Extend the existing workspace requirements without new decomposition. Keep the
+three-context rail and task surfaces. Add a persistent map/list of loaded
+caller-visible destinations beside those surfaces. Let the URL select the map
+branch. Native links, breadcrumbs and search use the existing typed dispatchers.
+Presentation changes add no browser history. Preserve the stable chat instance
+and all existing controls during viewport changes. Narrow layouts stack the map
+and task surface with explicit focus controls. This bounded shell does not
+migrate legacy pages or prove all dynamic leaves and installed providers.
