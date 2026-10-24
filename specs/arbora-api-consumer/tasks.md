@@ -27,3 +27,6 @@ No task above names a requirement ID individually; together they must close ever
 - [ ] WEBUI-API-R011.2.2: Qualify the complete parent identity matrix through the installed browser-to-Arbora path.
 
 - [ ] **WEBUI-API-R011.3:** Consume the released public execution projection through the existing host/browser adapter. Qualify identity, redaction, replay and installed-producer behavior without client-owned orchestration.
+
+- [x] WEBUI-API-R011.4: Qualify the flat execution read adapter with exact identity and adversarial producer fixtures.
+- [ ] R011.3: Retain nested projections, public transcripts and installed-producer acceptance after this source-only slice.

@@ -1,0 +1,73 @@
+{
+  "schema_version": "arbora-execution-graph-v1",
+  "availability": "available",
+  "run_id": "run-one",
+  "task_id": "work-item:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshot": {
+    "plan_digest": "plan-one",
+    "nodes": [
+      {
+        "key": "[\"run-one\",\"plan_step\",\"first\"]",
+        "kind": "plan_step",
+        "task_id": "first",
+        "status": "running",
+        "evidence": {
+          "event_id": "event-2",
+          "sequence": 2
+        }
+      },
+      {
+        "key": "[\"run-one\",\"plan_step\",\"left\"]",
+        "kind": "plan_step",
+        "task_id": "left",
+        "status": "unobserved",
+        "evidence": null
+      },
+      {
+        "key": "[\"run-one\",\"plan_step\",\"right\"]",
+        "kind": "plan_step",
+        "task_id": "right",
+        "status": "unobserved",
+        "evidence": null
+      },
+      {
+        "key": "[\"run-one\",\"plan_step\",\"join\"]",
+        "kind": "plan_step",
+        "task_id": "join",
+        "status": "unobserved",
+        "evidence": null
+      }
+    ],
+    "edges": [
+      {
+        "kind": "depends_on",
+        "source": "[\"run-one\",\"plan_step\",\"first\"]",
+        "target": "[\"run-one\",\"plan_step\",\"left\"]"
+      },
+      {
+        "kind": "depends_on",
+        "source": "[\"run-one\",\"plan_step\",\"first\"]",
+        "target": "[\"run-one\",\"plan_step\",\"right\"]"
+      },
+      {
+        "kind": "depends_on",
+        "source": "[\"run-one\",\"plan_step\",\"left\"]",
+        "target": "[\"run-one\",\"plan_step\",\"join\"]"
+      },
+      {
+        "kind": "depends_on",
+        "source": "[\"run-one\",\"plan_step\",\"right\"]",
+        "target": "[\"run-one\",\"plan_step\",\"join\"]"
+      }
+    ],
+    "topology_completeness": "complete",
+    "lifecycle_completeness": "incomplete",
+    "lifecycle_reason": "observed_prefix_only",
+    "covered_after": 2,
+    "has_more": false,
+    "can_read_transcript": false,
+    "can_message_active": false,
+    "can_continue_completed": false,
+    "supports_spawned_children": false
+  }
+}

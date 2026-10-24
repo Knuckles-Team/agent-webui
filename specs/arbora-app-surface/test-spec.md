@@ -563,3 +563,11 @@ Revoke capability or complete the child during review and check zero unauthorize
 Cancel only the admitted target and compare visible state with the producer's acknowledgement and eventual outcome.
 Record producer/consumer versions, schema digest, source revisions, topology identities and replay cursors.
 Synthetic route tests, span waterfalls and documentation screenshots must remain labelled as presentation evidence only.
+
+### Flat dependency view source proof
+
+WEBUI-APPS-R049.1.13 uses mounted `WorkExecutionGraph.test.tsx` and the actual invoke adapter with the producer fixture.
+Cover fan-out/fan-in, hostile labels, missing metadata, selection aborts, identity changes and denial after a successful read.
+The diagram and expandable dependency list stay inside the existing Work task; no graph selection retargets Chat.
+The separate `execution-graph.browser.ts` journey can capture wide/narrow presentation in hosted CI.
+Its authored source is not evidence of completed browser qualification. R049.1.2 retains every original acceptance obligation.

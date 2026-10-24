@@ -28,6 +28,12 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 describe('canonical current-plan read', () => {
+  it('preserves producer code-point bounds for the shared task run selector', () => {
+    const runId = '🌳'.repeat(512)
+    expect(currentPlanRunId({ metadata: { arbora: { runId } } })).toBe(runId)
+    expect(currentPlanRunId({ metadata: { arbora: { runId: `${runId}x` } } })).toBeNull()
+    expect(currentPlanRunId({ metadata: { arbora: { runId: '  ' } } })).toBeNull()
+  })
   it('uses the cookie/CSRF operation, exact run selector and abort signal', async () => {
     const fetcher = response({ availability: 'available', snapshot })
     const signal = new AbortController().signal

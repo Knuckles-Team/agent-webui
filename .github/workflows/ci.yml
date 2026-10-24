@@ -89,6 +89,16 @@ jobs:
         run: pnpm screenshots:test
       - name: Refresh synthetic documentation screenshots
         run: pnpm screenshots:refresh
+      - name: Flat execution graph keyboard and responsive fixtures
+        run: pnpm exec playwright test --config e2e/workspace-layout.config.ts execution-graph.browser.ts --output test-results/workspace-execution-graph
+      - name: Preserve flat execution graph browser evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workspace-execution-graph
+          path: test-results/workspace-execution-graph/
+          retention-days: 14
+          if-no-files-found: error
       - name: Preserve documentation screenshots and provenance
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

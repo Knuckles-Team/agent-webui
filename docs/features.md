@@ -117,6 +117,16 @@ available. It also offers independent task and trace/node inspection. Selecting
 a trace node does not retarget Chat, and trace spans are not spawned subagents.
 The current-plan panel is read-only and uses the selected task's validated `runId` rather than an independently selected trace.
 
+The selected task also has an inline execution-dependency view when its backend
+supplies the versioned `runs.execution_graph` operation. It displays declared flat
+plan steps, predecessor-to-dependent arrows and an expandable dependency list.
+The view is unavailable when the task has no authoritative binding or the backend does
+not support this operation. It never reconstructs orchestration from traces.
+Lifecycle evidence is partial. An unobserved step is not necessarily queued.
+A finished observed prefix does not prove that execution has finished.
+Refresh revalidates access and clears the previous graph while loading.
+This view does not supply child hierarchy, transcripts or child messaging.
+
 Observability renders a `parentId` trace waterfall. That view describes span
 nesting, not the dependency DAG of agent orchestration. Existing collapsible
 components do not prove live public summaries, tool events or child conversations.
