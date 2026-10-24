@@ -279,3 +279,8 @@ Accepted-path component tests use the existing attended-gesture seam.
 These fixtures do not establish authenticated served execution or installed native browser acceptance.
 WEBUI-APPS-R048 remains open pending that composed acceptance.
 This change grants no session, arms no browser and changes no production authority.
+
+### Loaded catalog navigation
+
+R046.2.2, R047 and R049.1.2 remain open. Source checks cover caller-visible connector/definition destinations and shared native and WebMCP navigation.
+They also cover refusal of stale or invalid catalog identities.

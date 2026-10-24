@@ -745,3 +745,13 @@ Mounted tests check the selected Work branch and editor DOM across map presentat
 
 R049 owns this partial entry migration. R049.1.3 owns the retained Work source behavior.
 R045 and R049.1.2 remain open; these source receipts do not complete either requirement.
+
+### Loaded catalog navigation
+
+R046.2.2, R047 and R049.1.2 partial delivery adds caller-visible connector and
+associated tool/skill definition identities to the existing Operate destination.
+Native inspector links, command search, branch browsing and the command WebMCP
+adapter share the typed destination. Refresh and admission changes withdraw
+unconfirmed definitions instead of retaining stale evidence. Only bounded
+identifiers enter the URL; no definition body, token or execution authority does.
+Full dynamic-leaf, native-provider and complete migration acceptance remain open.

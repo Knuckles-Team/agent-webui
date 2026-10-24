@@ -1,16 +1,34 @@
 // spec: WEBUI-APPS-R005.3
-import { useState } from 'react'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { useState, type ComponentProps } from 'react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'
-import { OperateCatalogPanel } from '@/components/workspace/OperateCatalogPanel'
+import { OperateCatalogPanel as CatalogPanel } from '@/components/workspace/OperateCatalogPanel'
 import { readOperateCatalog } from '@/lib/operate-catalog'
+import { parseOperateState } from '@/lib/operate-workspace'
+import { useWorkspaceLocation } from '@/lib/workspace-navigation'
+import { WorkspaceCommandsProvider, WorkspaceCommandPalette } from '@/components/workspace/WorkspaceCommands'
+import type { WebMcpToolDefinition } from '@/lib/webmcp/types'
+import { loadedCatalogCommands } from '@/components/workspace/loaded-workspace-commands'
+import { workspaceCommandBranches } from '@/components/workspace/workspace-command-branches'
+const tools = vi.hoisted(() => new Map<string, WebMcpToolDefinition>())
+vi.mock('@/lib/webmcp/provider', () => ({
+  useWebMcpToolSet: (values: WebMcpToolDefinition[]) => {
+    for (const tool of values) tools.set(tool.name, tool)
+  },
+}))
+function OperateCatalogPanel(props: Pick<ComponentProps<typeof CatalogPanel>, 'generation' | 'runtime'>) {
+  const location = useWorkspaceLocation()
+  return <CatalogPanel {...props} state={parseOperateState(location)} role="reader" owner={props.generation} />
+}
 
 let payload: unknown
 let refused = false
 const fetcher = vi.fn(async () => Response.json(payload, { status: refused ? 503 : 200 }))
 beforeEach(() => {
   refused = false
+  tools.clear()
+  window.history.replaceState({}, '', '/workspace/operate')
   payload = {
     source: 'epistemic_graph',
     servers: [
@@ -67,6 +85,8 @@ it('distinguishes filtering and empty catalog, then withdraws stale data on refu
   expect(await screen.findByRole('alert')).toHaveTextContent('not available')
   expect(screen.queryByRole('article')).not.toBeInTheDocument()
   refused = false
+  tools.clear()
+  window.history.replaceState({}, '', '/workspace/operate')
   payload = { source: 'epistemic_graph', servers: [], components: [] }
   fireEvent.click(screen.getByRole('button', { name: 'Refresh connector catalog' }))
   expect(await screen.findByText('No connectors in the returned catalog.')).toBeVisible()
@@ -88,12 +108,16 @@ it('retires earlier admission data while the new identity read is pending', asyn
         >
           Change admission
         </button>
-        <OperateCatalogPanel generation={generation} />
+        <WorkspaceCommandsProvider owner={generation} role="reader">
+          <WorkspaceCommandPalette />
+          <OperateCatalogPanel generation={generation} />
+        </WorkspaceCommandsProvider>
       </>
     )
   }
   renderWithProviders(<Harness />)
   await screen.findByRole('article', { name: 'Catalog connector records' })
+  const held = tools.get('agent-webui.workspace.commands')!
   fetcher.mockImplementationOnce(
     () =>
       new Promise<Response>(() => {
@@ -103,6 +127,7 @@ it('retires earlier admission data while the new identity read is pending', asyn
   fireEvent.click(screen.getByRole('button', { name: 'Change admission' }))
   expect(screen.getByRole('status')).toHaveTextContent('Loading connector catalog')
   expect(screen.queryByRole('article')).not.toBeInTheDocument()
+  await expect(held.execute({ offset: 0 }, { signal: new AbortController().signal })).rejects.toThrow('stale')
 })
 
 it.each([
@@ -141,30 +166,30 @@ it('inspects definitions by returned identity and explicit connector association
     ],
   }
   renderWithProviders(<OperateCatalogPanel generation="first" runtime={{ records: { state: 'up' } }} />)
-  fireEvent.click(await screen.findByRole('button', { name: 'Inspect records' }))
+  fireEvent.click(await screen.findByRole('link', { name: 'Inspect records' }))
   expect(screen.getByText('MCP runtime: up')).toBeVisible()
-  fireEvent.click(screen.getByRole('button', { name: 'tool: shared-name' }))
+  fireEvent.click(screen.getByRole('link', { name: 'tool: shared-name' }))
   const detail = screen.getByRole('region', { name: 'Selected catalog definition' })
   expect(detail).toHaveTextContent('tool:records')
   expect(detail).toHaveTextContent('sha256:definition')
   expect(detail).not.toHaveTextContent('tool:archive')
-  fireEvent.click(screen.getByRole('button', { name: 'skill: shared-name' }))
+  fireEvent.click(screen.getByRole('link', { name: 'skill: shared-name' }))
   expect(detail).toHaveTextContent('skill:records')
-  fireEvent.click(screen.getByRole('button', { name: 'Inspect archive' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Inspect archive' }))
   expect(screen.queryByRole('region', { name: 'Selected catalog definition' })).not.toBeInTheDocument()
   expect(screen.getByText('MCP runtime: not reported')).toBeVisible()
-  expect(screen.queryByRole('button', { name: 'workflow: shared-name' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'workflow: shared-name' })).not.toBeInTheDocument()
 })
-it('retires selected definitions on a successful catalog refresh', async () => {
+it('retains the destination but withdraws a removed definition on catalog refresh', async () => {
   payload = { ...(payload as object), components: [definition('tool:records', 'records')] }
   renderWithProviders(<OperateCatalogPanel generation="first" />)
-  fireEvent.click(await screen.findByRole('button', { name: 'Inspect records' }))
-  fireEvent.click(screen.getByRole('button', { name: 'tool: shared-name' }))
+  fireEvent.click(await screen.findByRole('link', { name: 'Inspect records' }))
+  fireEvent.click(screen.getByRole('link', { name: 'tool: shared-name' }))
   payload = { ...(payload as object), components: [] }
   fireEvent.click(screen.getByRole('button', { name: 'Refresh connector catalog' }))
-  await screen.findByRole('button', { name: 'Inspect records', expanded: false })
+  await screen.findByRole('link', { name: 'Inspect records', expanded: true })
   expect(screen.queryByRole('region', { name: 'Selected catalog definition' })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Inspect records' }))
+  expect(screen.getByRole('alert')).toHaveTextContent('definition is not in the current connector catalog')
   expect(screen.getByText('No tool or skill definitions returned for this connector.')).toBeVisible()
 })
 it('rejects duplicate component identities and mismatched authority', async () => {
@@ -179,3 +204,124 @@ it('rejects duplicate component identities and mismatched authority', async () =
   }
   await expect(readOperateCatalog()).rejects.toThrow()
 })
+
+// spec: WEBUI-APPS-R046.2.2
+it('restores exact URL identities and refuses wrong-connector and missing definition links', async () => {
+  payload = {
+    ...(payload as object),
+    components: [definition('tool:records', 'records'), definition('tool:archive', 'archive')],
+  }
+  window.history.replaceState({}, '', '/workspace/operate?connector=srv%3Arecords&definition=tool%3Arecords')
+  renderWithProviders(<OperateCatalogPanel generation="first" />)
+  expect(await screen.findByRole('region', { name: 'Selected catalog definition' })).toHaveTextContent('tool:records')
+  const search = screen.getByRole('textbox')
+  fireEvent.change(search, { target: { value: 'archive' } })
+  expect(screen.getByRole('region', { name: 'Selected catalog definition' })).toBeVisible()
+  expect(search).toHaveValue('archive')
+  const link = screen.getByRole('link', { name: 'tool: shared-name' })
+  const push = vi.spyOn(window.history, 'pushState')
+  fireEvent.click(link, { ctrlKey: true })
+  expect(push).not.toHaveBeenCalled()
+  act(() => {
+    window.history.replaceState({}, '', '/workspace/operate?connector=srv%3Arecords&definition=tool%3Aarchive')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  expect(screen.queryByRole('region', { name: 'Selected catalog definition' })).not.toBeInTheDocument()
+  expect(screen.getByRole('alert')).toHaveTextContent('definition is not in the current connector catalog')
+  act(() => {
+    window.history.replaceState({}, '', '/workspace/operate?connector=missing')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  expect(screen.getByRole('alert')).toHaveTextContent('connector is not in the current caller-visible catalog')
+  push.mockRestore()
+})
+
+// spec: WEBUI-APPS-R047
+it('uses loaded catalog commands for semantic selection and retires handles on refresh', async () => {
+  payload = { ...(payload as object), components: [definition('tool:records', 'records')] }
+  renderWithProviders(
+    <WorkspaceCommandsProvider owner="first" role="reader">
+      <WorkspaceCommandPalette />
+      <OperateCatalogPanel generation="first" />
+    </WorkspaceCommandsProvider>,
+  )
+  await screen.findByRole('link', { name: 'Inspect records' })
+  const list = tools.get('agent-webui.workspace.commands')!
+  const context = { signal: new AbortController().signal }
+  const catalog = (await list.execute({ offset: 0 }, context)) as { commands: { commandId: string; label: string }[] }
+  const entry = catalog.commands.find((entry) => entry.label.startsWith('tool:'))!
+  const selected = tools.get('agent-webui.workspace.command')!
+  await act(async () => {
+    await selected.execute({ commandId: entry.commandId }, context)
+  })
+  expect(screen.getByRole('region', { name: 'Selected catalog definition' })).toHaveTextContent('tool:records')
+  expect(window.location.search).toBe('?connector=srv%3Arecords&definition=tool%3Arecords')
+  await expect(selected.execute({ commandId: entry.commandId }, context)).rejects.toThrow('stale')
+  const held = tools.get('agent-webui.workspace.commands')!
+  refused = true
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh connector catalog' }))
+  await screen.findByRole('alert')
+  await expect(held.execute({ offset: 0 }, context)).rejects.toThrow('stale')
+  expect(screen.queryByRole('region', { name: 'Selected catalog definition' })).not.toBeInTheDocument()
+})
+
+// spec: WEBUI-APPS-R046.2.2
+it('bounds catalog commands and nests only explicit connector-definition associations', () => {
+  const commands = loadedCatalogCommands(
+    { server: null, item: null, q: '' },
+    [{ server_id: 'records', name: 'records' }],
+    Array.from({ length: 60 }, (_, i) => ({ id: `tool:${i}`, name: 'Lookup', kind: 'tool', server_name: 'records' })),
+  )
+  expect(commands).toHaveLength(26)
+  const roots = workspaceCommandBranches([
+    { id: 'operate', label: 'Operate', href: '/workspace/operate' },
+    ...commands,
+  ])
+  expect(roots[0].children[0].command.id).toBe('connector:records')
+  expect(roots[0].children[0].children).toHaveLength(25)
+  expect(
+    loadedCatalogCommands(
+      { server: null, item: null, q: '' },
+      [],
+      [{ id: 'a', name: 'Lookup', kind: 'tool', server_name: 'missing' }],
+    ),
+  ).toEqual([])
+})
+
+// spec: WEBUI-APPS-R046.2.2
+it('refreshes equivalent definitions without stealing focus from the retained filter', async () => {
+  payload = { ...(payload as object), components: [definition('tool:records', 'records')] }
+  window.history.replaceState({}, '', '/workspace/operate?connector=srv%3Arecords&definition=tool%3Arecords')
+  renderWithProviders(<OperateCatalogPanel generation="first" />)
+  await screen.findByRole('region', { name: 'Selected catalog definition' })
+  const filter = screen.getByRole('textbox')
+  filter.focus()
+  payload = JSON.parse(JSON.stringify(payload))
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh connector catalog' }))
+  await screen.findByRole('region', { name: 'Selected catalog definition' })
+  expect(filter).toHaveFocus()
+})
+
+// spec: WEBUI-APPS-R046.2.2
+it.each(['x'.repeat(257), 'unsafe\u0000identity', '\ud800'])(
+  'keeps non-navigable catalog identities readable without crashing',
+  async (id) => {
+    payload = {
+      ...(payload as object),
+      servers: [
+        { server_id: id, name: 'invalid', status: 'available', tool_count: 1 },
+        { server_id: 'srv:records', name: 'records', status: 'available', tool_count: 1 },
+      ],
+      components: [definition(id, 'records')],
+    }
+    renderWithProviders(<OperateCatalogPanel generation="first" />)
+    expect(
+      await screen.findByText('Inspect invalid: workspace navigation is unavailable for this catalog identity.'),
+    ).toBeVisible()
+    fireEvent.click(screen.getByRole('link', { name: 'Inspect records' }))
+    expect(
+      screen.getByText('tool: shared-name: workspace navigation is unavailable for this catalog identity.'),
+    ).toBeVisible()
+    expect(screen.queryByRole('link', { name: 'tool: shared-name' })).not.toBeInTheDocument()
+  },
+)
