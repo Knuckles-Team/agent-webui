@@ -259,3 +259,131 @@ for (const viewport of [
     await info.attach('retained-work-journey.png', { path: retainedScreenshot, contentType: 'image/png' })
   })
 }
+
+// spec: WEBUI-APPS-R049.1.3
+for (const viewport of [
+  { width: 1280, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`local conversation lifecycle in Work at ${viewport.width}`, async ({ page }) => {
+    let sends = 0
+    let sentId = ''
+    const serverHistory = [{ id: '/remote-history', firstMessage: 'Server history', timestamp: 1 }]
+    await page.route('**/auth/session', (route) =>
+      route.fulfill({
+        json: {
+          authenticated: true,
+          subject: 'lifecycle-user',
+          tenant: 'lifecycle-tenant',
+          webui_role: 'user',
+          roles: ['kg:read'],
+        },
+      }),
+    )
+    await page.route('**/api/**', async function serveConversationLifecycle(route) {
+      const path = new URL(route.request().url()).pathname
+      if (path === '/api/chats/messages') {
+        sends++
+        sentId = (route.request().postDataJSON() as { id: string }).id
+        const events = [
+          {
+            type: 'start',
+            messageId: 'lifecycle-answer',
+            messageMetadata: {
+              arbora_run: { conversation_context: `webui:${sentId}`, task_id: 'task-a', context_id: 'opaque-context' },
+            },
+          },
+          { type: 'text-start', id: 'reply' },
+          { type: 'text-delta', id: 'reply', delta: 'Saved conversation response.' },
+          { type: 'text-end', id: 'reply' },
+          { type: 'finish' },
+        ]
+        return route.fulfill({
+          body: events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('') + 'data: [DONE]\n\n',
+          headers: { 'content-type': 'text/event-stream', 'x-vercel-ai-ui-message-stream': 'v1' },
+        })
+      }
+      if (path === '/api/chats') {
+        expect(route.request().method()).toBe('GET')
+        return route.fulfill({ json: serverHistory })
+      }
+      if (path.startsWith('/api/chats/')) {
+        expect(route.request().method()).toBe('GET')
+        return route.fulfill({ json: { messages: [] } })
+      }
+      if (path.endsWith('/traces')) {
+        const body = route.request().postDataJSON() as { action: string }
+        const result =
+          body.action === 'search'
+            ? [{ id: 'trace-a', name: 'Independent trace' }]
+            : { trace: { id: 'trace-a' }, nodes: [] }
+        return route.fulfill({
+          json: { status: 'success', result: { surface: 'traces', action: body.action, result } },
+        })
+      }
+      const fixtures: Record<string, unknown> = {
+        '/api/configure': {
+          models: [{ id: 'fixture-model', name: 'Fixture model', builtinTools: [] }],
+          builtinTools: [],
+        },
+        '/api/enhanced/models': { models: [], default_id: '' },
+        '/api/enhanced/sessions': [{ id: 'task-a', status: { state: 'completed' } }],
+        '/api/enhanced/sessions/task-a': { id: 'task-a', status: { state: 'completed' }, artifacts: [] },
+      }
+      if (path in fixtures) return route.fulfill({ json: fixtures[path] })
+      return route.fulfill({ status: 501, json: { detail: 'Unavailable fixture surface' } })
+    })
+    await page.addInitScript(() => {
+      localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1')
+      localStorage.setItem(
+        'chat:other-owner:conversationIds',
+        JSON.stringify([{ id: '/other', firstMessage: 'Other owner', timestamp: 1 }]),
+      )
+    })
+    await page.setViewportSize(viewport)
+    await page.goto('/workspace/work?task=task-a&run=trace-a')
+    const composer = page.getByRole('textbox', { name: 'Message input' })
+    await expect(page.getByRole('button', { name: 'New conversation…', exact: true })).toBeDisabled()
+    await composer.fill('Keep this investigation')
+    await page.getByRole('button', { name: 'Send message', exact: true }).click()
+    await expect(page.getByText('Saved conversation response.', { exact: true })).toBeVisible()
+    await page.getByRole('link', { name: 'Inspect response task' }).click()
+    await page.getByRole('link', { name: 'Independent trace', exact: true }).click()
+    await expect(page).toHaveURL(/task=task-a.*run=trace-a/)
+    await page.getByRole('button', { name: 'Rename local copy…', exact: true }).click()
+    await page.getByLabel('Local conversation label').fill('Renamed investigation')
+    await page.getByRole('button', { name: 'Confirm conversation change' }).click()
+    await expect(page.getByText('Local label: Renamed investigation', { exact: true })).toBeVisible()
+    await composer.fill('A retained draft')
+    await page.getByRole('button', { name: 'New conversation…', exact: true }).click()
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect(composer).toHaveValue('A retained draft')
+    await page.getByRole('button', { name: 'New conversation…', exact: true }).click()
+    await page.getByRole('button', { name: 'Confirm conversation change' }).click()
+    await expect(composer).toHaveValue('')
+    await page.goBack()
+    await expect(page.getByText('Saved conversation response.', { exact: true })).toBeVisible()
+    await page.goForward()
+    await expect(composer).toHaveValue('')
+    await page.getByRole('combobox', { name: 'Available conversation' }).selectOption(sentId)
+    await expect(page.getByText('Saved conversation response.', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Remove local copy…', exact: true }).click()
+    await expect(page.getByText(/Server history is not deleted/)).toBeVisible()
+    await page.getByRole('button', { name: 'Confirm conversation change' }).click()
+    await expect(page.getByText('Active: New conversation', { exact: true })).toBeVisible()
+    await expect(page.getByRole('option', { name: 'Server history', exact: true })).toHaveCount(1)
+    await expect(page.getByRole('option', { name: 'Renamed investigation', exact: true })).toHaveCount(0)
+    await expect
+      .poll(async () =>
+        page.evaluate((id) => Object.keys(localStorage).some((key) => key.endsWith(`:messages:${id}`)), sentId),
+      )
+      .toBe(false)
+    expect(await page.evaluate(() => localStorage.getItem('chat:other-owner:conversationIds'))).toContain(
+      'Other owner',
+    )
+    await expect(page).toHaveURL(/task=task-a.*run=trace-a/)
+    expect(sends).toBe(1)
+    expect(serverHistory).toEqual([{ id: '/remote-history', firstMessage: 'Server history', timestamp: 1 }])
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  })
+}

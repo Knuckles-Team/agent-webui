@@ -22,6 +22,7 @@ import {
 } from '@/lib/work-workspace'
 import { useWorkspaceCommands } from './WorkspaceCommands'
 import { WorkTaskControls } from './WorkTaskControls'
+import { WorkConversationControls } from './WorkConversationControls'
 import { WorkTaskInspector } from './WorkTaskInspector'
 import { createTaskCancellation } from './task-cancellation'
 import { useWorkspaceAdmission } from './useWorkspaceAdmission'
@@ -60,7 +61,7 @@ function AuthorizedWork({
   const location = useWorkspaceLocation()
   const { state, error } = destination(location)
   const conversations = useConversations(conversationOwnerKey(identity))
-  const [activeConversation] = useConversationIdFromUrl()
+  const [activeConversation, setActiveConversation] = useConversationIdFromUrl()
   const heading = useRef<HTMLHeadingElement>(null)
   const previous = useRef(location)
   const tasks = useQuery({
@@ -203,6 +204,14 @@ function AuthorizedWork({
         <p className="mt-2 break-all text-xs">
           Active: {activeConversation === '/' ? 'New conversation' : activeConversation}
         </p>
+        <WorkConversationControls
+          enabled={!error}
+          owner={conversationOwnerKey(identity)}
+          conversation={activeConversation}
+          onNew={() => {
+            setActiveConversation('/')
+          }}
+        />
       </section>
       <div className="workspace-panels workspace-panels-balanced">
         <section aria-label="Agent tasks" className="rounded border p-3">
