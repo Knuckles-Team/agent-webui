@@ -249,3 +249,11 @@ Both requirements retain their existing acceptance gaps.
 
 R049.1.2 readiness migration preserves the supported dashboard snapshot and its explicit reprobe action.
 Diagnostic HTTP 503 responses are distinct from unreadable, denied or unavailable transport responses.
+
+## Cold-entry asset resolution
+
+R046 and R046.2.2 retain complete navigation acceptance. The production build
+uses origin-root asset URLs. Direct workspace URLs do not resolve scripts
+and styles beneath the route directory. Explicit Vite deployment-base overrides
+remain supported for asset hosting. This repair alone does not qualify dynamic
+leaves, history, semantic zoom, provider behavior or complete redesign.

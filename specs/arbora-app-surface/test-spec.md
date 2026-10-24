@@ -300,3 +300,14 @@ An invalid temporary bearer produced HTTP 401 and withdrew evidence; restoring t
 Neither viewport produced page errors or horizontal overflow. All 49 focused source tests passed.
 The browser entered through the root and existing history event; cold-entry assets remain separately owned.
 Synthetic engine and identity fixtures do not qualify live engine, identity-provider or complete migration acceptance.
+
+## Cold-entry asset resolution
+
+`src/lib/__tests__/build-asset-base.test.ts` builds a minimal entry using the real
+Vite configuration and checks script/style resolution from a nested URL. Cover
+the default root and explicit `/arbora/` asset prefix.
+`e2e/workspace-cold-entry.browser.ts` uses a separately started production static
+host, never Vite dev. Open Work, Explore and Operate in fresh browser contexts.
+Check successful document/assets and rendered headings. Reload with the query
+retained. Only identity and API responses are synthetic. These tests do
+not prove authentication, real providers, full migration or R050 acceptance.
