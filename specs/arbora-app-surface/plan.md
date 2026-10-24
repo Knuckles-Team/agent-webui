@@ -575,3 +575,12 @@ that distinction in visible labels. Strip URLs and raw error fields from the
 browser projection. Scope reads to the current admission, and withdraw stale
 results on refusal. Missing host composition remains visibly unavailable.
 Full connection-state and installed-provider acceptance remain open.
+
+### Contextual connector definitions
+
+Extend existing R005.3 and R049.1.2 inspection within the selected catalog connector.
+Join tools and skills only through returned `server_name`; retain each definition identity.
+Render lifecycle, authority, revision and digests without implying execution permission.
+Keep registration availability, MCP transport state and unknown provider connectivity distinct.
+Retire selection after catalog refresh, refusal or admission change.
+Full migration, provider connectivity and governed execution acceptance remain open.

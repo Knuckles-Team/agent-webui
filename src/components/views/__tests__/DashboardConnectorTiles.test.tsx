@@ -20,6 +20,7 @@ const fetcher = vi.fn(async (url: string, _options?: RequestInit) => {
   if (url === '/api/enhanced/tools')
     return Response.json({
       source: 'epistemic_graph',
+      components: [],
       servers: [{ server_id: 'srv:catalog-only', name: 'catalog-only', status: 'unavailable', tool_count: 0 }],
     })
   if (url === '/auth/session') return Response.json({ authenticated: true, csrf_token: 'session-fixture' })

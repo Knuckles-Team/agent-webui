@@ -1,8 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import type { z } from 'zod'
+import type { FleetStatusSchema } from '@/lib/operate-workspace'
+import { OperateComponentInspector } from './OperateComponentInspector'
 import { readOperateCatalog } from '@/lib/operate-catalog'
 
-export function OperateCatalogPanel({ generation }: { generation: string }) {
+type Catalog = Awaited<ReturnType<typeof readOperateCatalog>>
+type RuntimeChildren = z.infer<typeof FleetStatusSchema>['value']['children']
+export function OperateCatalogPanel({ generation, runtime }: { generation: string; runtime?: RuntimeChildren }) {
   const [filter, setFilter] = useState('')
   const catalog = useQuery({
     queryKey: ['operate-registration-catalog', generation],
@@ -10,7 +15,7 @@ export function OperateCatalogPanel({ generation }: { generation: string }) {
     retry: false,
     gcTime: 0,
   })
-  const servers = catalog.isError ? undefined : catalog.data?.servers
+  const data = catalog.isError ? undefined : catalog.data
   return (
     <section aria-label="Connector catalog" className="min-w-0 space-y-2 rounded border p-3">
       <h2 className="font-medium">Connector catalog</h2>
@@ -32,7 +37,14 @@ export function OperateCatalogPanel({ generation }: { generation: string }) {
       {catalog.isError && (
         <p role="alert">Connector catalog is not available. Access or the served catalog may be unavailable.</p>
       )}
-      {servers && <CatalogServers servers={servers} filter={filter} />}
+      {data && (
+        <CatalogServers
+          key={`${generation}:${catalog.dataUpdatedAt}`}
+          catalog={data}
+          filter={filter}
+          runtime={runtime}
+        />
+      )}
       <button
         type="button"
         disabled={catalog.isFetching}
@@ -47,12 +59,16 @@ export function OperateCatalogPanel({ generation }: { generation: string }) {
 }
 
 function CatalogServers({
-  servers,
+  catalog,
   filter,
+  runtime,
 }: {
-  servers: Awaited<ReturnType<typeof readOperateCatalog>>['servers']
+  catalog: Catalog
+  runtime?: RuntimeChildren
   filter: string
 }) {
+  const [selected, setSelected] = useState<string | null>(null)
+  const { servers, components } = catalog
   const visible = servers.filter((server) => server.name.toLowerCase().includes(filter.toLowerCase()))
   return (
     <>
@@ -62,17 +78,59 @@ function CatalogServers({
       {servers.length === 0 && <p>No connectors in the returned catalog.</p>}
       {servers.length > 0 && visible.length === 0 && <p>No matching catalog connectors.</p>}
       {visible.map((server) => (
-        <article
+        <CatalogConnector
           key={server.server_id}
-          aria-label={`Catalog connector ${server.name}`}
-          className="min-w-0 rounded border p-3 [overflow-wrap:anywhere]"
-        >
-          <h3>{server.name}</h3>
-          <p>Registration: {server.status}</p>
-          <p>Catalog tools: {server.tool_count}</p>
-          <p>Provider connection: not reported by this catalog.</p>
-        </article>
+          server={server}
+          components={components}
+          runtime={runtime}
+          selected={selected}
+          onSelect={setSelected}
+        />
       ))}
     </>
+  )
+}
+
+function CatalogConnector({
+  server,
+  components,
+  runtime,
+  selected,
+  onSelect,
+}: {
+  server: Catalog['servers'][number]
+  components: Catalog['components']
+  runtime?: RuntimeChildren
+  selected: string | null
+  onSelect: (id: string | null) => void
+}) {
+  const expanded = selected === server.server_id
+  return (
+    <article
+      aria-label={`Catalog connector ${server.name}`}
+      className="min-w-0 rounded border p-3 [overflow-wrap:anywhere]"
+    >
+      <h3>{server.name}</h3>
+      <p>Registration: {server.status}</p>
+      <p>Catalog tools: {server.tool_count}</p>
+      <p>Provider connection: not reported by this catalog.</p>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => {
+          onSelect(expanded ? null : server.server_id)
+        }}
+      >
+        Inspect {server.name}
+      </button>
+      {expanded && (
+        <OperateComponentInspector
+          key={server.server_id}
+          server={server.name}
+          runtimeState={runtime?.[server.name]?.state}
+          components={components.filter((entry) => entry.server_name === server.name && entry.kind !== 'workflow')}
+        />
+      )}
+    </article>
   )
 }

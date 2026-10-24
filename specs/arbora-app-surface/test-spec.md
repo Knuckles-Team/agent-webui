@@ -275,3 +275,12 @@ The installed `enhanced_catalog_api._project_fleet_server` derives availability 
 The separate `ChildRuntime.status()` reports MCP runtime state and session count through `Multiplexer.status_snapshot` and `fleet.status`.
 `ChildRuntime.adopt_sessions` sets state to `up` when it receives connected MCP sessions.
 Those values do not establish upstream-provider connectivity. R005.3 connection-state acceptance remains open.
+
+Contextual catalog tests cover shared names with distinct identities, explicit connector joins, and tool versus skill details.
+They cover unknown MCP runtime state, refresh retirement, duplicate identities and incompatible authority rejection.
+The installed Arbora 0.1.7 journey was repeated with tool and skill definitions on both synthetic connectors.
+The real projection returned distinct identities with shared names and explicit connector associations.
+The built browser selected each definition, changed connectors, and retired the prior details.
+Unknown runtime evidence remained explicit. HTTP 503 withdrawal and recovery passed without browser errors.
+The journey retained the synthetic identity port and root-first navigation described above.
+Provider connectivity, direct entry and full authentication acceptance remain open.

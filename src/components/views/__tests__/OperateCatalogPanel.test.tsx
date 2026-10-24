@@ -63,15 +63,15 @@ it('distinguishes filtering and empty catalog, then withdraws stale data on refu
   expect(screen.getByText('No matching catalog connectors.')).toBeVisible()
   fireEvent.change(screen.getByRole('textbox'), { target: { value: '' } })
   refused = true
-  fireEvent.click(screen.getByRole('button'))
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh connector catalog' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('not available')
   expect(screen.queryByRole('article')).not.toBeInTheDocument()
   refused = false
-  payload = { source: 'epistemic_graph', servers: [] }
-  fireEvent.click(screen.getByRole('button'))
+  payload = { source: 'epistemic_graph', servers: [], components: [] }
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh connector catalog' }))
   expect(await screen.findByText('No connectors in the returned catalog.')).toBeVisible()
   refused = true
-  fireEvent.click(screen.getByRole('button'))
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh connector catalog' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('not available')
   expect(screen.queryByText('No connectors in the returned catalog.')).not.toBeInTheDocument()
 })
@@ -114,6 +114,68 @@ it.each([
     servers: Array(2).fill({ server_id: 'a', name: 'a', status: 'available', tool_count: 0 }),
   },
 ])('rejects malformed or incompatible catalog contracts', async (invalid) => {
-  payload = invalid
+  payload = { components: [], ...invalid }
+  await expect(readOperateCatalog()).rejects.toThrow()
+})
+
+const definition = (id: string, serverName: string | null, kind = 'tool') => ({
+  id,
+  name: 'shared-name',
+  server_name: serverName,
+  kind,
+  description: `Description ${id}`,
+  status: 'active',
+  authority: kind === 'workflow' ? 'workflow_catalog' : 'agent_component',
+  revision: 3,
+  definition_digest: 'sha256:definition',
+  content_digest: 'sha256:content',
+})
+it('inspects definitions by returned identity and explicit connector association', async () => {
+  payload = {
+    ...(payload as object),
+    components: [
+      definition('tool:records', 'records'),
+      definition('skill:records', 'records', 'skill'),
+      definition('tool:archive', 'archive'),
+      definition('workflow:unbound', null, 'workflow'),
+    ],
+  }
+  renderWithProviders(<OperateCatalogPanel generation="first" runtime={{ records: { state: 'up' } }} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect records' }))
+  expect(screen.getByText('MCP runtime: up')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'tool: shared-name' }))
+  const detail = screen.getByRole('region', { name: 'Selected catalog definition' })
+  expect(detail).toHaveTextContent('tool:records')
+  expect(detail).toHaveTextContent('sha256:definition')
+  expect(detail).not.toHaveTextContent('tool:archive')
+  fireEvent.click(screen.getByRole('button', { name: 'skill: shared-name' }))
+  expect(detail).toHaveTextContent('skill:records')
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect archive' }))
+  expect(screen.queryByRole('region', { name: 'Selected catalog definition' })).not.toBeInTheDocument()
+  expect(screen.getByText('MCP runtime: not reported')).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'workflow: shared-name' })).not.toBeInTheDocument()
+})
+it('retires selected definitions on a successful catalog refresh', async () => {
+  payload = { ...(payload as object), components: [definition('tool:records', 'records')] }
+  renderWithProviders(<OperateCatalogPanel generation="first" />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect records' }))
+  fireEvent.click(screen.getByRole('button', { name: 'tool: shared-name' }))
+  payload = { ...(payload as object), components: [] }
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh connector catalog' }))
+  await screen.findByRole('button', { name: 'Inspect records', expanded: false })
+  expect(screen.queryByRole('region', { name: 'Selected catalog definition' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect records' }))
+  expect(screen.getByText('No tool or skill definitions returned for this connector.')).toBeVisible()
+})
+it('rejects duplicate component identities and mismatched authority', async () => {
+  payload = {
+    ...(payload as object),
+    components: [definition('duplicate', 'records'), definition('duplicate', 'archive')],
+  }
+  await expect(readOperateCatalog()).rejects.toThrow()
+  payload = {
+    ...(payload as object),
+    components: [{ ...definition('tool', 'records'), authority: 'workflow_catalog' }],
+  }
   await expect(readOperateCatalog()).rejects.toThrow()
 })

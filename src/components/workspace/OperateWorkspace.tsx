@@ -151,7 +151,7 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
         </p>
       ) : (
         <>
-          <OperateCatalogPanel generation={generation} />
+          <OperateCatalogPanel generation={generation} runtime={children} />
           <label className="flex flex-col gap-1">
             Filter fleet children
             <input

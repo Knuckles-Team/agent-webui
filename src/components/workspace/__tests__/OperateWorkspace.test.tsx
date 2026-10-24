@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
   roles: ['mcp:discover'],
 }))
 vi.mock('@/lib/operate-catalog', () => ({
-  readOperateCatalog: vi.fn(async () => ({ source: 'epistemic_graph', servers: [] })),
+  readOperateCatalog: vi.fn(async () => ({ source: 'epistemic_graph', servers: [], components: [] })),
 }))
 vi.mock('@/lib/auth', () => ({
   useIdentity: () => ({

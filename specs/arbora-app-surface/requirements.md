@@ -241,3 +241,8 @@ These clauses extend existing rollups. Every new row is SPECIFIED; the test refe
 ### R048 native replacement routing
 
 Chromium 156 experimental WebMCP resolved a retained native Tool reference to a new same-name registration. Each native registration now has a unique routing name; the application registry retains the semantic tool ID. This prevents stale native references from selecting replacement callbacks. The rendered route, Back/Forward, deep-link and restoration matrix uses native discovery with synthetic backend responses. Authenticated served authority acceptance remains open; R048 is not complete.
+
+R005.3 and R049.1.2 partial implementation includes contextual catalog tool and skill inspection.
+Returned definitions retain their identities and explicit connector associations.
+MCP runtime state describes transport; it does not establish upstream provider connectivity.
+Both requirements retain their existing acceptance gaps.
