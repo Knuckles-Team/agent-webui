@@ -272,3 +272,9 @@ Rendered captures use synthetic fleet data. The desktop capture is
 The narrow capture is `branches-320x740.png`, SHA-256
 `31e22b9af6b865d0b056c13e8a4ab15161cbafe1e38328172122c9d5f4873ad3`.
 The browser test writes these files into its configured output directory.
+
+### Work prompt authoring continuation
+
+- [x] WEBUI-APPS-R049.1.2: Compose the existing admin prompt editor as a Work lens and preserve investigation context.
+- [x] WEBUI-APPS-R049.1.3: Cover lens navigation, draft retention, owner retirement and explicit save with rendered source tests.
+- [ ] WEBUI-APPS-R049.1.2: Qualify served-provider and native-browser prompt authoring, full editor-tool parity, and remaining Work authoring destinations.

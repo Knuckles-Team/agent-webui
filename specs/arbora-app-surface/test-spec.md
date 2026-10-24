@@ -352,3 +352,11 @@ Semantic tools request visible review only; synthetic confirmation must not appl
 The browser journey starts a new conversation, sends once, inspects its task, renames its local copy and removes that copy.
 Keep task and trace selections. Check that server history and another owner's cache remain unchanged.
 These fixtures do not qualify live-provider history or remote deletion.
+
+### Contextual prompt authoring in Work
+
+WEBUI-APPS-R049.1.2/R049.1.3: `WorkPromptLens.test.tsx` covers strict typed lens URLs, admin-only admission and preserved conversation/task/trace state.
+It covers shared manual and semantic lens selection, stale-handle refusal, draft retention and owner retirement.
+It also checks an explicit save through the existing prompt adapter. Existing `PromptsView.test.tsx`
+retains validation, create, overwrite and request-race coverage for the shared editor.
+These source tests do not qualify a real provider or native browser, nor complete editor-tool parity.
