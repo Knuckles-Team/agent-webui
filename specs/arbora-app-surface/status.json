@@ -416,9 +416,15 @@
     {
       "id": "WEBUI-APPS-R005.1",
       "title": "Nav entry declares a minimum role",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
-      "verified_by": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "69ce8b315b81",
+        "a390f7a0dabb"
+      ],
+      "verified_by": [
+        "src/components/__tests__/AppRoleVisibility.test.tsx:1",
+        "src/lib/__tests__/nav-registry.test.ts:77"
+      ],
       "rollup_of": [
         "WEBUI-APPS-R005.1.1",
         "WEBUI-APPS-R005.1.2"
@@ -438,8 +444,10 @@
     {
       "id": "WEBUI-APPS-R005.1.2",
       "title": "Rendered role filtering",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "69ce8b315b81"
+      ],
       "verified_by": [
         "src/components/__tests__/AppRoleVisibility.test.tsx:1"
       ]
@@ -470,9 +478,17 @@
     {
       "id": "WEBUI-APPS-R005.5",
       "title": "Every route renders",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
-      "verified_by": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "282b25e95b87",
+        "69ce8b315b81",
+        "a390f7a0dabb"
+      ],
+      "verified_by": [
+        "src/__tests__/routes/route-render.hostile.test.tsx:129",
+        "src/__tests__/routes/route-render.hostile.test.tsx:176",
+        "src/__tests__/routes/route-render.hostile.test.tsx:182"
+      ],
       "rollup_of": [
         "WEBUI-APPS-R005.5.1",
         "WEBUI-APPS-R005.5.2"
@@ -493,8 +509,10 @@
     {
       "id": "WEBUI-APPS-R005.5.2",
       "title": "Complete route render acceptance",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "69ce8b315b81"
+      ],
       "verified_by": [
         "src/__tests__/routes/route-render.hostile.test.tsx:129",
         "src/__tests__/routes/route-render.hostile.test.tsx:176"
@@ -503,9 +521,18 @@
     {
       "id": "WEBUI-APPS-R005.6",
       "title": "Each view states its purpose",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
-      "verified_by": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "69ce8b315b81",
+        "a390f7a0dabb"
+      ],
+      "verified_by": [
+        "src/components/__tests__/AppRoleVisibility.test.tsx:79",
+        "src/components/__tests__/RoutePurpose.test.tsx:1",
+        "src/components/__tests__/RoutePurpose.test.tsx:63",
+        "src/components/webmcp/WebMcpControl.test.tsx:144",
+        "src/components/workspace/__tests__/ExploreShell.test.tsx:140"
+      ],
       "rollup_of": [
         "WEBUI-APPS-R005.6.1",
         "WEBUI-APPS-R005.6.2"
@@ -525,8 +552,10 @@
     {
       "id": "WEBUI-APPS-R005.6.2",
       "title": "Rendered purpose visibility",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "69ce8b315b81"
+      ],
       "verified_by": [
         "src/components/__tests__/AppRoleVisibility.test.tsx:79",
         "src/components/__tests__/RoutePurpose.test.tsx:1",
