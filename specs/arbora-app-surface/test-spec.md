@@ -346,6 +346,31 @@ Check successful document/assets and rendered headings. Reload with the query
 retained. Only identity and API responses are synthetic. These tests do
 not prove authentication, real providers, full migration or R050 acceptance.
 
+### R048 attended agent proposal delivery
+
+The armed WebMCP channel accepts an Arbora proposal for human review.
+It shows the exact tool, arguments, requesting agent and opaque requester reference.
+A trusted human acceptance returns only the proposal decision.
+It neither runs a tool nor satisfies the separate exact-request mutation confirmation.
+Generation, schema and retained input validation bind the prompt to the active registration.
+Expiry, server withdrawal, disconnect and retirement withdraw the prompt.
+The client rejects terminal proposal IDs.
+
+Source tests cover proposals, channel transport, rendered review and Python message validation.
+Accepted-path component tests use the existing attended-gesture seam.
+These fixtures do not establish authenticated served execution or installed native browser acceptance.
+WEBUI-APPS-R048 remains open pending that composed acceptance.
+This change grants no session, arms no browser and changes no production authority.
+
+The proposal dialog bounds its height and wraps complete arguments and metadata.
+`e2e/proposal-review.browser.ts` passed six sandboxed Chromium cases at 320 by 568,
+375 by 320 and 640 by 240 pixels with 8192-byte and 500-row JSON payloads.
+The tests check exact text, keyboard scrolling, reachable decisions and no horizontal overflow.
+Chromium 156.0.8078.4 ran with its sandbox active, fresh contexts and localhost requests only.
+The browser used no native API feature flag.
+Synthetic clicks cannot accept; trusted browser clicks can accept or decline.
+This uses the production component with a synthetic channel and does not qualify served or native execution.
+
 ### Readiness producer parity boundary
 
 This is a supported-contract migration, not equivalence with the unavailable graph readiness producer.
@@ -454,3 +479,38 @@ It runs at narrow width and native 200-percent zoom with normal and reduced moti
 Edge hit tests include the fixed assistant trigger and its animated halo.
 The outer workspace scrollport reserves focus clearance when the persistent frame is active.
 This supplements the existing four-viewport continuity journey, including short landscape.
+
+### R048 canonical CSRF forwarding
+
+The attended client uses the installed canonical fetch wrapper.
+A regression test covers initiation, finalization and revocation with session-bound CSRF.
+Safe readiness reads carry no token. Rotation replaces the token and session clearing removes it.
+This proves client forwarding only, not authenticated admission or native browser execution.
+
+### Loaded catalog navigation
+
+Partial source checks for WEBUI-APPS-R046.2.2, WEBUI-APPS-R047 and WEBUI-APPS-R049.1.2
+cover typed connector/definition URLs, explicit associations and unavailable IDs.
+They also check refresh withdrawal, admission retirement and shared command navigation.
+`e2e/workspace-catalog.browser.ts` uses synthetic catalog responses to check
+fresh deep links, native Back/Forward, keyboard search and six viewport sizes.
+These checks do not establish installed-provider or full migration acceptance.
+
+### Canonical chat turn receipt consumer
+
+This bounded consumer check does not satisfy WEBUI-APPS-R004.3 or
+WEBUI-APPS-R004.8. Context-budget, cost and indexed-analysis acceptance remain
+open. No producer or full-session accounting acceptance is claimed.
+
+- `agent/agent_webui/__tests__/test_run_identity.py` checks exact receipts,
+  strict counters, outer identity and the actual Vercel stream.
+- `src/lib/__tests__/turn-usage.test.ts` checks caller-bound decoding, missing
+  values, valid zero, replay replacement and distinct tasks.
+- `src/lib/__tests__/chat-transport.test.ts` checks actual SDK send and reconnect
+  streams. Canonical start, metadata and finish chunks replace partial receipts
+  without retained counters or identity. Self-consistent run substitution clears
+  usage on the same message. Sequential send/reconnect, seeded history, same-run
+  refresh, new tasks and removed-message retirement preserve the presentation boundary.
+  Generic provider metadata stays unchanged.
+- `src/__tests__/Chat.conversation-identity.test.tsx` checks rendered counts,
+  stream persistence, replay invalidation and caller, tenant or session changes.

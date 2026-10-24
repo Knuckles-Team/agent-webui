@@ -329,7 +329,7 @@ In a real browser, receive segments and corrections, finalize, then select local
 
 Input `WEBUI:11`; original record SHA-256 `b1708c96d6b9cadcb1c9f35cc5cb7dde4e60ed2cb1250598e55b9ce4cc66907e`.
 
-Source obligation: The web interface presents a searchable bookmark knowledge base with meaning-based semantic filtering, an interactive mindmap and CSV or JSON export.
+Source obligation: The web interface presents a searchable bookmark knowledge base. It supports semantic filtering and an interactive mindmap. It exports CSV or JSON.
 
 Existing owner anchors: SDK-SOURCE-INGEST-R005.7–.12; WEBUI-APPS-R001; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: Bookmark AppSurface and GraphCanvas.
 
@@ -619,6 +619,22 @@ bundle through the installed Arbora application composer and WebUI static mount.
 Use synthetic identity/data only; retain the full R046.2.2 and R050 acceptance
 obligations. No additional requirement decomposition is introduced.
 
+### R048 attended agent proposal delivery
+
+The armed WebMCP channel accepts an Arbora proposal for human review.
+It shows the exact tool, arguments, requesting agent and opaque requester reference.
+A trusted human acceptance returns only the proposal decision.
+It neither runs a tool nor satisfies the separate exact-request mutation confirmation.
+Generation, schema and retained input validation bind the prompt to the active registration.
+Expiry, server withdrawal, disconnect and retirement withdraw the prompt.
+The client rejects terminal proposal IDs.
+
+Source tests cover proposals, channel transport, rendered review and Python message validation.
+Accepted-path component tests use the existing attended-gesture seam.
+These fixtures do not establish authenticated served execution or installed native browser acceptance.
+WEBUI-APPS-R048 remains open pending that composed acceptance.
+This change grants no session, arms no browser and changes no production authority.
+
 ### Work trace inspection continuation
 
 Extend WEBUI-APPS-R049.1.3 within the existing Work surface.
@@ -705,3 +721,68 @@ Presentation changes add no browser history. Preserve the stable chat instance
 and all existing controls during viewport changes. Narrow layouts stack the map
 and task surface with explicit focus controls. This bounded shell does not
 migrate legacy pages or prove all dynamic leaves and installed providers.
+
+### Workspace entry and prompt compatibility slice (2026-10-24)
+
+R045/R049.1/R049.1.2 retain ownership of entry migration. The registry declares
+`/` as the workspace entry. Admitted user-or-higher identities enter Work.
+Readers enter Operate. Signed-out or unresolved identities do not redirect.
+The still-unmigrated dashboard remains available at `/overview`. `/prompts`
+retains its admin admission and resolves to the Work prompt lens using the same
+editor, not a second authoring implementation. Compatibility replaces the
+current history entry, retains query and fragment context, and fails closed on
+malformed or conflicting Work state. Manual and WebMCP navigation share the
+same registry resolution; WebMCP still rejects caller-provided query/fragment
+state. Existing owner retirement and retained drafts apply within Work.
+All other legacy destinations remain unchanged. Source-mounted journeys do not
+establish native-browser acceptance, complete semantic authoring coverage, or
+completion of the ground-up redesign.
+
+Entry reconciliation also tests the real persistent frame after tree/map integration.
+The location subscription retains its pathname/query contract. Compatibility history
+replacement preserves inert fragments without admitting them as semantic map state.
+Mounted tests check the selected Work branch and editor DOM across map presentation changes.
+
+R049 owns this partial entry migration. R049.1.3 owns the retained Work source behavior.
+R045 and R049.1.2 remain open; these source receipts do not complete either requirement.
+
+### Loaded catalog navigation
+
+R046.2.2, R047 and R049.1.2 partial delivery adds caller-visible connector and
+associated tool/skill definition identities to the existing Operate destination.
+Native inspector links, command search, branch browsing and the command WebMCP
+adapter share the typed destination. Refresh and admission changes withdraw
+unconfirmed definitions instead of retaining stale evidence. Only bounded
+identifiers enter the URL; no definition body, token or execution authority does.
+Full dynamic-leaf, native-provider and complete migration acceptance remain open.
+
+### Canonical chat turn usage — 2026-10-24
+
+This bounded consumer slice does not complete WEBUI-APPS-R004.3 or
+WEBUI-APPS-R004.8. Their context-budget, cost and indexed-analysis acceptance
+remains open. Arbora returns `metadata.arbora.usage` from the caller-bound
+durable completion. Bind the receipt's `runId`, `taskId`, `contextId` and
+`scope: turn` to the returned task identity. Bind its presentation to the current
+conversation. Preserve the exact receipt through model and Vercel message metadata.
+
+The transport retains explicit run bindings across same-message replacement.
+Seed and prune correlation from committed, current-owner conversation history at
+stream entry. Absent messages and retired conversations cannot seed new state.
+A conflicting run clears usage without changing the returned outer identity.
+This temporary presentation correlation creates no accounting ledger or authorization.
+
+The transport adapter resets canonical metadata before the AI SDK deep merge.
+A later partial receipt cannot retain omitted counters. The five optional counts
+are requests, tool calls, input tokens, output tokens and total tokens.
+Each count is an integer from zero through the JavaScript safe-integer maximum.
+Reject unknown counters and malformed or mismatched receipts as a whole.
+
+Render known counts, including zero, once per admitted task/run.
+A later replay replaces the earlier presentation. Missing, denied or invalid
+usage clears prior counts. Never derive a total from input/output or accumulate
+a session total. Do not infer timing, throughput or cost for canonical Arbora
+turns. Generic provider estimates remain separate and exclude Arbora-tagged messages.
+
+Focused tests cover the decoder, Vercel stream, rendered Chat, replay and caller
+separation. They do not establish native producer, restart, context-budget or
+full-session acceptance.

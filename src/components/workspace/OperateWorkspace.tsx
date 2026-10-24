@@ -17,7 +17,7 @@ import {
   navigateOperate,
   operateApi,
   operateHref,
-  OperateStateSchema,
+  OperateFleetSelectionSchema,
   parseOperateState,
   type OperateState,
 } from '@/lib/operate-workspace'
@@ -102,9 +102,9 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
         title: 'Select Operate context',
         description:
           'Navigate discovered fleet children and capabilities. Does not invoke, load, start or modify anything.',
-        inputSchema: OperateStateSchema,
+        inputSchema: OperateFleetSelectionSchema,
         outputSchema: z.object({ selected: z.literal(true) }).strict(),
-        jsonSchema: z.toJSONSchema(OperateStateSchema),
+        jsonSchema: z.toJSONSchema(OperateFleetSelectionSchema),
         readOnly: false,
         source: 'agent-webui:src/components/workspace/OperateWorkspace.tsx',
         execute: (next) => {
@@ -153,7 +153,13 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
       ) : (
         <>
           <OperateReadinessPanel generation={generation} />
-          <OperateCatalogPanel generation={generation} runtime={children} />
+          <OperateCatalogPanel
+            generation={generation}
+            runtime={children}
+            state={state}
+            role={identity.role}
+            owner={conversationOwnerKey(identity)}
+          />
           <label className="flex flex-col gap-1">
             Filter fleet children
             <input

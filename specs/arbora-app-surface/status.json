@@ -532,10 +532,10 @@
         "af4bf7721747"
       ],
       "verified_by": [
-        "src/components/__tests__/AppRoleVisibility.test.tsx:79",
+        "src/components/__tests__/AppRoleVisibility.test.tsx:80",
         "src/components/__tests__/RoutePurpose.test.tsx:1",
-        "src/components/__tests__/RoutePurpose.test.tsx:63",
-        "src/components/webmcp/WebMcpControl.test.tsx:144",
+        "src/components/__tests__/RoutePurpose.test.tsx:64",
+        "src/components/webmcp/WebMcpControl.test.tsx:146",
         "src/components/workspace/__tests__/ExploreShell.test.tsx:140"
       ],
       "rollup_of": [
@@ -562,10 +562,10 @@
         "af4bf7721747"
       ],
       "verified_by": [
-        "src/components/__tests__/AppRoleVisibility.test.tsx:79",
+        "src/components/__tests__/AppRoleVisibility.test.tsx:80",
         "src/components/__tests__/RoutePurpose.test.tsx:1",
-        "src/components/__tests__/RoutePurpose.test.tsx:63",
-        "src/components/webmcp/WebMcpControl.test.tsx:144",
+        "src/components/__tests__/RoutePurpose.test.tsx:64",
+        "src/components/webmcp/WebMcpControl.test.tsx:146",
         "src/components/workspace/__tests__/ExploreShell.test.tsx:140"
       ]
     },
@@ -1880,7 +1880,10 @@
       "title": "Complete capability and leaf census",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
+        "src/lib/__tests__/nav-registry.test.ts:192"
+      ]
     },
     {
       "id": "WEBUI-APPS-R046",
@@ -1898,26 +1901,35 @@
       "title": "Native WebMCP action equivalence",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "src/components/views/__tests__/OperateCatalogPanel.test.tsx:239"
+      ]
     },
     {
       "id": "WEBUI-APPS-R048",
       "title": "WebMCP lifecycle and authority preservation",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
-      "verified_by": []
+      "verified_by": [
+        "e2e/proposal-review.browser.ts:20",
+        "src/lib/webmcp/__tests__/attended-arm.test.ts:130"
+      ]
     },
     {
       "id": "WEBUI-APPS-R049",
       "title": "Preserve every feature through the Arbora redesign",
       "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "landed_in": [
+        "213863471869",
+        "292e0c183590",
+        "79eaa4c330f8"
+      ],
       "verified_by": [
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
         "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:113",
         "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:33",
         "src/components/query-validation/__tests__/request-ownership.test.ts:110",
-        "src/components/query-validation/__tests__/request-ownership.test.ts:137",
-        "src/components/query-validation/__tests__/request-ownership.test.ts:177"
+        "src/components/query-validation/__tests__/request-ownership.test.ts:137"
       ],
       "rollup_of": [
         "WEBUI-APPS-R049.1",
@@ -1998,10 +2010,11 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [
+        "e2e/workspace-catalog.browser.ts:17",
         "e2e/workspace-task-lifecycle.spec.ts:391",
-        "src/components/views/__tests__/ArboraReadinessView.test.tsx:1",
-        "src/components/workspace/__tests__/OperateReadinessPanel.test.tsx:1",
-        "src/components/workspace/__tests__/WorkPromptLens.test.tsx:1"
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:156",
+        "src/components/views/__tests__/ArboraReadinessView.test.tsx:1"
       ]
     },
     {
@@ -2010,17 +2023,17 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "158591a6bcef",
+        "213863471869",
         "6592af62bedb",
         "80061c0d6501",
-        "b95cabd555b2",
-        "c767b6a5b17f"
+        "b95cabd555b2"
       ],
       "verified_by": [
         "e2e/workspace-task-lifecycle.spec.ts:1",
         "e2e/workspace-task-lifecycle.spec.ts:132",
         "e2e/workspace-task-lifecycle.spec.ts:263",
-        "src/components/workspace/__tests__/ExploreShell.test.tsx:2",
-        "src/components/workspace/__tests__/WorkConversationControls.test.tsx:1"
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
+        "src/components/workspace/__tests__/ExploreShell.test.tsx:2"
       ]
     },
     {
@@ -2081,7 +2094,10 @@
       "landed_in": [],
       "verified_by": [
         "e2e/workspace-branches.browser.ts:2",
-        "src/components/workspace/__tests__/WorkspaceCommandBranches.test.tsx:2"
+        "e2e/workspace-catalog.browser.ts:16",
+        "src/components/views/__tests__/OperateCatalogPanel.test.tsx:208",
+        "src/components/views/__tests__/OperateCatalogPanel.test.tsx:268",
+        "src/components/views/__tests__/OperateCatalogPanel.test.tsx:291"
       ]
     },
     {

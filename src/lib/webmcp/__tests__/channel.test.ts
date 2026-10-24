@@ -98,7 +98,7 @@ function readyArmClient(registry: ActiveWebMcpRegistry): AttendedArmClient {
       const snapshot = await registry.snapshot()
       return {
         status: 'armed' as const,
-        expires_at: Date.now() / 1_000 + 300,
+        expires_at: Math.floor(Date.now() / 1_000) + 300,
         route_id: snapshot.catalog.routeId,
         registration_generation: snapshot.generation,
         catalog_digest: snapshot.catalog.catalogDigest,
@@ -120,7 +120,7 @@ function recentAuthClient(
   return {
     readiness: vi.fn(async () => ({
       status: 'recent-auth' as const,
-      expires_at: Date.now() / 1_000 + 300,
+      expires_at: Math.floor(Date.now() / 1_000) + 300,
       route_id: 'graph',
     })),
     initiate: vi.fn(async () => {
@@ -234,7 +234,7 @@ describe('attended WebMCP control channel', () => {
     const navigate = vi.fn()
     const initiate = vi.fn(async () => ({
       authorization_url: 'https://identity.example/realms/graph/protocol/openid-connect/auth',
-      expires_at: Date.now() / 1_000 + 300,
+      expires_at: Math.floor(Date.now() / 1_000) + 300,
     }))
     const armClient: AttendedArmClient = {
       readiness: vi.fn(async () => ({ status: 'none' as const })),
@@ -266,7 +266,7 @@ describe('attended WebMCP control channel', () => {
     const socket = new FakeSocket()
     const finalize = vi.fn(async (scope: AttendedArmScope) => ({
       status: 'armed' as const,
-      expires_at: Date.now() / 1_000 + 300,
+      expires_at: Math.floor(Date.now() / 1_000) + 300,
       route_id: scope.route_id,
       registration_generation: scope.registration_generation,
       catalog_digest: scope.catalog_digest,
@@ -349,13 +349,13 @@ describe('attended WebMCP control channel', () => {
       .fn()
       .mockResolvedValueOnce({
         status: 'recent-auth' as const,
-        expires_at: Date.now() / 1_000 + 300,
+        expires_at: Math.floor(Date.now() / 1_000) + 300,
         route_id: 'graph',
       })
       .mockResolvedValueOnce({ status: 'none' as const })
     const initiate = vi.fn(async () => ({
       authorization_url: 'https://identity.example/authorize',
-      expires_at: Date.now() / 1_000 + 300,
+      expires_at: Math.floor(Date.now() / 1_000) + 300,
     }))
     const revoke = vi.fn(async () => undefined)
     const socketFactory = vi.fn(() => new FakeSocket()) as unknown as WebMcpSocketFactory
@@ -379,7 +379,7 @@ describe('attended WebMCP control channel', () => {
     if (!finalizedScope) throw new Error('Synthetic finalize scope was not captured')
     finishFinalize?.({
       status: 'armed',
-      expires_at: Date.now() / 1_000 + 300,
+      expires_at: Math.floor(Date.now() / 1_000) + 300,
       route_id: finalizedScope.route_id,
       registration_generation: finalizedScope.registration_generation,
       catalog_digest: finalizedScope.catalog_digest,
@@ -648,5 +648,45 @@ describe('attended WebMCP control channel', () => {
       expect(channel.getView()).toMatchObject({ status: 'idle', message: 'Browser control was disconnected.' })
     })
     expect(armClient.revoke).toHaveBeenCalledOnce()
+  })
+})
+
+describe('attended proposal channel transport', () => {
+  it('publishes a proposal only on the armed channel and withdraws it on disconnect', async () => {
+    const registry = registryWithTool()
+    const snapshot = await registry.snapshot()
+    const { channel, socket } = await openChannel(registry)
+    const request = {
+      protocol: WEBMCP_CONTROL_PROTOCOL,
+      type: 'control.proposal_request',
+      proposal_id: 'proposal-1',
+      proposal_digest: `sha256:${'a'.repeat(64)}`,
+      registration_generation: snapshot.generation,
+      tool_id: 'agent-webui.read',
+      schema_digest: snapshot.catalog.tools[0]!.schemaDigest,
+      arguments: {},
+      requester_agent: 'web-agent',
+      requester_run_ref: 'run-1',
+      expires_at: Math.floor(Date.now() / 1_000) + 30,
+    }
+    socket.receive(request)
+    await vi.waitFor(() => {
+      expect(channel.getView().pendingProposal?.proposalId).toBe('proposal-1')
+    })
+    channel.respondProposal('proposal-1', false)
+    expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({
+      type: 'control.proposal_response',
+      accepted: false,
+      proposal_digest: request.proposal_digest,
+    })
+    socket.receive({ ...request, proposal_id: 'proposal-2' })
+    await vi.waitFor(() => {
+      expect(channel.getView().pendingProposal?.proposalId).toBe('proposal-2')
+    })
+    socket.disconnect()
+    expect(channel.getView().pendingProposal).toBeNull()
+    const sent = socket.sent.length
+    channel.respondProposal('proposal-2', true)
+    expect(socket.sent).toHaveLength(sent)
   })
 })
