@@ -21,3 +21,10 @@
   display: flex;
   flex-direction: column;
 }
+
+/* The fixed assistant trigger occupies the bottom corner in Explore/Operate.
+   Leave enough scroll range and focus clearance to expose controls behind it. */
+.workspace-body-flow > .workspace-route-content {
+  padding-bottom: 6rem;
+  scroll-padding-bottom: 6rem;
+}
