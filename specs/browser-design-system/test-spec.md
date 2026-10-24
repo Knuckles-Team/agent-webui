@@ -43,3 +43,15 @@ acceptance, screen-reader certification or semantic-zoom acceptance.
 Run with `corepack pnpm exec playwright test --config e2e/workspace-layout.config.ts
 e2e/workspace-density.spec.ts`. Existing Work, Explore and Operate rendered unit
 suites cover retained actions and service states. No extra spec child is created.
+
+## Partial viewport continuity regression
+
+Run `pnpm exec playwright test --config e2e/workspace-viewport.config.ts` for
+the rendered Explore query journey. It edits a draft while a synthetic response is pending, then changes viewport dimensions. Keyboard actions inspect results and return to the retained editor. One case uses native Chromium viewport
+resize; another simulates visual-viewport occlusion independently of layout
+viewport size. Both use reduced motion. Neither establishes native soft-keyboard,
+fold hardware, browser zoom or live-provider acceptance.
+
+`WorkspaceViewport.test.tsx` covers retained selection/focus, pinch-zoom reflow
+avoidance, fallback without VisualViewport, and listener cleanup. These tests
+do not complete WEBUI-DESIGN-R004.2; its broader acceptance remains open.

@@ -50,6 +50,7 @@ import { cn } from './lib/utils.ts'
 import { conversationOwnerKey } from '@/lib/chat-store'
 import { WorkspaceCommandsProvider } from './components/workspace/WorkspaceCommands'
 import { WorkspaceContextRail } from './components/workspace/WorkspaceContextRail'
+import { WorkspaceViewport } from './components/workspace/WorkspaceViewport'
 import { WorkspaceNavigation } from './components/WorkspaceNavigation'
 import { useWorkspaceLocation } from './lib/workspace-navigation'
 import { WebMcpProvider, WorkspaceWebMcpControl } from './lib/webmcp/provider.tsx'
@@ -301,6 +302,12 @@ function isWorkspaceProof(route: RouteDef): boolean {
   return ['workspace.work-proof', 'workspace.explore-proof', 'workspace.operate'].includes(route.id)
 }
 
+function workspaceBodyClass(route: RouteDef): string {
+  if (route.id === 'workspace.work-proof')
+    return 'workspace-body grid min-h-0 flex-1 overflow-auto grid-rows-[minmax(14rem,1fr)_minmax(16rem,1fr)] lg:grid-cols-2 lg:grid-rows-[minmax(16rem,1fr)]'
+  return isWorkspaceProof(route) ? 'workspace-body workspace-body-flow' : 'contents'
+}
+
 interface PrivateAppSurfaceProps extends Omit<RouteContentSurfaceProps, 'route'> {
   identityLoading?: boolean
   route: RouteDef
@@ -321,7 +328,7 @@ export function PrivateAppSurface({
     >
       <SidebarProvider defaultOpen>
         {!isWorkspaceProof(route) && <AppSidebar />}
-        <div className="flex min-w-0 flex-1 flex-col h-dvh overflow-hidden">
+        <WorkspaceViewport enabled={isWorkspaceProof(route)}>
           <AuthModeBanner identity={routeContentProps.identity} />
           {!isWorkspaceProof(route) && (
             <WorkspaceNavigation route={route} currentRole={routeContentProps.identity.role} />
@@ -344,13 +351,7 @@ export function PrivateAppSurface({
 
           {/* Legacy dashboard remains mounted only outside the redesigned workspace contexts */}
           {!isWorkspaceProof(route) && <DashboardSurface isDashboard={routeContentProps.isDashboard} />}
-          <div
-            className={
-              route.id === 'workspace.work-proof'
-                ? 'grid min-h-0 flex-1 overflow-auto grid-rows-[minmax(14rem,1fr)_minmax(16rem,1fr)] lg:grid-cols-2 lg:grid-rows-[minmax(16rem,1fr)]'
-                : 'contents'
-            }
-          >
+          <div className={workspaceBodyClass(route)}>
             <RouteContentSurface route={route} {...routeContentProps} />
             {/* One stable assistant instance across workspace contexts. */}
             <ChatPanel
@@ -358,7 +359,7 @@ export function PrivateAppSurface({
               isPrimary={routeContentProps.isChat || route.id === 'workspace.work-proof'}
             />
           </div>
-        </div>
+        </WorkspaceViewport>
       </SidebarProvider>
     </WorkspaceCommandsProvider>
   )

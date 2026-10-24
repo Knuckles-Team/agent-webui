@@ -31,7 +31,8 @@ No task above names a requirement ID individually; together they must close ever
 - [x] Add container-width panes and bounded reading widths to Work, Explore and Operate under WEBUI-DESIGN-R002.1. Add keyboard-operable optional context disclosures. This is partial delivery.
 - [ ] WEBUI-DESIGN-R002.1: Complete screenshot/task review and attach merged-revision acceptance evidence.
 - [ ] WEBUI-DESIGN-R004.1: Implement full mobile and arbitrary-aspect feature parity. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
-- [ ] WEBUI-DESIGN-R004.2: Implement resize, fold and visual viewport continuity. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
+- [x] Add retained workspace visual-viewport sizing, safe-area padding and deferred focused-control reveal under WEBUI-DESIGN-R004.2. This is partial delivery.
+- [ ] WEBUI-DESIGN-R004.2: Complete fold, native keyboard, 200-percent browser zoom, stream and graph acceptance. Attach the exact merged revision and evidence.
 - [ ] WEBUI-DESIGN-R005.1: Implement accessible interruptible semantic zoom. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
 - [ ] WEBUI-DESIGN-R010: Implement measured performance under representative load. Run the planned acceptance in test-spec.md. Attach the exact merged revision and evidence. No runtime result is claimed by this specification.
 
@@ -50,3 +51,23 @@ These receipts cover partial layout work under WEBUI-DESIGN-R002.1. The full
 requirement remains open. They do not establish all-route mobile parity, real-service task completion, manual
 screen-reader acceptance, semantic zoom, or release acceptance. The generated
 status remains authoritative after merge; no status file is hand-edited.
+
+## Partial viewport continuity evidence
+
+The retained workspace boundary sizes to the visual viewport at normal scale.
+It preserves mounted editors and reveals focus after resized scroll areas settle.
+Pinch zoom keeps the existing layout. Short viewports can scroll the workspace
+chrome and task area instead of reducing the task area to zero.
+
+Validation on the topic branch based on `3d49ff399e1653c8b68689544a1b5f1699e7b4b4`:
+
+- Workspace component suite: 13 files, 95 tests passed.
+- Two rendered query journeys passed in Chromium with reduced motion.
+  Native viewport resize and simulated keyboard occlusion retain drafts and pending results.
+- Three existing Work browser journeys passed, including task inspection and cancellation review.
+- Typecheck, focused ESLint, production asset regeneration and strict documentation build passed.
+
+This is partial WEBUI-DESIGN-R004.2 evidence. Native soft-keyboard, fold-device,
+200-percent browser zoom, stream and graph journeys, manual accessibility and
+live-provider acceptance remain open. Synthetic identity and API responses do
+not establish authenticated service acceptance.
