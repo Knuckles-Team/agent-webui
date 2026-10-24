@@ -34,7 +34,7 @@ Exercise real enhanced file/config/editor handlers in no-auth: the interim imple
 
 | Child | Source evidence or remaining acceptance |
 |---|---|
-| WEBUI-IDENTITY-R003.1.1 | `tests/test_explicit_auth_modes.py` checks explicit anonymous policy and refusal, not positive governed effects. |
+| WEBUI-IDENTITY-R003.1.1 | `tests/test_explicit_auth_modes.py` checks explicit anonymous policy and refusal, not positive governed effects. Register probe routes through `application_composer` before the SPA mount so the same checks run against installed candidate wheels with packaged assets. |
 | WEBUI-IDENTITY-R003.1.2 | Installed anonymous journeys, UI/WebMCP parity and native effects remain open. |
 | WEBUI-IDENTITY-R003.2.1 | `tests/test_explicit_auth_modes.py` refuses missing or untyped EG owners. |
 | WEBUI-IDENTITY-R003.2.2 | Installed EG login/session/logout and HTTP/WebSocket qualification remain open. |
@@ -42,3 +42,5 @@ Exercise real enhanced file/config/editor handlers in no-auth: the interim imple
 | WEBUI-IDENTITY-R003.3.2 | OIDC protocol fixtures and live provider acceptance remain open. |
 
 The source markers cover only configuration and refusal behavior. R003.1, R003.2 and R003.3 retain every original parent requirement. R010 renewal and mode-transition acceptance remains open.
+
+For the bounded R010 HTTP expiry repair, exercise `/auth/session` through the same session resolver as API traffic. An expired session with no usable renewal must report unauthenticated. Both session-status and API responses must expire its browser cookie chunks. Successful renewal must return the refreshed status and persist the renewed cookies. This does not close the full R010 concurrency, stream, WebSocket or mode-transition acceptance.

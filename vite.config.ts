@@ -7,7 +7,10 @@ const BACKEND_DEV_SERVER_PORT = process.env.BACKEND_PORT ?? 38001
 
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss(), tsconfigPaths({ root: import.meta.dirname })],
-  base: '',
+  // The SPA is mounted at the origin root. Relative assets resolve beneath
+  // /workspace/ on a cold nested-route entry. Explicit Vite --base overrides
+  // remain available for deployments that host assets beneath another prefix.
+  base: '/',
   // The server swaps this placeholder for a per-response CSP nonce (src/lib/csp-nonce.ts).
   html: { cspNonce: 'AGENT_WEBUI_CSP_NONCE' },
   resolve: {

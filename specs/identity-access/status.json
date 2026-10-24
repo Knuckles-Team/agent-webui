@@ -170,11 +170,11 @@
         "7fae4bf34f52"
       ],
       "verified_by": [
-        "tests/test_explicit_auth_modes.py:103",
-        "tests/test_explicit_auth_modes.py:148",
+        "tests/test_explicit_auth_modes.py:104",
+        "tests/test_explicit_auth_modes.py:150",
         "tests/test_explicit_auth_modes.py:17",
-        "tests/test_explicit_auth_modes.py:56",
-        "tests/test_explicit_auth_modes.py:71"
+        "tests/test_explicit_auth_modes.py:57",
+        "tests/test_explicit_auth_modes.py:72"
       ]
     },
     {
@@ -192,7 +192,7 @@
         "7fae4bf34f52"
       ],
       "verified_by": [
-        "tests/test_explicit_auth_modes.py:184"
+        "tests/test_explicit_auth_modes.py:186"
       ]
     },
     {
@@ -210,7 +210,7 @@
         "7fae4bf34f52"
       ],
       "verified_by": [
-        "tests/test_explicit_auth_modes.py:175"
+        "tests/test_explicit_auth_modes.py:177"
       ]
     },
     {

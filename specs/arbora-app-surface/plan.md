@@ -609,3 +609,12 @@ Map the legacy readiness address through a typed compatibility adapter with read
 Focus the readiness heading on arrival without creating a Back-navigation loop.
 Preserve missing-route, access-denied, invalid-response and transport-failure distinctions before retiring the legacy view.
 Keep integration package descriptors separate from connector identities; their missing contract prevents that alias migration.
+
+## Cold-entry asset resolution amendment
+
+Fix nested workspace entry in the existing Vite configuration. Keep the static
+host and admission behavior unchanged. Exercise generated asset references for
+the default origin root and an explicit asset prefix. Drive the production
+bundle through the installed Arbora application composer and WebUI static mount.
+Use synthetic identity/data only; retain the full R046.2.2 and R050 acceptance
+obligations. No additional requirement decomposition is introduced.

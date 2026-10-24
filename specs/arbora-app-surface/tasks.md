@@ -220,3 +220,19 @@ Qualify catalog and readiness actions, history, focus, keyboard and mobile acces
 
 Bounded readiness alias and catalog/readiness action qualification passed desktop and mobile installed synthetic journeys.
 Full R049.1.2 acceptance remains open, including other destinations, native controls, live providers and production identity.
+
+## Cold-entry asset resolution
+
+- [x] Replace relative production asset references with origin-root references;
+  retain explicit Vite asset-base overrides.
+- [x] Exercise generated default and prefixed script/style URLs (2 build tests).
+- [x] Run cold Work, Explore and Operate entries and reloads against the installed
+  Arbora composer and production WebUI static mount (3 browser tests passed).
+- [ ] Complete R046.2.2 navigation and R050 provider acceptance independently.
+
+The production build/typecheck and strict documentation build passed. The served
+fixture used installed Arbora 0.1.7, Agent Utilities 3.1.0, SDK 0.2.2 and
+epistemic-graph 2.27.5 with this candidate WebUI source and built assets. Browser
+identity and API data were synthetic; static documents, lazy chunks, styles and
+fonts crossed the real HTTP mount in Chromium 156.0.8078.4. This is not
+live-provider or auth acceptance.

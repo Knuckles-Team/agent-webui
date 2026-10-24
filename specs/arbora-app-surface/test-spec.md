@@ -321,3 +321,14 @@ Fleet POST qualification remains blocked: the installed host requires `kg:write`
 Both `fleet.status` and `fleet.catalog.list` returned HTTP 403 before the installed invocation pipeline.
 No grants or admission rules changed. Synthetic browser identity does not qualify production authentication or provider connectivity.
 The integrations alias remains open because package identity and frontend contribution mappings lack a supported served contract.
+
+## Cold-entry asset resolution
+
+`src/lib/__tests__/build-asset-base.test.ts` builds a minimal entry using the real
+Vite configuration and checks script/style resolution from a nested URL. Cover
+the default root and explicit `/arbora/` asset prefix.
+`e2e/workspace-cold-entry.browser.ts` uses a separately started production static
+host, never Vite dev. Open Work, Explore and Operate in fresh browser contexts.
+Check successful document/assets and rendered headings. Reload with the query
+retained. Only identity and API responses are synthetic. These tests do
+not prove authentication, real providers, full migration or R050 acceptance.
