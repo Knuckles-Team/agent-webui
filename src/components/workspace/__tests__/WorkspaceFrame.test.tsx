@@ -156,3 +156,55 @@ it('keeps compact context disclosure open for disabled and modified links', () =
   fireEvent.click(screen.getByRole('link', { name: 'Available' }), { ctrlKey: true })
   expect(trigger).toHaveAttribute('aria-expanded', 'true')
 })
+
+// spec: WEBUI-DESIGN-R004.1.1
+it('reflows the automatic map default but preserves an explicit expansion and retained task', () => {
+  let wide = true
+  const media = Object.assign(new EventTarget(), {
+    get matches() {
+      return wide
+    },
+  })
+  Object.defineProperty(media, 'matches', { get: () => wide })
+  const original = window.matchMedia
+  const match = vi
+    .spyOn(window, 'matchMedia')
+    .mockImplementation((query) => (query === '(min-width: 64rem)' ? (media as MediaQueryList) : original(query)))
+  try {
+    render(<Surface />)
+    const draft = screen.getByRole('textbox', { name: 'Retained draft' })
+    expect(screen.getByRole('button', { name: 'Hide map' })).toBeInTheDocument()
+    act(() => {
+      wide = false
+      media.dispatchEvent(new Event('change'))
+    })
+    expect(screen.getByRole('button', { name: 'Show map' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Retained draft' })).toBe(draft)
+    act(() => {
+      wide = true
+      media.dispatchEvent(new Event('change'))
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Focus map' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Focus current task' }))
+    act(() => {
+      wide = false
+      media.dispatchEvent(new Event('change'))
+    })
+    expect(screen.getByRole('button', { name: 'Hide map' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Hide map' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Focus map' }))
+    expect(screen.getByRole('searchbox')).toHaveFocus()
+    act(() => {
+      wide = true
+      media.dispatchEvent(new Event('change'))
+    })
+    act(() => {
+      wide = false
+      media.dispatchEvent(new Event('change'))
+    })
+    expect(screen.getByRole('button', { name: 'Hide map' })).toBeInTheDocument()
+    expect(screen.getByRole('searchbox')).toHaveFocus()
+  } finally {
+    match.mockRestore()
+  }
+})

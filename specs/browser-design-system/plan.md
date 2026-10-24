@@ -144,3 +144,17 @@ Update stable documentation paths only after the complete capture succeeds.
 A read-only CI job publishes review artifacts, never repository writes.
 Human review precedes committing refreshed images. The six documentation views
 are not full responsive, provider, accessibility or design-system acceptance.
+
+## Hosted Canopy feedback — 2026-10-24
+
+R004.1.1 preserves a useful task region after narrow reflow: only the automatic
+wide-screen map default collapses at narrow widths. Explicit Map/Focus map choices
+and focused map controls remain available in a bounded scrollable region. Capture
+top-entry and focused-task states separately; scrolling the task into view is not
+evidence that the top header is clipped. The floating chat launcher's reserved
+band remains a separate native-chat composition obligation until replaced.
+
+R002.1.1 treats the stored `glass` theme as a compatibility alias for light. Show Canopy
+light for either stored value, not two identical palette choices. Keep the existing
+independent Glass framing/Opaque framing material control.
+Assert effective classes, surface transparency and motion preferences in browsers.

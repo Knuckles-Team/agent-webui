@@ -18,6 +18,7 @@ import type { ObjectSetResult } from '@/components/views/ObjectExplorerView'
 import type { OntologyObject } from '@/components/views/ObjectView'
 
 const button = 'explore-control'
+const revealNavigationFocus = () => true
 
 function useDestination(location: string) {
   try {
@@ -31,9 +32,11 @@ function useDestination(location: string) {
 export default function ExploreWorkspace({
   active = true,
   showHeading = true,
+  revealFocus = revealNavigationFocus,
 }: {
   active?: boolean
   showHeading?: boolean
+  revealFocus?: () => boolean
 }) {
   const { identity, loading: identityLoading } = useIdentity()
   const canRead = active && !identityLoading && !identity.needsSignIn && roleAtLeast(identity.role, 'user')
@@ -91,12 +94,17 @@ export default function ExploreWorkspace({
   )
   usePageContextPublisher(conversationContext)
   useEffect(() => {
-    if (previous.current !== location) {
-      if (state.entity) heading.current?.focus({ preventScroll: true })
-      else searchInput.current?.focus({ preventScroll: true })
-      previous.current = location
+    if (!canRead) {
+      previous.current = null
+      return
     }
-  }, [location, state.entity])
+    if (previous.current === location) return
+    const target = state.entity ? heading.current : searchInput.current
+    if (!target) return
+    previous.current = location
+    // Do not steal focus on fresh entry. Native navigation focus reveals the task.
+    if (revealFocus()) target.focus()
+  }, [canRead, location, state.entity, revealFocus])
   const transition = (next: ExploreState) => {
     try {
       navigateExplore({ ...next, query: next.query ?? state.query }, identity.role)

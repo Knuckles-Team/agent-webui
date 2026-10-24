@@ -521,3 +521,21 @@
     display: none;
   }
 }
+
+/* A deliberately expanded map remains useful without replacing the narrow task. */
+@container workspace-frame (max-width: 63.999rem) {
+  .workspace-map {
+    min-height: 0;
+    max-height: min(14rem, 30dvh);
+    padding-top: 0.5rem;
+  }
+  .workspace-map-context {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .workspace-map-context p {
+    display: none;
+  }
+}

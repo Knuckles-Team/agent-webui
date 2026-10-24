@@ -12,7 +12,9 @@ contrast, screenshot or assistive-technology review.
 
 Canopy Glass uses the sRGB hex defaults below. `:root` defines the light
 sage/ivory palette; `.dark` overrides it with deep green. `.glass` inherits the
-light palette and reserves translucency for shell chrome, not reading surfaces.
+light palette as a compatibility alias. The appearance picker shows Canopy light
+for either stored value, not a duplicate palette option. Glass framing/Opaque
+framing independently controls shell translucency, never reading surfaces.
 Existing custom accent hues remain an optional override through the current
 provider, with theme-specific lightness and bounded chroma. Legacy blue has ambiguous provenance: it may have been saved automatically or chosen explicitly.
 Without a choice marker, it uses Canopy defaults while retaining the stored base color.

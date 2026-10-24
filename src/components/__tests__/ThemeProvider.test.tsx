@@ -2,6 +2,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ThemeProvider, useTheme } from '../theme-provider'
+import { WorkspaceAppearance } from '../workspace/WorkspaceAppearance'
 
 vi.mock('@/hooks/use-theme-colorizer', () => ({
   useThemeColorizer: () => ({ baseColor: '0.52 0.18 260', setBaseColor: vi.fn() }),
@@ -152,4 +153,21 @@ it('keeps preference changes usable when storage is denied', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Dark' }))
   expect(document.documentElement.dataset.density).toBe('comfortable')
   expect(document.documentElement).toHaveClass('dark')
+})
+
+// spec: WEBUI-DESIGN-R002.1.1
+it('presents legacy glass as the light palette with an independent material preference', () => {
+  localStorage.setItem('theme-transition-test', 'glass')
+  render(
+    <ThemeProvider storageKey="theme-transition-test">
+      <WorkspaceAppearance />
+    </ThemeProvider>,
+  )
+  fireEvent.click(screen.getByText('Appearance'))
+  expect(screen.getByRole('combobox', { name: 'Theme' })).toHaveValue('light')
+  expect(screen.queryByRole('option', { name: 'Canopy glass' })).not.toBeInTheDocument()
+  expect(localStorage.getItem('theme-transition-test')).toBe('glass')
+  fireEvent.change(screen.getByRole('combobox', { name: 'Surfaces' }), { target: { value: 'opaque' } })
+  expect(document.documentElement.dataset.transparency).toBe('opaque')
+  expect(document.documentElement).toHaveClass('glass')
 })

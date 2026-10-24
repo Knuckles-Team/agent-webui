@@ -926,3 +926,16 @@ Reuse the current provider for density and appearance preferences. The companion
 material, expanded-header, motion and fallback behavior. This is a staged theme implementation. The 58-destination migration, nested execution, all-leaf semantic navigation, native WebMCP equivalence and real-provider evidence remain incomplete.
 R045–R050 retain every broader obligation. Qualify remaining graph, editor, run,
 administration and authentication surfaces through their existing owners.
+
+### Hosted Explore focus correction — 2026-10-24
+
+R049.2.1 focus belongs to the active evidence journey: closing detail returns to
+the retained search, and selecting evidence focuses its heading. The query-lens
+wrapper must not override that focus when its identity/selection-keyed subtree
+remounts or React repeats effects. Query/validation lens changes still focus their
+own heading. Native focus must reveal the destination at narrow widths rather
+than leaving keyboard focus outside the visible scrollport. Fresh entry must not
+steal focus or jump the viewport. Keep identity retirement and existing typed navigation unchanged.
+
+Preserve R005.6.2's visible registry purpose in all workspace shells. Use a compact
+paragraph, not a redundant page hero; density must not delete required purpose.

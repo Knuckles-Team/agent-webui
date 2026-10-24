@@ -237,3 +237,21 @@ Preserve the task's bottom scroll clearance for the fixed assistant launcher.
 At short heights, keyboard-focus and hit-test the final relationship action.
 Check 200% text enlargement separately from the existing native 200% browser-zoom journey.
 Enlarged navigation must wrap without local or document overflow. These checks do not accept all-route accessibility.
+
+### Hosted feedback regressions
+
+Repeat the integrated Explore composition under StrictMode, including close and
+reselection, rather than qualifying only the inner evidence component. Browser
+coverage must retain the same focus assertions. Use accessible combobox names
+for appearance controls. Capture fresh narrow entry, top-entry after resize,
+explicitly expanded map and focused selected evidence separately. Assert the
+header starts at the viewport top in entry captures. Automatic narrow map
+collapse must leave visible task content. Explicit map expansion must stay
+keyboard reachable without consuming the entire short viewport. The legacy
+glass class must resolve the same light palette. Opaque and reduced-motion
+assertions independently prove material and behavior rather than filename labels.
+
+Narrow evidence interaction must click an actual result, then assert the selected
+heading is focused and in the viewport. Close from that visible detail and assert
+the retained search is focused and visible. Do not first click a lower inspector
+control: Playwright scrolls it and mask missing application focus reveal.

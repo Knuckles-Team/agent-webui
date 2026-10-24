@@ -187,7 +187,8 @@
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
         "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:93",
-        "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:94"
+        "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:94",
+        "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:160"
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R004.1.1"
@@ -247,7 +248,7 @@
         "src/__tests__/design-tokens.test.ts:120",
         "src/__tests__/design-tokens.test.ts:152",
         "src/__tests__/design-tokens.test.ts:181",
-        "src/components/__tests__/ThemeProvider.test.tsx:87"
+        "src/components/__tests__/ThemeProvider.test.tsx:158"
       ]
     },
     {
@@ -259,7 +260,8 @@
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
-        "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:94"
+        "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:94",
+        "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:160"
       ]
     },
     {
@@ -271,7 +273,7 @@
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:3",
-        "src/components/__tests__/ThemeProvider.test.tsx:88"
+        "src/components/__tests__/ThemeProvider.test.tsx:89"
       ]
     }
   ]

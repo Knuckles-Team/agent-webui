@@ -71,8 +71,23 @@ function revealFocusedMap(map: HTMLElement | null) {
     focused.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
 }
 function useMapDisclosure() {
-  const [showMap, setShowMap] = useState(() => window.matchMedia('(min-width: 64rem)').matches)
+  const [wide, setWide] = useState(() => window.matchMedia('(min-width: 64rem)').matches)
+  const [mapChoice, setShowMap] = useState<boolean | null>(null)
+  const showMap = mapChoice ?? wide
   const map = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const media = window.matchMedia('(min-width: 64rem)')
+    function reflow() {
+      // Preserve actual interaction; only the automatic wide default collapses.
+      if (!media.matches && map.current?.contains(document.activeElement)) setShowMap(true)
+      setWide(media.matches)
+    }
+    reflow()
+    media.addEventListener('change', reflow)
+    return () => {
+      media.removeEventListener('change', reflow)
+    }
+  }, [])
   const focusRequested = useRef(false)
   useLayoutEffect(() => {
     if (!showMap || !focusRequested.current) return
@@ -80,10 +95,10 @@ function useMapDisclosure() {
     focusRequested.current = false
   }, [showMap])
   function focusMap() {
+    setShowMap(true)
     if (showMap) focusMapFilter(map.current)
     else {
       focusRequested.current = true
-      setShowMap(true)
     }
   }
   return { showMap, setShowMap, map, focusMap }

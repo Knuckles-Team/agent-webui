@@ -30,7 +30,7 @@ export function WorkspaceAppearance() {
         <label>
           Theme
           <select
-            value={appearance.theme}
+            value={appearance.theme === 'glass' ? 'light' : appearance.theme}
             onChange={(event) => {
               appearance.setTheme(event.target.value as typeof appearance.theme)
             }}
@@ -38,7 +38,6 @@ export function WorkspaceAppearance() {
             <option value="system">System</option>
             <option value="light">Canopy light</option>
             <option value="dark">Canopy dark</option>
-            <option value="glass">Canopy glass</option>
           </select>
         </label>
         <label>

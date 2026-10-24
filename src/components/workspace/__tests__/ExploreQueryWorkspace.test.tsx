@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { StrictMode } from 'react'
 // spec: WEBUI-APPS-R049.1.7
 import { act, fireEvent, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -204,4 +205,23 @@ describe('attended query editor tools', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm provider submission' }))
     expect(api.validateOntologyCandidate).not.toHaveBeenCalled()
   })
+})
+
+// spec: WEBUI-APPS-R049.2.1
+it('leaves evidence focus with the integrated journey through StrictMode close and reselection', async () => {
+  window.history.replaceState({}, '', '/workspace/explore?q=retained&entity=a')
+  renderWithProviders(<StrictMode>{surface()}</StrictMode>)
+  expect(await screen.findByRole('heading', { name: 'a' })).not.toHaveFocus()
+  fireEvent.click(screen.getByRole('button', { name: 'Close evidence details' }))
+  expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveFocus()
+  expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveValue('retained')
+  act(() => {
+    window.history.pushState({}, '', '/workspace/explore?q=retained&entity=a')
+    window.dispatchEvent(new Event('history-state-changed'))
+  })
+  expect(await screen.findByRole('heading', { name: 'a' })).toHaveFocus()
+  fireEvent.click(screen.getByRole('link', { name: 'query' }))
+  expect(screen.getByRole('heading', { name: 'Explore' })).toHaveFocus()
+  fireEvent.click(screen.getByRole('link', { name: 'evidence' }))
+  expect(screen.getByRole('heading', { name: 'a' })).toHaveFocus()
 })

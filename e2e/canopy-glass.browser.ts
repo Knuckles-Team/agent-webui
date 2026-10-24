@@ -25,7 +25,7 @@ const records = names.map((title, index) => ({
   title,
 }))
 
-async function prepare(page: Page, theme: string, securityWarning = false) {
+async function prepare(page: Page, theme: string, securityWarning = false, selected = true) {
   const failures: string[] = []
   page.on('pageerror', (error) => failures.push(error.message))
   await page.route('**/*', (route) => {
@@ -79,8 +79,9 @@ async function prepare(page: Page, theme: string, securityWarning = false) {
     localStorage.setItem('pydantic-chat-ui-theme', value)
     localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1')
   }, theme)
-  await page.goto('/workspace/explore?q=forest&entity=evidence%3A0')
-  await expect(page.getByRole('region', { name: 'Selected evidence' }).getByRole('heading')).toHaveText(names[0])
+  await page.goto(`/workspace/explore?q=forest${selected ? '&entity=evidence%3A0' : ''}`)
+  if (selected)
+    await expect(page.getByRole('region', { name: 'Selected evidence' }).getByRole('heading')).toHaveText(names[0])
   await expect(page.getByText('12 matching objects')).toBeVisible()
   await page.evaluate(() => document.fonts.ready)
   return failures
@@ -109,6 +110,17 @@ for (const variant of [
     test.setTimeout(120_000)
     await page.emulateMedia({ reducedMotion: variant.motion })
     const failures = await prepare(page, variant.theme)
+    await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${variant.theme}\\b`))
+    await expect(page.locator('html')).toHaveAttribute('data-transparency', 'glass')
+    const shellMaterial = await page.locator('.workspace-context-rail').evaluate((el) => {
+      const style = getComputedStyle(el)
+      return { filter: style.backdropFilter, surface: style.backgroundColor }
+    })
+    expect(shellMaterial.filter).not.toBe('none')
+    await info.attach('effective-material', {
+      body: JSON.stringify({ ...variant, ...shellMaterial }),
+      contentType: 'application/json',
+    })
     const details = page.getByRole('region', { name: 'Selected evidence' })
     const search = page.getByRole('textbox', { name: 'Find evidence' })
     for (const viewport of [
@@ -122,9 +134,13 @@ for (const variant of [
       await expandedHeader(page)
       await expect(search).toHaveValue('forest')
       await expect(details.getByRole('heading')).toHaveText(names[0])
-      await page
-        .getByRole('region', { name: 'Current workspace task' })
-        .evaluate((el) => el.scrollIntoView({ block: 'nearest' }))
+      await page.locator('.workspace-viewport').evaluate((el) => el.scrollTo(0, 0))
+      await expect(page.locator('#workspace-home')).toBeInViewport()
+      expect((await page.locator('.workspace-context-rail').boundingBox())!.y).toBe(0)
+      if (viewport.width < 1024) {
+        await expect(page.getByRole('button', { name: 'Show map' })).toBeVisible()
+        await expect(page.getByRole('heading', { name: 'Explore', exact: true })).toBeInViewport()
+      }
       if (variant.motion === 'reduce')
         await expect(details.locator('.explore-detail-content')).toHaveCSS('animation-name', 'none')
       await page.screenshot({
@@ -165,10 +181,10 @@ test('Canopy appearance preferences retain the task and remove effects', async (
   await prepare(page, 'light')
   const appearance = page.locator('.workspace-appearance summary')
   await appearance.click()
-  await page.getByLabel('Density', { exact: true }).selectOption('comfortable')
+  await page.getByRole('combobox', { name: 'Density', exact: true }).selectOption('comfortable')
   await expect(page.locator('html')).toHaveAttribute('data-density', 'comfortable')
-  await page.getByLabel('Motion', { exact: true }).selectOption('reduce')
-  await page.getByLabel('Surfaces', { exact: true }).selectOption('opaque')
+  await page.getByRole('combobox', { name: 'Motion', exact: true }).selectOption('reduce')
+  await page.getByRole('combobox', { name: 'Surfaces', exact: true }).selectOption('opaque')
   await expect(page.locator('.workspace-map')).toHaveCSS('backdrop-filter', 'none')
   await page.keyboard.press('Escape')
   await expect(appearance).toBeFocused()
@@ -265,3 +281,36 @@ async function contrast(target: Locator) {
     return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)
   })
 }
+
+// Fresh entry is different evidence from a retained, already-scrolled task.
+test('Canopy narrow entry and explicit map keep a usable task', async ({ page }, info) => {
+  await page.setViewportSize({ width: 320, height: 740 })
+  await prepare(page, 'glass', false, false)
+  await expect(page.getByRole('button', { name: 'Show map' })).toBeVisible()
+  expect((await page.locator('.workspace-context-rail').boundingBox())!.y).toBe(0)
+  await expect(page.locator('#workspace-home')).toBeInViewport()
+  await expect(page.getByRole('textbox', { name: 'Find evidence' })).toBeInViewport()
+  await page.screenshot({ path: info.outputPath('canopy-narrow-entry.png'), animations: 'disabled' })
+  await page.getByRole('button', { name: 'Focus map', exact: true }).click()
+  const filter = page.getByRole('searchbox', { name: 'Filter loaded destinations' })
+  await expect(filter).toBeFocused()
+  await expect(filter).toBeInViewport()
+  const map = page.getByRole('complementary', { name: 'Workspace map' })
+  expect((await map.boundingBox())!.height).toBeLessThanOrEqual(223)
+  await page.screenshot({ path: info.outputPath('canopy-narrow-map-expanded.png'), animations: 'disabled' })
+  await page.getByRole('button', { name: 'Hide map' }).click()
+  const detail = page.getByRole('region', { name: 'Selected evidence' })
+  await page
+    .getByRole('list', { name: 'Evidence results' })
+    .getByRole('link', { name: new RegExp(names[0]) })
+    .click()
+  await expect(detail.getByRole('heading')).toBeFocused()
+  await expect(detail.getByRole('heading')).toBeInViewport()
+  await page.screenshot({ path: info.outputPath('canopy-narrow-focused-detail.png'), animations: 'disabled' })
+  await detail.getByRole('button', { name: 'Close evidence details' }).click()
+  const search = page.getByRole('textbox', { name: 'Find evidence' })
+  await expect(search).toBeFocused()
+  await expect(search).toBeInViewport()
+  await expect(search).toHaveValue('forest')
+  await page.screenshot({ path: info.outputPath('canopy-narrow-returned-search.png'), animations: 'disabled' })
+})
