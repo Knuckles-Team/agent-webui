@@ -1,4 +1,4 @@
-import { chromium, expect, test } from '@playwright/test'
+import { chromium, expect, test, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -132,73 +132,172 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) {
   })
 }
 
-test('persistent map keyboard access at actual 200% browser zoom', async ({}, info) => {
-  const profile = await mkdtemp(join(tmpdir(), 'persistent-zoom-'))
-  const extension = fileURLToPath(new URL('fixtures/zoom', import.meta.url))
-  const context = await chromium.launchPersistentContext(profile, {
-    channel: 'chromium',
-    headless: true,
-    viewport: null,
-    args: ['--window-size=640,900', `--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
-  })
-  try {
-    const worker = context.serviceWorkers()[0] || (await context.waitForEvent('serviceworker'))
-    const page = context.pages()[0]
-    await page.route('**/auth/session', (route) =>
-      route.fulfill({
-        json: {
-          authenticated: true,
-          subject: 'workspace-reader',
-          tenant: 'synthetic',
-          webui_role: 'maintainer',
-          roles: ['kg:read'],
-        },
+async function tabTo(page: Page, target: Locator) {
+  for (let count = 0; count < 100; count++) {
+    if (await target.evaluate((element) => element === document.activeElement)) return
+    await page.keyboard.press('Tab')
+  }
+  throw new Error('Workspace control is not reachable by keyboard')
+}
+async function hit(target: Locator) {
+  await expect
+    .poll(() =>
+      target.evaluate((element) => {
+        const box = element.getBoundingClientRect()
+        return [box.left + 8, box.right - 8].every((x) =>
+          [box.top + 8, box.bottom - 8].every((y) => element.contains(document.elementFromPoint(x, y))),
+        )
       }),
     )
-    await page.route('**/api/**', (route) =>
-      route.fulfill({ status: 501, json: { detail: 'Unavailable in synthetic zoom fixture' } }),
-    )
-    await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
-    await page.emulateMedia({ reducedMotion: 'reduce' })
-    await page.goto('http://127.0.0.1:5204/workspace/operate')
-    const before = await page.evaluate(() => ({ width: innerWidth, dpr: devicePixelRatio }))
-    const zoom = await worker.evaluate(`(async () => {
-      const [tab] = await chrome.tabs.query({ active: true });
-      await chrome.tabs.setZoom(tab.id, 2);
-      return chrome.tabs.getZoom(tab.id);
-    })()`)
-    expect(zoom).toBe(2)
-    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(before.dpr * 2)
-    const map = page.getByRole('complementary', { name: 'Workspace map' })
-    await map.getByRole('button', { name: 'List', exact: true }).click()
-    const target = map.locator('.workspace-map-list').getByRole('link', { name: 'Explore', exact: true })
-    await map.getByRole('button', { name: 'List', exact: true }).focus()
-    for (let count = 0; count < 12; count++) {
-      if (await target.evaluate((el) => el === document.activeElement)) break
-      await page.keyboard.press('Tab')
-    }
-    await expect(target).toBeFocused()
-    await expect
-      .poll(() =>
-        target.evaluate((el) => {
-          const box = el.getBoundingClientRect()
-          return [box.left + 8, box.right - 8].every((x) =>
-            [box.top + 8, box.bottom - 8].every((y) => el.contains(document.elementFromPoint(x, y))),
+    .toBe(true)
+}
+for (const reducedMotion of ['reduce', 'no-preference'] as const)
+  for (const nativeZoom of [false, true]) {
+    test(`keyboard filter list breadcrumbs history ${reducedMotion} zoom=${nativeZoom}`, async ({}, info) => {
+      test.setTimeout(120000)
+      const profile = await mkdtemp(join(tmpdir(), 'persistent-acceptance-profile-'))
+      const extension = fileURLToPath(new URL('fixtures/zoom', import.meta.url))
+      const context = await chromium.launchPersistentContext(profile, {
+        channel: 'chromium',
+        headless: true,
+        viewport: nativeZoom ? null : { width: 320, height: 740 },
+        args: ['--window-size=640,900', `--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
+      })
+      try {
+        const page = context.pages()[0]
+        await page.route('**/auth/session', (route) =>
+          route.fulfill({
+            json: {
+              authenticated: true,
+              subject: 'workspace-reader',
+              tenant: 'synthetic',
+              webui_role: 'maintainer',
+              roles: ['kg:read'],
+              csrf_token: crypto.randomUUID(),
+            },
+          }),
+        )
+        await page.route('**/api/**', (route) => {
+          const path = new URL(route.request().url()).pathname
+          const result = (value: unknown) =>
+            route.fulfill({
+              json: { ok: true, result: { value }, meta: { registry_digest: 'synthetic', api_version: '1' } },
+            })
+          if (path === '/api/v1/ops/fleet.status')
+            return result({ children: { catalog: { state: 'up' }, documents: { state: 'idle' } } })
+          if (path === '/api/v1/ops/fleet.catalog.list')
+            return result({
+              items: [
+                {
+                  id: 'search',
+                  server: 'catalog',
+                  name: 'Search',
+                  kind: 'tool',
+                  description: 'Synthetic search capability',
+                },
+                {
+                  id: 'lookup',
+                  server: 'catalog',
+                  name: 'Lookup',
+                  kind: 'tool',
+                  description: 'Synthetic lookup capability',
+                },
+              ],
+              next_cursor: null,
+            })
+          if (path.startsWith('/api/configure')) return route.fulfill({ json: { models: [], builtinTools: [] } })
+          if (path === '/api/enhanced/models') return route.fulfill({ json: { models: [], default_id: '' } })
+          if (path === '/api/chats') return route.fulfill({ json: [] })
+          if (path.startsWith('/api/chats/')) return route.fulfill({ json: { messages: [] } })
+          return route.fulfill({ status: 501, json: { detail: 'Unavailable in the synthetic workspace fixture' } })
+        })
+        await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+
+        await page.emulateMedia({ reducedMotion })
+        await page.goto('http://127.0.0.1:5204/workspace/operate?server=catalog')
+        const map = page.getByRole('complementary', { name: 'Workspace map' })
+        await expect(
+          map
+            .locator('.workspace-map-branches')
+            .getByRole('link', { name: 'Capability: Search (catalog)', exact: true }),
+        ).toBeVisible()
+        if (nativeZoom) {
+          const worker = context.serviceWorkers()[0] || (await context.waitForEvent('serviceworker'))
+          const dpr = await page.evaluate(() => devicePixelRatio)
+          const zoom = await worker.evaluate(
+            `(async()=>{const [tab]=await chrome.tabs.query({active:true});await chrome.tabs.setZoom(tab.id,2);return chrome.tabs.getZoom(tab.id)})()`,
           )
-        }),
-      )
-      .toBe(true)
-    const session = await context.newCDPSession(page)
-    const shot = await session.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
-    await info.attach('persistent-map-native-200-percent', {
-      body: Buffer.from(shot.data, 'base64'),
-      contentType: 'image/png',
+          expect(zoom).toBe(2)
+          await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(dpr * 2)
+        }
+        const filter = map.getByRole('searchbox', { name: 'Filter loaded destinations' })
+        const historyLength = await page.evaluate(() => history.length)
+        await tabTo(page, filter)
+        await hit(filter)
+        await page.keyboard.type('Lookup')
+        const lookup = map
+          .locator('.workspace-map-list')
+          .getByRole('link', { name: 'Capability: Lookup (catalog)', exact: true })
+        await expect(lookup).toBeVisible()
+        expect(await page.evaluate(() => history.length)).toBe(historyLength)
+        await tabTo(page, lookup)
+        await hit(lookup)
+        await page.keyboard.press('Enter')
+        await expect(page).toHaveURL(/server=catalog&item=lookup$/)
+        await expect(page.getByRole('heading', { name: 'Operate', exact: true })).toBeFocused()
+        await expect(
+          page
+            .getByRole('region', { name: 'Current workspace task' })
+            .getByRole('heading', { name: 'Lookup', exact: true }),
+        ).toBeVisible()
+        await tabTo(page, filter)
+        await page.keyboard.press('Control+A')
+        await page.keyboard.press('Backspace')
+        const beforeList = await page.evaluate(() => history.length)
+        const list = map.getByRole('button', { name: 'List', exact: true })
+        await tabTo(page, list)
+        await hit(list)
+        await page.keyboard.press('Space')
+        expect(await page.evaluate(() => history.length)).toBe(beforeList)
+        const search = map
+          .locator('.workspace-map-list')
+          .getByRole('link', { name: 'Capability: Search (catalog)', exact: true })
+        await tabTo(page, search)
+        await hit(search)
+        await page.keyboard.press('Enter')
+        await expect(page).toHaveURL(/server=catalog&item=search$/)
+        const crumb = map
+          .getByRole('navigation', { name: 'Selected workspace path' })
+          .getByRole('link', { name: 'Fleet: catalog', exact: true })
+        await tabTo(page, crumb)
+        await hit(crumb)
+        await page.keyboard.press('Enter')
+        await expect(page).toHaveURL(/server=catalog$/)
+        await repeatHistory(page, map, crumb)
+        const session = await context.newCDPSession(page)
+        const shot = await session.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
+        await info.attach('keyboard-acceptance', { body: Buffer.from(shot.data, 'base64'), contentType: 'image/png' })
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      } finally {
+        await context.close()
+        await rm(profile, { recursive: true, force: true })
+      }
     })
-    await page.keyboard.press('Enter')
-    await expect(page).toHaveURL(/workspace\/explore$/)
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  } finally {
-    await context.close()
-    await rm(profile, { recursive: true, force: true })
   }
-})
+
+async function repeatHistory(page: Page, map: Locator, crumb: Locator) {
+  for (let i = 0; i < 3; i++) {
+    await page.goBack()
+    await expect(page).toHaveURL(/server=catalog&item=search$/)
+    await expect(
+      map
+        .getByRole('navigation', { name: 'Selected workspace path' })
+        .getByRole('link', { name: 'Capability: Search (catalog)', exact: true }),
+    ).toHaveAttribute('aria-current', 'location')
+    await expect(page.getByRole('heading', { name: 'Operate', exact: true })).toBeFocused()
+    await page.goForward()
+    await expect(page).toHaveURL(/server=catalog$/)
+    await expect(crumb).toHaveAttribute('aria-current', 'location')
+    await expect(page.getByRole('heading', { name: 'Operate', exact: true })).toBeFocused()
+  }
+}

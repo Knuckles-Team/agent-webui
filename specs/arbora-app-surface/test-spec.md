@@ -377,3 +377,9 @@ This evidence supports partial WEBUI-APPS-R046, WEBUI-APPS-R049 and WEBUI-DESIGN
 The existing broad requirements and tasks remain open.
 The map includes loaded admitted destinations, not every legacy capability or dynamic leaf.
 Live authentication, installed providers, manual screen readers and physical fold hardware remain unverified.
+
+The persistent-map keyboard matrix also covers filter, list selection, breadcrumb return and three Back/Forward cycles.
+It runs at narrow width and native 200-percent zoom with normal and reduced motion.
+Edge hit tests include the fixed assistant trigger and its animated halo.
+The outer workspace scrollport reserves focus clearance when the persistent frame is active.
+This supplements the existing four-viewport continuity journey, including short landscape.

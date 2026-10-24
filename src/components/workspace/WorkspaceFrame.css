@@ -1,3 +1,6 @@
+.workspace-viewport:has(.workspace-frame) {
+  scroll-padding-bottom: 8rem;
+}
 .workspace-frame {
   display: flex;
   flex: 1;
