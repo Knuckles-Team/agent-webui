@@ -15,7 +15,7 @@ The browser presents one Arbora product identity and a first-class Apps section.
 | ID | Behavior | Related ID | Evidence |
 |---|---|---|---|
 | WEBUI-APPS-R038 | Titles, metadata, webmanifest, assets, theme, UI copy and published Pages identity consistently say Arbora | WEBUI-APPS-R002 | Asset regeneration + rendered snapshot + Pages build |
-| WEBUI-APPS-R039 | Package/import, npm metadata, release image, WebMCP IDs, skills, browser storage/consent and environment variable names keep the agent-webui component identity; only user-visible strings are rebranded (operator decision 2026-10-09) | WEBUI-APPS-R003 | Build and wheel tests |
+| WEBUI-APPS-R039 | Package/import, npm metadata, WebMCP IDs, skills, browser storage/consent and environment variable names keep the agent-webui component identity. Only user-visible strings are rebranded (operator decision 2026-10-09) | WEBUI-APPS-R003 | Build and wheel tests |
 | WEBUI-APPS-R040 | `apps` is one section in `nav-registry.ts`. Each app declares route, capability, typed client, WebMCP page and optional Atlas renderer in one `AppSurface` | WEBUI-APPS-R001 | Contract and route-census tests |
 | WEBUI-APPS-R041 | Native and validated package-contributed apps resolve to the same shape. Untrusted descriptors cannot register executable code, arbitrary URLs or extra privileges | WEBUI-APPS-R001 | Invalid descriptor and denied capability tests |
 | WEBUI-APPS-R042 | Markets consumes the contract without duplicating scanner/chart or gateway wiring in the shell | FIN-UI-R003, WEBUI-APPS-R001 | First-consumer integration test |

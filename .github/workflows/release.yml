@@ -13,10 +13,9 @@ name: Release
 #                     a tag is allowed), builds the wheel and sdist, verifies an
 #                     existing immutable PyPI release, publishes only when
 #                     absent, then creates the GitHub release for the tag.
-#   publish-docker -- needs: publish-pypi. Builds and publishes the container
-#                     image FROM THE SAME COMMIT; the image installs the
-#                     wheel and every dependency (agent-utilities included)
-#                     from PyPI.
+#
+# PyPI (wheel and sdist) is the only release output; Arbora installs the
+# package through its `webui` extra and serves it in-process.
 
 on:
   push:
@@ -176,96 +175,3 @@ jobs:
         uses: ./.pipeline-contract/.github/actions/create-version-release
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
-  # ── STAGE 2: build + publish the container image. Needs: publish-pypi --
-  # unreachable unless the PyPI stage above (including its tag-and-release
-  # step) already succeeded on this exact commit.
-  publish-docker:
-    name: publish-docker
-    needs: [release-intent, publish-pypi]
-    if: needs.release-intent.outputs.release == 'true' && needs.publish-pypi.result == 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    # D-ORC-10-style gate (matches agent-utilities' own publish-docker job):
-    # a protected GitHub Environment enables required-reviewer / wait-timer
-    # rules once an admin configures them under
-    # Settings > Environments > docker-publish. Safe to set here because this
-    # is a normal job (runs-on + steps), NOT a `uses:` job -- putting
-    # `environment:` on a `uses:` job makes the GitHub Actions parser reject
-    # the whole file ("Unexpected value 'uses'"), which is exactly why
-    # `publish-pypi` above does not have one.
-    environment: docker-publish
-    steps:
-      # Belt-and-suspenders confirmation that this commit really is a
-      # published release, not merely a commit that happens to follow one:
-      # this workflow is triggered by a `vX.Y.Z` tag pointing at this exact
-      # commit. Failing loudly here when no such tag exists catches a
-      # workflow_dispatch from an untagged commit.
-      - name: Require a vX.Y.Z release tag on the published commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          tags="$(gh api "repos/${{ github.repository }}/tags?per_page=100" \
-            | jq -r --arg sha "$HEAD_SHA" '.[] | select(.commit.sha == $sha) | .name')"
-          if ! grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$tags"; then
-            echo "::error::release gate: no vX.Y.Z tag points at $HEAD_SHA -- publish-pypi should have created one on success. Refusing to publish the image against an unreleased commit."
-            exit 1
-          fi
-          echo "release tag verified: $tags"
-
-      - name: Checkout agent-webui
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Compute build metadata
-        id: meta_build
-        run: |
-          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-          echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: ${{ secrets.DOCKER_USERNAME }}/agent-webui
-          tags: |
-            type=semver,pattern={{version}}
-            type=sha
-            type=raw,value=latest
-
-      - name: Build and push
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: docker/Dockerfile
-          target: runtime
-          build-args: |
-            BUILD_SHA=${{ steps.meta_build.outputs.sha }}
-            BUILD_TIME=${{ steps.meta_build.outputs.time }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-      # Same check docker/build_and_push.sh runs locally before it will push --
-      # confirms the pushed image's served bundle actually carries this commit,
-      # not a stale cached layer, using the tag `metadata-action` just resolved
-      # (so this pulls the exact manifest just pushed, not a mutable `:latest`
-      # someone else could have moved in the meantime).
-      - name: Verify pushed image serves today's build-info.txt
-        run: |
-          set -euo pipefail
-          IMAGE_REF="$(head -n1 <<<"${{ steps.meta.outputs.tags }}")"
-          INFO="$(docker run --rm --entrypoint sh "${IMAGE_REF}" -c \
-            'cat "$(python3 -c "import agent_webui, os; print(os.path.join(os.path.dirname(agent_webui.__file__), \"dist\", \"build-info.txt\"))")"')"
-          echo "${INFO}"
-          grep -q "sha=${{ steps.meta_build.outputs.sha }}$" <<<"${INFO}"

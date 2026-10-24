@@ -69,7 +69,6 @@ browser -> React application -> Agent WebUI FastAPI host
 - `agent/agent_webui/observability.py`: redacted request telemetry.
 - `public/`: static assets copied into the production build.
 - `docs/` and `mkdocs.yml`: published reference documentation.
-- `docker/`: reproducible image and deployment scripts.
 - `agent/agent_webui/__tests__/`: backend contract and security tests.
 - `src/**/__tests__/` and `e2e/`: frontend and browser tests.
 
@@ -90,8 +89,8 @@ cp .env.example .env
 
 Every locked dependency, agent-utilities and agent-connector-sdk included,
 resolves from PyPI. `scripts/siblings.lock` pins only the agent-utilities
-checkout under `.uv-workspace-siblings/` that supplies shared gate scripts; the
-bootstrap checks it out (an existing workspace symlink is left alone).
+checkout under `.uv-workspace-siblings/` that supplies shared gate scripts. The
+bootstrap checks it out and leaves an existing workspace symlink alone.
 
 Run the development services in separate terminals:
 
@@ -120,13 +119,9 @@ uvx pre-commit run --config .config/pre-commit.yaml --all-files --hook-stage man
 python -m agent_webui.server --security-doctor --host 0.0.0.0
 ```
 
-Build and deploy only through the repository scripts:
-
-```bash
-docker/deploy.sh --build-only
-docker/deploy.sh --skip-deploy
-docker/deploy.sh
-```
+agent-webui ships only as a PyPI package (wheel and sdist). Arbora installs it
+through its `webui` extra and serves it in-process on port 8080; there is no
+container image or deploy script in this repository.
 
 ## Quality gates
 

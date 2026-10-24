@@ -1,8 +1,9 @@
 # Deployment and operations
 
-Arbora ships as a Python wheel and a container image. In a complete Arbora
-deployment it runs as the browser-facing presentation service and composes the
-canonical gateway routes provided by Arbora and Agent Utilities.
+Agent Web UI ships only as a Python package on PyPI (wheel and sdist). Arbora
+installs it through its `webui` extra and serves it in-process on port 8080,
+next to MCP and REST. It is the browser-facing presentation service and composes
+the canonical gateway routes provided by Arbora and Agent Utilities.
 
 ## Security boundary
 
@@ -36,82 +37,31 @@ sources must be exact origins in the corresponding
 directive injection are rejected. Custom HTML rendering also requires
 `AGENT_WEBUI_CSP_CUSTOM_RENDERING=1`.
 
-## Build and deploy
+## Install and serve
 
-Use the repository-owned deployment script for local releases:
-
-```bash
-docker/deploy.sh
-```
-
-It selects an available Docker or BuildKit backend, builds and checks the image,
-pushes it by immutable digest, deploys that digest, waits for availability,
-rebuilds the live-mounted frontend bundle, and checks the running pod serves
-the new assets. It prints the current rollback digest before changing the
-deployment and prints the exact rollback command when it finishes.
-
-Two non-deploying modes are available:
+There is no container image. Install Arbora with the `webui` extra and enable
+the co-service:
 
 ```bash
-docker/deploy.sh --build-only   # build and verify locally
-docker/deploy.sh --skip-deploy  # build, verify, and push without changing Kubernetes
+uvx --from "arbora[webui]" arbora --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
-The lower-level `docker/build_and_push.sh` script is the build half used by
-`docker/deploy.sh`. It supports `--backend docker` and `--backend buildkit` when
-backend autodetection is not appropriate.
-
-Do not replace these scripts with a hand-written image build or deployment sequence.
-The contract covers two independent artifacts:
-
-1. the digest-pinned backend image; and
-2. the frontend `dist/` directory that may be shadowed by a live source mount.
-
-A rollout restart does not change a digest-pinned image, and an image update
-alone does not refresh a shadowed frontend bundle. The deployment script
-updates and checks both.
-
-## Concurrent operators
-
-Only one Arbora Kubernetes Deployment is active for a given environment. When
-another operator is deploying, build and push without changing the cluster:
-
-```bash
-docker/deploy.sh --skip-deploy
-```
-
-Coordinate which digest should become active, then run the normal deployment command
-after the existing operation completes. Never race two `kubectl set image` operations.
+Upgrade by moving Arbora's pinned `agent-webui` release; roll back by pinning
+the previous release. After either, run the security doctor and confirm the
+served frontend bundle matches the release.
 
 ## GitHub release pipeline
 
 `.github/workflows/ci.yml` runs the pull request and main checks and never
 publishes. `.github/workflows/release.yml` is the release authority and runs
-only on a `v*` tag or a manual dispatch. It publishes the
-Python package first and builds the container from the same commit only after
-that publication succeeds. The container job checks that the required
-epistemic-graph release is resolvable before building.
+only on a `v*` tag or a manual dispatch. It publishes the wheel and sdist to
+PyPI and creates the GitHub release; PyPI is the only release output.
 
-`.github/workflows/pages.yml` owns documentation publication. Documentation
-failures remain visible without publishing a package or image from an
-unverified release job.
+`.github/workflows/pages.yml` owns documentation publication.
 
-## Kubernetes contract
+After an upgrade, confirm:
 
-The deployment manifest describes the workload shape, configuration, mounts, probes,
-and readiness policy. Its `image` value is a recorded deployment point, not a mutable
-release channel. Promote a newly checked image by its digest through `docker/deploy.sh`.
-
-After deployment, confirm:
-
-- the pod's `imageID` matches the promoted digest;
 - liveness and readiness probes pass;
 - the WebUI security doctor reports `ok`;
-- the served frontend bundle matches the release commit; and
+- the served frontend bundle matches the release; and
 - authenticated Arbora and MCP delegation paths return governed responses.
-
-## Rollback
-
-Use the digest and rollback command printed by `docker/deploy.sh`. A rollback
-must restore the backend image and the compatible frontend bundle together,
-then repeat the health, security, and asset checks above.
