@@ -97,3 +97,15 @@ Under WEBUI-DESIGN-R005.1, capture the actual focused opener when the modal open
 On cancellation, restore a connected, visible, enabled opener or the visible command trigger.
 If responsive layout hides both, focus the enclosing More summary without reopening its disclosure.
 Native selection and URL navigation retain destination-owned focus rather than restoring stale context.
+
+## Documentation screenshot refresh — 2026-10-24
+
+WEBUI-DESIGN-R011 owns repeatable visual documentation of the workspace.
+Capture the actual Work, Explore and Operate routes at existing narrow and wide sizes.
+Use fixed synthetic responses, time, theme and reduced motion.
+Wait for scene content, local fonts and layout. Refuse live backend traffic.
+Persist PNG files and source/fixture/viewport provenance independently of reporters.
+Update stable documentation paths only after the complete capture succeeds.
+A read-only CI job publishes review artifacts, never repository writes.
+Human review precedes committing refreshed images. The six documentation views
+are not full responsive, provider, accessibility or design-system acceptance.

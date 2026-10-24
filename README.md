@@ -119,6 +119,10 @@ Issues and pull requests are welcome. Read [AGENTS.md](AGENTS.md), keep browser
 and server authority boundaries intact, and run the repository validation suite
 before opening a pull request.
 
+Refresh the documented workspace views with `pnpm screenshots:refresh`. See the
+[screenshot guide](docs/screenshots.md) for synthetic fixtures, hosted capture,
+provenance and review before committing refreshed images.
+
 ## License
 
 Arbora Agent Web UI is available under the [MIT License](LICENSE).

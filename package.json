@@ -35,7 +35,11 @@
     "test:watch": "vitest watch",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "screenshots:refresh": "node scripts/documentation-screenshots.mjs refresh",
+    "screenshots:check": "node scripts/documentation-screenshots.mjs check",
+    "screenshots:test": "node --test scripts/documentation-screenshots.test.mjs",
+    "screenshots:import": "node scripts/documentation-screenshots.mjs import"
   },
   "files": [
     "dist"

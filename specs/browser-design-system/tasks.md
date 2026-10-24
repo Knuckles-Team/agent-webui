@@ -155,3 +155,11 @@ Dark identity and all three palette cancellation cases also passed.
 Light stopped at the pointer-resize assertion: the expected 14-rem width remained 22 rem.
 The fixture now waits for a stable, actionable separator after keyboard resizing before beginning the raw drag.
 It retains the same 14-rem result and preference-persistence assertions. Fresh full-matrix confirmation remains pending.
+
+## Documentation screenshot refresh
+
+- [ ] WEBUI-DESIGN-R011: qualify all six synthetic workspace captures in hosted Chromium and inspect the actual pixels.
+- [ ] WEBUI-DESIGN-R011: commit the PNGs and provenance after pixel review. Update README/docs images and pass the integrity command and CI.
+
+Initial source supplies capture, import and integrity commands. Rendered qualification and the documentation images remain pending.
+This bounded workflow does not complete the earlier design requirements.
