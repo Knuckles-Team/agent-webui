@@ -363,6 +363,10 @@ The old client required principal metadata, but the retired page did not show it
 Reprobe invokes the supported collector again; it does not claim the old refresh-mode semantics.
 Full provider, authentication and operational migration acceptance remain open.
 
+### Qualification source backup
+
+`e2e/fixtures/operate-qualification/` preserves the manual synthetic scripts used for the catalog, readiness and migration evidence above.
+Historical assertions remain candidate-specific. This backup adds no implementation or acceptance claim.
 WEBUI-APPS-R049.1.3 continuation uses mounted WorkWorkspace tests for selected
 trace refresh, failed-refresh evidence withdrawal, retry, loaded-parent
 navigation and return to trace. Preserve conversation/task URL fields. A
