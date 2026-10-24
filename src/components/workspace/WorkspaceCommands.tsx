@@ -10,6 +10,7 @@ import { useWebMcpToolSet } from '@/lib/webmcp/provider'
 import { makeTool } from '@/lib/webmcp/tools'
 import { WorkspaceCommandDestinations } from './WorkspaceCommandDestinations'
 import { useWorkspaceViewportBoundary } from './useWorkspaceViewportBoundary'
+import { useWorkspacePaletteFocus } from './useWorkspacePaletteFocus'
 
 export interface WorkspaceCommand {
   id: string
@@ -157,6 +158,7 @@ function OwnedPalette({ context }: { context: CommandContext }) {
   const [surface, setSurface] = useState<HTMLDivElement | null>(null)
   useWorkspaceViewportBoundary(surface, open)
   const location = useWorkspaceLocation()
+  const { trigger, onOpenAutoFocus, onCloseAutoFocus, onNavigate } = useWorkspacePaletteFocus(location)
   const active = useRef(true)
   const generation = useMemo(() => ({ id: crypto.randomUUID() }), [context.entries, context.role, location])
   const live = useRef(generation)
@@ -186,10 +188,11 @@ function OwnedPalette({ context }: { context: CommandContext }) {
     (href: string) => {
       if (!active.current || live.current !== generation || !context.entries.some((entry) => entry.href === href))
         throw new Error('Workspace command is stale or unavailable')
+      onNavigate()
       navigate(href, context.role)
       setOpen(false)
     },
-    [context.entries, context.role, generation],
+    [context.entries, context.role, generation, onNavigate],
   )
   const tools = useMemo(() => {
     if (!context.entries.length) return []
@@ -263,10 +266,14 @@ function OwnedPalette({ context }: { context: CommandContext }) {
       }}
     >
       <DialogTrigger asChild>
-        <button className="min-h-11 rounded border px-3 text-sm">Find destination</button>
+        <button ref={trigger} className="min-h-11 rounded border px-3 text-sm">
+          Find destination
+        </button>
       </DialogTrigger>
       <DialogContent
         ref={setSurface}
+        onOpenAutoFocus={onOpenAutoFocus}
+        onCloseAutoFocus={onCloseAutoFocus}
         className="top-[min(50%,calc(var(--workspace-visible-height,100dvh)/2))] max-h-[min(85dvh,calc(var(--workspace-visible-height,100dvh)*0.85))] overflow-auto motion-reduce:animate-none sm:max-w-3xl"
         showCloseButton={false}
       >
