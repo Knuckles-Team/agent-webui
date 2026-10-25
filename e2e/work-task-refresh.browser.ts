@@ -25,6 +25,7 @@ test('records Chromium native disabled-button focus behavior', async ({ page }, 
 for (const outcome of ['renewed', 'refused'] as const) {
   test(`Work deferred refresh preserves native keyboard focus and blocks duplicates: ${outcome}`, async ({ page }) => {
     let reads = 0
+    let refreshing = false
     let release!: () => void
     const pending = new Promise<void>((resolve) => {
       release = resolve
@@ -48,8 +49,8 @@ for (const outcome of ['renewed', 'refused'] as const) {
       if (path === '/api/chats') return route.fulfill({ json: [] })
       if (path === '/api/enhanced/sessions') return route.fulfill({ json: [{ id: 'refresh-task' }] })
       if (path === '/api/enhanced/sessions/refresh-task') {
-        reads++
-        if (reads > 1) {
+        if (refreshing) {
+          reads++
           await pending
           if (outcome === 'refused') return route.fulfill({ status: 403, json: { detail: 'Denied' } })
         }
@@ -59,7 +60,7 @@ for (const outcome of ['renewed', 'refused'] as const) {
             status: { state: 'working' },
             contextId: 'retained-context',
             artifacts: [
-              { artifactId: 'reply', parts: [{ kind: 'text', text: reads === 1 ? 'Old output' : 'Renewed output' }] },
+              { artifactId: 'reply', parts: [{ kind: 'text', text: refreshing ? 'Renewed output' : 'Old output' }] },
             ],
           },
         })
@@ -71,8 +72,10 @@ for (const outcome of ['renewed', 'refused'] as const) {
     const refresh = page.getByRole('button', { name: 'Refresh task', exact: true })
     const cancel = page.getByRole('button', { name: 'Cancel task…', exact: true })
     await refresh.focus()
+    // Initial StrictMode mount reads may be aborted/reissued; defer only the explicit refresh.
+    refreshing = true
     await page.keyboard.press('Enter')
-    await expect.poll(() => reads).toBe(2)
+    await expect.poll(() => reads).toBe(1)
     await expect(refresh).toHaveAttribute('aria-disabled', 'true')
     await expect(refresh).toBeFocused()
     await expect(cancel).toBeDisabled()
@@ -84,7 +87,7 @@ for (const outcome of ['renewed', 'refused'] as const) {
       ;(element as HTMLButtonElement).click()
     })
     await expect(refresh).toBeFocused()
-    expect(reads).toBe(2)
+    expect(reads).toBe(1)
     release()
     if (outcome === 'renewed') {
       await expect(page.getByText('Renewed output', { exact: true })).toBeVisible()
@@ -96,6 +99,6 @@ for (const outcome of ['renewed', 'refused'] as const) {
       await expect(cancel).toHaveCount(0)
       await expect(page.getByText('Renewed output', { exact: true })).toHaveCount(0)
     }
-    expect(reads).toBe(2)
+    expect(reads).toBe(1)
   })
 }
