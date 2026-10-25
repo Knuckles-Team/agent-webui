@@ -127,6 +127,13 @@ jobs:
           path: test-results/canopy-glass/
           retention-days: 14
           if-no-files-found: error
+      - name: Install pinned documentation image helper
+        if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/screenshot-tools"
+          "$RUNNER_TEMP/screenshot-tools/bin/python" -m pip install -r scripts/screenshot-requirements.txt
+          echo "SCREENSHOT_PYTHON=$RUNNER_TEMP/screenshot-tools/bin/python" >> "$GITHUB_ENV"
+
       - name: Documentation screenshot contract
         id: documentation_contract
         if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}

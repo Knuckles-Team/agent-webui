@@ -31,7 +31,7 @@ composer; narrow captures show only the initial viewport.
 These fixtures show two stored project records and a read-only detail panel.
 They do not establish live search or graph-service availability.
 
-![Desktop Knowledge with two synthetic project records and a read-only detail panel.](assets/screenshots/explore-wide.png)
+![Desktop Knowledge with two synthetic project records and a read-only detail panel.](assets/screenshots/explore-wide.webp)
 
 ![320px Knowledge with synthetic project search results; detail content continues below the initial viewport.](assets/screenshots/explore-narrow.png)
 
@@ -57,7 +57,10 @@ repainting, cropping or substituting scenes.
 - Browser: Chromium 156.0.8078.4 on Linux; UTC and reduced motion.
 
 The [manifest](assets/screenshots/manifest.json) records routes, viewport sizes,
-source revision and SHA-256 digest for all six original PNGs. These are WebUI
+source revision and SHA-256 digest for all six original PNGs. The wide Knowledge
+image is stored as lossless WebP under the one-million-byte artifact budget. Its
+additional delivery record binds the WebP digest, decoded RGBA digest and optimizer
+versions. Original capture provenance remains unchanged; the importer checks dimensions, pixels and color semantics before publishing. These are WebUI
 captures, not native Rust TUI screenshots. Native `tuig` gallery qualification
 belongs to its separate capture workflow.
 
@@ -68,6 +71,9 @@ From the repository root, install the locked dependencies and Chromium once:
 ```bash
 pnpm install --frozen-lockfile
 pnpm exec playwright install chromium
+python3 -m venv .venv-screenshots
+.venv-screenshots/bin/python -m pip install -r scripts/screenshot-requirements.txt
+export SCREENSHOT_PYTHON="$PWD/.venv-screenshots/bin/python"
 ```
 
 Then refresh the six images and validate the result:
@@ -96,7 +102,7 @@ backend WebSockets are blocked. Unknown API requests fail the capture.
 Stable assets live in `docs/assets/screenshots/`:
 
 - `work-wide.png` and `work-narrow.png`
-- `explore-wide.png` and `explore-narrow.png`
+- `explore-wide.webp` and `explore-narrow.png`
 - `operate-wide.png` and `operate-narrow.png`
 - `manifest.json`: source revision, dirty-tree flag, fixture version, route,
   viewport, theme, browser, platform and SHA-256 digest for each image
@@ -123,8 +129,12 @@ pnpm screenshots:import /path/to/extracted/documentation-screenshots
 pnpm screenshots:check
 ```
 
-The importer validates all six PNGs and records before copying them into the
-stable folder and assembling the manifest. It rejects partial or mismatched sets.
+The importer validates all six source PNGs and records before publishing the
+stable images and manifest. The pinned Pillow helper encodes only the wide
+Knowledge capture as lossless WebP and compares decoded RGBA bytes exactly.
+Missing tools, unsupported color metadata and pixel mismatches fail before publication.
+Files above the one-million-byte storage budget also fail before publication.
+The read-only CI artifact still contains all six original PNGs. The importer rejects partial or mismatched sets.
 Commit the reviewed images and manifest in a normal pull request.
 CI never commits or pushes image updates automatically.
 

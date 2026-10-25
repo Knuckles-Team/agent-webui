@@ -69,3 +69,74 @@ test('incomplete and duplicate captures cannot replace the published set', async
   await assert.rejects(readCaptures('/unused', []), /Incomplete screenshot set/)
   await assert.rejects(readCaptures('/unused', Array(6).fill({ file: 'work-wide.png' })), /Duplicate screenshot/)
 })
+
+test('lossless delivery retains original provenance and verifies decoded pixels', async () => {
+  const { prepareDelivery, validateDelivered } = await import('./documentation-screenshots.mjs')
+  const bytes = await readFile(new URL('../docs/assets/screenshots/atlas-workspace.png', import.meta.url))
+  const viewport = { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+  const capture = { file: 'explore-wide.png', path: '/workspace/explore', viewport }
+  const record = {
+    ...capture,
+    fixture,
+    fixedTime,
+    theme,
+    sourceRevision: 'a'.repeat(40),
+    sourceDirty: false,
+    deviceScaleFactor: 1,
+    browser: 'Chromium 1',
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  }
+  const prepared = prepareDelivery(record, bytes, capture)
+  assert.equal(prepared.record.file, record.file)
+  assert.equal(prepared.record.sha256, record.sha256)
+  assert.equal(prepared.record.sourceRevision, record.sourceRevision)
+  assert.equal(prepared.record.delivery.file, 'explore-wide.webp')
+  assert.equal(prepared.record.delivery.encoding, 'lossless-webp')
+  assert.equal(prepared.record.delivery.optimizer.pillow, '12.3.0')
+  validateDelivered(prepared.record, prepared.bytes, capture)
+  for (const change of [
+    { sha256: '0'.repeat(64) },
+    { rgbaSha256: '0'.repeat(64) },
+    { encoding: 'lossy-webp' },
+    { file: '../escape.webp' },
+    { optimizer: { pillow: '0', libwebp: '0' } },
+  ])
+    assert.throws(() =>
+      validateDelivered(
+        { ...prepared.record, delivery: { ...prepared.record.delivery, ...change } },
+        prepared.bytes,
+        capture,
+      ),
+    )
+  assert.throws(() => validateDelivered({ ...prepared.record, sourceRevision: 'main' }, prepared.bytes, capture))
+  assert.throws(() => validateDelivered(prepared.record, Buffer.alloc(1_000_001), capture), /storage budget/)
+  const lossy = Buffer.from(prepared.bytes)
+  lossy.write('VP8 ', 12)
+  assert.throws(() =>
+    validateDelivered(
+      {
+        ...prepared.record,
+        delivery: { ...prepared.record.delivery, sha256: createHash('sha256').update(lossy).digest('hex') },
+      },
+      lossy,
+      capture,
+    ),
+  )
+  assert.throws(() => prepareDelivery(record, bytes, capture, '/missing/screenshot-python'), /optimizer unavailable/)
+})
+
+test('incomplete import leaves the published set untouched', async () => {
+  const { mkdtemp, writeFile, rm, readdir } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { importCaptures } = await import('./documentation-screenshots.mjs')
+  const folder = await mkdtemp(join(tmpdir(), 'screenshot-import-'))
+  try {
+    await writeFile(join(folder, 'keep.txt'), 'published')
+    await assert.rejects(importCaptures('/missing/source-artifact', folder))
+    assert.deepEqual(await readdir(folder), ['keep.txt'])
+    assert.equal(await readFile(join(folder, 'keep.txt'), 'utf8'), 'published')
+  } finally {
+    await rm(folder, { recursive: true, force: true })
+  }
+})
