@@ -25,7 +25,10 @@
     "WEBUI-DESIGN-R004.1.1",
     "WEBUI-DESIGN-R005.2",
     "WEBUI-DESIGN-R002.1.2",
-    "WEBUI-DESIGN-R004.1.2"
+    "WEBUI-DESIGN-R004.1.2",
+    "WEBUI-DESIGN-R005.3",
+    "WEBUI-DESIGN-R005.4",
+    "WEBUI-DESIGN-R005.5"
   ],
   "requirements": [
     {
@@ -105,7 +108,10 @@
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R005.1",
-        "WEBUI-DESIGN-R005.2"
+        "WEBUI-DESIGN-R005.2",
+        "WEBUI-DESIGN-R005.3",
+        "WEBUI-DESIGN-R005.4",
+        "WEBUI-DESIGN-R005.5"
       ]
     },
     {
@@ -280,17 +286,17 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "12b5f5624953",
+        "24dca66c8a72",
         "38c8f13794ee",
         "456eeca84961",
-        "512d3e28f9d8",
-        "73051bf582bd"
+        "512d3e28f9d8"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
+        "e2e/canopy-glass.browser.ts:574",
         "src/__tests__/design-tokens.test.ts:121",
         "src/__tests__/design-tokens.test.ts:172",
-        "src/__tests__/design-tokens.test.ts:201",
-        "src/__tests__/design-tokens.test.ts:215"
+        "src/__tests__/design-tokens.test.ts:201"
       ]
     },
     {
@@ -339,6 +345,42 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
+    },
+    {
+      "id": "WEBUI-DESIGN-R005.3",
+      "title": "Contextual scenes preserve product meaning",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/components/workspace/WorkspaceWallpaper.tsx:1"
+      ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R005.4",
+      "title": "Wallpaper effects remain bounded and optional",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "24dca66c8a72",
+        "e039a440a145"
+      ],
+      "verified_by": [
+        "e2e/canopy-glass.browser.ts:467",
+        "e2e/canopy-glass.browser.ts:683",
+        "src/__tests__/design-tokens.test.ts:336",
+        "src/components/workspace/WorkspaceWallpaper.tsx:1",
+        "src/components/workspace/__tests__/WorkspaceWallpaper.test.tsx:1"
+      ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R005.5",
+      "title": "Weather ambience uses explicit consent and truthful conditions",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "e2e/canopy-glass.browser.ts:468",
+        "src/components/workspace/WorkspaceWallpaper.tsx:1",
+        "src/components/workspace/__tests__/WorkspaceWallpaper.test.tsx:1"
+      ]
     }
   ]
 }

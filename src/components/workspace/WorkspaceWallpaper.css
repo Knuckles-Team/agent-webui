@@ -1,0 +1,31 @@
+/* Decoration sits below every task/map control and never receives input. The
+   accepted photo, field floor, glass materials and typography remain intact. */
+.workspace-frame:has(.workspace-wallpaper[data-active='true']) {
+  position: relative;
+}
+.workspace-frame:has(.workspace-wallpaper[data-active='true']) > .workspace-frame-layout {
+  position: relative;
+  z-index: 1;
+}
+.workspace-wallpaper {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.14;
+  mix-blend-mode: lighten;
+}
+.workspace-wallpaper[hidden],
+.workspace-wallpaper[data-active='false'] {
+  display: none;
+}
+:root[data-transparency='opaque'] .workspace-wallpaper {
+  display: none;
+}
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  .workspace-wallpaper {
+    display: none;
+  }
+}

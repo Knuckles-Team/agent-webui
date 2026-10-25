@@ -6,6 +6,9 @@ type Theme = 'dark' | 'light' | 'glass' | 'system'
 type Density = 'compact' | 'comfortable'
 type Motion = 'system' | 'reduce'
 type Transparency = 'glass' | 'opaque'
+export type WallpaperMotion = 'off' | 'subtle' | 'expressive'
+export type WallpaperScene = 'canopy' | 'tree' | 'roots' | 'fluid'
+export type WallpaperWeather = 'clear' | 'rain' | 'snow' | 'thunderstorm' | 'fog' | 'heat' | 'cloudy'
 
 interface ThemeProviderProps {
   children: React.ReactNode
@@ -14,6 +17,12 @@ interface ThemeProviderProps {
 }
 
 interface ThemeProviderState {
+  wallpaperMotion: WallpaperMotion
+  setWallpaperMotion: (value: WallpaperMotion) => void
+  wallpaperScene: WallpaperScene
+  setWallpaperScene: (value: WallpaperScene) => void
+  wallpaperWeather: WallpaperWeather
+  setWallpaperWeather: (value: WallpaperWeather) => void
   theme: Theme
   setTheme: (theme: Theme) => void
   baseColor: string
@@ -28,6 +37,12 @@ interface ThemeProviderState {
 }
 
 const initialState: ThemeProviderState = {
+  wallpaperMotion: 'off',
+  setWallpaperMotion: () => undefined,
+  wallpaperScene: 'canopy',
+  setWallpaperScene: () => undefined,
+  wallpaperWeather: 'clear',
+  setWallpaperWeather: () => undefined,
   theme: 'system',
   setTheme: () => undefined,
   baseColor: '0.47 0.055 155',
@@ -79,6 +94,21 @@ export function ThemeProvider({
     ['glass', 'opaque'],
     'glass',
   )
+  const [wallpaperMotion, setWallpaperMotion] = usePreference<WallpaperMotion>(
+    'agent-webui.wallpaper-motion',
+    ['off', 'subtle', 'expressive'],
+    'off',
+  )
+  const [wallpaperScene, setWallpaperScene] = usePreference<WallpaperScene>(
+    'agent-webui.wallpaper-scene',
+    ['canopy', 'tree', 'roots', 'fluid'],
+    'canopy',
+  )
+  const [wallpaperWeather, setWallpaperWeather] = usePreference<WallpaperWeather>(
+    'agent-webui.wallpaper-weather',
+    ['clear', 'rain', 'snow', 'thunderstorm', 'fog', 'heat', 'cloudy'],
+    'clear',
+  )
   const { baseColor, accentMode, setBaseColor } = useThemeColorizer()
 
   useLayoutEffect(() => {
@@ -107,6 +137,12 @@ export function ThemeProvider({
     <ThemeProviderContext.Provider
       {...props}
       value={{
+        wallpaperMotion,
+        setWallpaperMotion,
+        wallpaperScene,
+        setWallpaperScene,
+        wallpaperWeather,
+        setWallpaperWeather,
         theme,
         setTheme,
         baseColor,

@@ -332,3 +332,14 @@ it('keeps inventoried ordinary workspace actions on the shared button primitive'
   expect(CSS_SOURCE).toContain('.ui-button:focus-visible')
   expect(CSS_SOURCE).toContain('.ui-button:disabled')
 })
+
+// spec: WEBUI-DESIGN-R005.4
+it('keeps decorative stacking out of the default glass backdrop ancestry', () => {
+  const wallpaper = readFileSync(
+    resolve(import.meta.dirname, '../components/workspace/WorkspaceWallpaper.css'),
+    'utf-8',
+  )
+  expect(wallpaper).not.toContain('isolation:')
+  expect(wallpaper).toContain(".workspace-frame:has(.workspace-wallpaper[data-active='true'])")
+  expect(wallpaper).toContain(".workspace-wallpaper[data-active='false']")
+})

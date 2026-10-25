@@ -5,6 +5,7 @@ import { WorkspaceMap } from './WorkspaceMap'
 import { WorkspaceMapResize } from './WorkspaceMapResize'
 import { useWorkspaceMapWidth } from './useWorkspaceMapWidth'
 import './WorkspaceFrame.css'
+import { WorkspaceWallpaper } from './WorkspaceWallpaper'
 
 function useHeaderSlots(enabled: boolean, owner: string) {
   const [slots, setSlots] = useState<{ toggle: HTMLElement | null; focus: HTMLElement | null }>({
@@ -121,6 +122,7 @@ export function WorkspaceFrame({ enabled, children }: { enabled: boolean; childr
       className={enabled ? 'workspace-frame' : 'contents'}
       style={{ '--workspace-map-size': `${width.width}rem` } as CSSProperties}
     >
+      {enabled && <WorkspaceWallpaper />}
       <FrameControls
         slots={slots}
         showMap={showMap}
