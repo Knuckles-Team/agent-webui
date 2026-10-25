@@ -349,8 +349,10 @@
     {
       "id": "WEBUI-DESIGN-R005.3",
       "title": "Contextual scenes preserve product meaning",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "04c4742838cb"
+      ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:711",
         "src/components/workspace/WorkspaceWallpaper.tsx:1"
