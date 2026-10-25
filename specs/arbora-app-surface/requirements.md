@@ -313,3 +313,9 @@ The original R049.2 requirement remains unchanged.
 | ID | Requirement | Verification |
 |---|---|---|
 | `WEBUI-APPS-R049.2.2` | **Remaining measured redesign acceptance.** Complete every original R049.2 obligation beyond the bounded shell/Explore source slice. Include complete Work/Operate composition and identical-fixture before/after tasks. Record navigation counts, scrolling distances, all-leaf search and actual layout evidence. Preserve keyboard, touch and native WebMCP qualification. Do not clip content or hide features to improve measurements. | Planned: publish baseline/redesigned task results and complete native interaction evidence under the original R049.2 acceptance criteria. Scoped presentation tests cannot close this row. |
+
+## Contextual Operate usage source
+
+| ID | Requirement | Verification |
+|---|---|---|
+| `WEBUI-APPS-R049.1.16` | **Absorb existing usage analysis into Operate.** Extract the current usage controller and shell-free KPI, breakdown, tool, activity, session, timeline, search and trace panels. Preserve explicit tenant, supported filters, selected session and return context across Health, Services and Usage. Retire protected data on owner, scope, request or selection changes. Denied and malformed responses must not become measured zero or stale success. Reuse existing API bindings. Do not infer analytics from tenant totals or activate effects. | Source tests cover typed history, mounted panels, reader refusal and admin tenant isolation. Include unavailable producers, hostile numeric data and reordered responses. A separate browser scenario retains keyboard, touch, 320px, short viewport and Back/Forward qualification. This bounded source row does not close R004.8, R006.4, R047, R049.1.2, WEBUI-API-R009/R011 or WEBUI-DESIGN-R004.1.2/R004.2.2; all broad criteria and installed-producer acceptance remain. |

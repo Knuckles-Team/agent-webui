@@ -883,8 +883,8 @@ remains unavailable, with no legacy fallback or fabricated graph.
 
 The bounded adapter validates the envelope, exact run/task identities, unique
 plan-step keys, explicit predecessor-to-dependent edges and evidence. The layout only places declared nodes; it does not schedule tasks or infer lineage.
-The inline diagram has an equivalent keyboard-accessible dependency list and
-wraps or scrolls within the existing Work panel at narrow widths. Labels remain
+The inline diagram has an equivalent keyboard-accessible dependency list.
+It wraps or scrolls within the existing Work panel at narrow widths. Labels remain
 plain text. Refresh, selection and identity changes retire the previous read;
 denied or malformed responses cannot reveal cached protected graph data.
 
@@ -1009,3 +1009,25 @@ Explicit retained-acceptance children now preserve those obligations in canonica
 Parent requirement text and qualified child evidence remain unchanged.
 Regenerate every spec status and audit ancestor states after source and receipt commits.
 The metadata regression must not create feature-acceptance bindings for retained work.
+
+### Contextual Operate usage — 2026-10-25
+
+R049.1.16 extracts the existing analytics presentation, not its standalone page shell.
+Operate keeps Health/Services context while selecting Usage, a session and its timeline.
+Use the current `/api/observability` bindings and server-derived user admission.
+Tenant totals from `usage.read` do not establish model costs, sessions or traces.
+The existing search, session detail and trace bindings have no tenant-filter argument.
+Do not issue those reads for an explicit foreign tenant or imply filtered results.
+The client has no instrumentation manifest, so a successful summary is not proof
+that every source is captured. No new backend, pricing, permissions or scheduler.
+Missing analytics and indexed harness producers remain explicit residuals under
+R004.8/R006.4 and WEBUI-API-R009/R011. Source and browser fixtures are not delivery
+of those producers. Keep broad navigation, authority, responsive and measured-design
+acceptance open under R047/R049.1.2 and WEBUI-DESIGN-R004.1.2/R004.2.2.
+
+Producer inspection found only client bindings for `/api/observability/*` in the
+current WebUI source, not matching WebUI host route implementations. The inspected
+Arbora `usage.read` operation declares only a tenant-scoped totals snapshot and
+`usage:read` scope. It is not an analytics/session replacement. Served analytics
+availability must therefore be demonstrated independently; this UI correctly
+shows unavailable responses instead of treating fixtures as producer delivery.

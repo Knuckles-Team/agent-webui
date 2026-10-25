@@ -23,36 +23,63 @@ export const OperateFleetSelectionSchema = z
 export const OperateStateSchema = OperateFleetSelectionSchema.safeExtend({
   connector: text.optional(),
   definition: text.optional(),
-}).refine((s) => !s.definition || Boolean(s.connector), 'A definition requires a connector')
+  lens: z.enum(['health', 'services', 'usage']).optional(),
+  usageTenant: text.optional(),
+  usagePanel: z.enum(['models', 'projects', 'agents', 'tools', 'activity', 'sessions', 'search', 'traces']).optional(),
+  usageSession: text.optional(),
+  usageDetail: z.enum(['overview', 'timeline']).optional(),
+  usageSearch: z.string().min(1).max(128).refine(safeText).optional(),
+  usageFrom: z.iso.date().optional(),
+  usageTo: z.iso.date().optional(),
+  usageModel: text.optional(),
+  usageProject: text.optional(),
+  usageAgent: text.optional(),
+  usageOrigin: text.optional(),
+})
+  .refine((s) => !s.definition || Boolean(s.connector), 'A definition requires a connector')
+  .refine((s) => !s.usageDetail || Boolean(s.usageSession), 'A timeline requires a session')
+  .refine((s) => !s.usageFrom || !s.usageTo || s.usageFrom <= s.usageTo, 'Usage date range is reversed')
 export type OperateState = z.infer<typeof OperateStateSchema>
 export const OPERATE_PATH = '/workspace/operate'
+const OPERATE_KEYS = [
+  'server',
+  'item',
+  'q',
+  'connector',
+  'definition',
+  'lens',
+  'usageTenant',
+  'usagePanel',
+  'usageSession',
+  'usageDetail',
+  'usageSearch',
+  'usageFrom',
+  'usageTo',
+  'usageModel',
+  'usageProject',
+  'usageAgent',
+  'usageOrigin',
+] as const
 export function parseOperateState(location: string): OperateState {
   const url = new URL(location, 'https://workspace.invalid')
   if (
     url.origin !== 'https://workspace.invalid' ||
     url.pathname !== OPERATE_PATH ||
     url.hash ||
-    [...url.searchParams.keys()].some((key) => !['server', 'item', 'q', 'connector', 'definition'].includes(key)) ||
-    ['server', 'item', 'q', 'connector', 'definition'].some((key) => url.searchParams.getAll(key).length > 1)
+    [...url.searchParams.keys()].some((key) => !(OPERATE_KEYS as readonly string[]).includes(key)) ||
+    OPERATE_KEYS.some((key) => url.searchParams.getAll(key).length > 1)
   )
     throw new Error('Invalid Operate destination')
-  return OperateStateSchema.parse({
-    server: url.searchParams.get('server'),
-    item: url.searchParams.get('item'),
-    q: url.searchParams.get('q') ?? '',
-    ...(url.searchParams.has('connector') ? { connector: url.searchParams.get('connector') } : {}),
-    ...(url.searchParams.has('definition') ? { definition: url.searchParams.get('definition') } : {}),
-  })
+  return OperateStateSchema.parse({ server: null, item: null, q: '', ...Object.fromEntries(url.searchParams) })
 }
 export function operateHref(state: OperateState): string {
   const parsed = OperateStateSchema.parse(state)
   const query = new URLSearchParams()
-  for (const key of ['server', 'item', 'q', 'connector', 'definition'] as const)
-    if (parsed[key]) query.set(key, parsed[key])
+  for (const key of OPERATE_KEYS) if (parsed[key]) query.set(key, parsed[key])
   return `${OPERATE_PATH}${query.size ? `?${query}` : ''}`
 }
 export function navigateOperate(state: OperateState, role: Role): void {
-  if (!roleAtLeast(role, 'reader')) throw new Error('Operate is not permitted')
+  if (!roleAtLeast(role, state.lens === 'usage' ? 'user' : 'reader')) throw new Error('Operate is not permitted')
   const href = operateHref(state)
   if (`${window.location.pathname}${window.location.search}` !== href) {
     window.history.pushState({}, '', href)

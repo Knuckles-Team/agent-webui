@@ -628,3 +628,15 @@ Keep Work/Operate and unqualified native interactions visible as gaps rather tha
 
 The gate-wrapper metadata tests keep broad ancestor rollups open and preserve qualified source receipts.
 Those data-only guards do not establish product acceptance.
+
+## WEBUI-APPS-R049.1.16 — contextual Operate usage
+
+Run typed Operate state and mounted Usage lens tests. Cover retained fleet/catalog, tenant and filter state.
+Cover summary, session and timeline selections plus browser history.
+Include independent unavailable panels, measured zero, malformed and nonfinite values, and denied refresh.
+Test owner/session/scope retirement and reordered results.
+Check existing search/detail/trace bindings never silently read another tenant.
+Exercise native links and keyboard controls without making navigation permission
+an execution capability. Add a browser journey at 320px and low height with keyboard,
+touch and real Back/Forward. Local component tests do not qualify browser geometry,
+served producer completeness or broad source ancestors.

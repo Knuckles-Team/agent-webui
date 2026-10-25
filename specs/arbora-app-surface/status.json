@@ -220,7 +220,8 @@
     "WEBUI-APPS-R049.1.12",
     "WEBUI-APPS-R049.1.13",
     "WEBUI-APPS-R049.2.1",
-    "WEBUI-APPS-R049.2.2"
+    "WEBUI-APPS-R049.2.2",
+    "WEBUI-APPS-R049.1.16"
   ],
   "requirements": [
     {
@@ -2007,7 +2008,8 @@
         "WEBUI-APPS-R049.1.10",
         "WEBUI-APPS-R049.1.11",
         "WEBUI-APPS-R049.1.12",
-        "WEBUI-APPS-R049.1.13"
+        "WEBUI-APPS-R049.1.13",
+        "WEBUI-APPS-R049.1.16"
       ]
     },
     {
@@ -2229,6 +2231,17 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R049.1.16",
+      "title": "Absorb existing usage analysis into Operate",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/components/workspace/__tests__/OperateUsageLens.test.tsx:1",
+        "src/lib/__tests__/usage-analytics-api.test.ts:1",
+        "src/lib/__tests__/usage-analytics.test.ts:1"
+      ]
     }
   ]
 }

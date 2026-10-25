@@ -362,3 +362,14 @@ with base 954a227. Browser qualification remains incomplete.
 Keep the Work/Operate, baseline comparison and native interaction obligations above open.
 Preserve the qualified source child without promoting its broader ancestor.
 Metadata guard tests are not evidence that the remaining redesign is accepted.
+
+## Contextual Operate usage source — 2026-10-25
+
+- [x] WEBUI-APPS-R049.1.16: Extract analytics primitives and owner-bound controller; compose a native Operate Usage lens with retained typed context and scoped validation.
+- [ ] R004.8/R006.4 and WEBUI-API-R009/R011: Qualify indexed analytics, supported harness discovery, per-session producers and filter-aware drill-down. Missing producers remain unavailable, not synthetic delivery.
+- [ ] R047/R049.1.2 and WEBUI-DESIGN-R004.1.2/R004.2.2: Qualify installed identity, full native-tool parity, browser history, keyboard/touch, 320px, short viewport and measured redesign separately. All original broad acceptance remains.
+
+Source checks pass for the extracted Operate usage panels and typed adapters.
+Local whole-repository ESLint exceeded memory in two bounded attempts; scoped lint passes.
+Native browser scenarios are discoverable, but local Chromium execution remains blocked by the sandbox.
+Hosted browser, full lint and installed-producer evidence remain required. No source fixture closes those gaps.
