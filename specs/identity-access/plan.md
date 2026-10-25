@@ -70,3 +70,11 @@ must prove lifetime/isolation; native effect CAS/consume-once remains upstream.
 ### Narrow source ownership
 
 This candidate builds on the published identity definitions in PR 125. Source delivery binds R003.1.1, R003.2.1 and R003.3.1 only. The corresponding .2 children retain all installed, provider and native acceptance. Parent mode rows remain incomplete; R010 is not delivered by source configuration refusal tests.
+
+### Explicit zero-effect local browser port
+
+The factory may accept a nominal Arbora-owned local browser port in none mode.
+Only its fixed WebSocket path bypasses the ordinary no-grant route gate.
+The anonymous actor and outer Host and security middleware remain unchanged.
+The optional port is imported lazily; absent mode keeps standalone compatibility.
+No session-boundary, anonymous read policy or operation admission is widened.

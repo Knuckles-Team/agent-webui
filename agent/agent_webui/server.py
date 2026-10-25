@@ -2513,6 +2513,7 @@ def create_agent_web_app(
     session_boundary: SessionBoundary | None = None,
     auth_mode: str | None = None,
     anonymous_read_routes: frozenset[str] = frozenset(),
+    local_browser_boundary: Any = None,
 ) -> FastAPI:
     """Create the agent-web FastAPI application.
 
@@ -2540,6 +2541,9 @@ def create_agent_web_app(
             this public port to add its gateway routes without WebUI importing
             Arbora or gateway internals. Composition happens after WebUI
             routes and before the catch-all SPA mount.
+        local_browser_boundary: Optional nominal Arbora-owned zero-effect port.
+            Accepted only in explicit none mode, on its one fixed WebSocket path.
+            It establishes no authenticated identity or operation authority.
         auth_mode: Explicit operator identity mode. The default is protected;
             none is loopback-only and never an authentication-error fallback.
         anonymous_read_routes: Exact host-selected read paths for the partial
@@ -2556,8 +2560,10 @@ def create_agent_web_app(
     """
 
     from .auth_policy import AnonymousReadPolicy, AuthMode, resolve_auth_mode
+    from .local_browser_boundary import validate_local_browser_boundary
 
     mode = resolve_auth_mode(auth_mode)
+    validate_local_browser_boundary(local_browser_boundary, mode)
     anonymous_policy = AnonymousReadPolicy(anonymous_read_routes)
     if anonymous_read_routes and mode is not AuthMode.NONE:
         raise RuntimeError('Anonymous policy requires explicit no-auth mode')
@@ -2816,6 +2822,12 @@ def create_agent_web_app(
         app, anonymous_policy=anonymous_policy if mode is AuthMode.NONE else None
     )
     if mode is AuthMode.NONE:
+        if local_browser_boundary is not None:
+            from .local_browser_boundary import LocalBrowserBoundaryMiddleware
+
+            app.add_middleware(
+                LocalBrowserBoundaryMiddleware, boundary=local_browser_boundary
+            )
         app.add_middleware(ExplicitAnonymousMiddleware)
     else:
         _ensure_actor_identity_middleware(app, mint_graph_session=mint_graph_session)

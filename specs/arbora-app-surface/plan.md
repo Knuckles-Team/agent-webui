@@ -329,7 +329,7 @@ In a real browser, receive segments and corrections, finalize, then select local
 
 Input `WEBUI:11`; original record SHA-256 `b1708c96d6b9cadcb1c9f35cc5cb7dde4e60ed2cb1250598e55b9ce4cc66907e`.
 
-Source obligation: The web interface presents a searchable bookmark knowledge base with semantic filtering and an interactive mindmap. It exports CSV or JSON.
+Source obligation: The web interface presents a searchable bookmark knowledge base. It supports semantic filtering and an interactive mindmap. It exports CSV or JSON.
 
 Existing owner anchors: SDK-SOURCE-INGEST-R005.7–.12; WEBUI-APPS-R001; ARBORA-OPS-R008; ARBORA-OPS-R009. Entry: Bookmark AppSurface and GraphCanvas.
 
