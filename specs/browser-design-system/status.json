@@ -175,7 +175,7 @@
       ],
       "verified_by": [
         "e2e/workspace-density.spec.ts:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:198",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:203",
         "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:1"
       ],
       "rollup_of": [
