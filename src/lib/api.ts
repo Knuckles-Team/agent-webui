@@ -17,6 +17,16 @@ import type {
 } from './workflow'
 import type { OntologySchemaGraph } from '@/components/knowledge-graph/GraphAdapter'
 import { ApiError, validateShape, looseArray } from './api-validation'
+import {
+  usageSummarySchema,
+  usageBreakdownSchema,
+  usageToolStatSchema,
+  usageActivityCellSchema,
+  usageSessionRowSchema,
+  usageTracesSchema,
+  usageSearchHitSchema,
+  usageSessionDetailSchema,
+} from './usage-analytics'
 
 // Re-exported for backward compatibility — every existing `import { ApiError }
 // from '@/lib/api'` call site keeps working unchanged. The class now lives in
@@ -1007,18 +1017,22 @@ class ApiClient {
     return this.getValidated(`/api/observability${path}${qs}`, schema)
   }
   getUsageSummary = (f?: UsageFilters) => this.obsValidated('/summary', usageSummarySchema, f)
-  getUsageByModel = (f?: UsageFilters) => this.obsValidated('/by-model', looseArray(usageBreakdownSchema), f)
-  getUsageByProject = (f?: UsageFilters) => this.obsValidated('/by-project', looseArray(usageBreakdownSchema), f)
-  getUsageByAgent = (f?: UsageFilters) => this.obsValidated('/by-agent', looseArray(usageBreakdownSchema), f)
-  getUsageTools = (f?: UsageFilters) => this.obsValidated('/analytics/tools', looseArray(usageToolStatSchema), f)
+  getUsageByModel = (f?: UsageFilters) => this.obsValidated('/by-model', z.array(usageBreakdownSchema).max(10000), f)
+  getUsageByProject = (f?: UsageFilters) =>
+    this.obsValidated('/by-project', z.array(usageBreakdownSchema).max(10000), f)
+  getUsageByAgent = (f?: UsageFilters) => this.obsValidated('/by-agent', z.array(usageBreakdownSchema).max(10000), f)
+  getUsageTools = (f?: UsageFilters) =>
+    this.obsValidated('/analytics/tools', z.array(usageToolStatSchema).max(10000), f)
   getUsageActivity = (f?: UsageFilters) =>
-    this.obsValidated('/analytics/activity', looseArray(usageActivityCellSchema), f)
+    this.obsValidated('/analytics/activity', z.array(usageActivityCellSchema).max(10000), f)
   getUsageSessionShape = (f?: UsageFilters) => this.obs<UsageSessionShape>('/analytics/session-shape', f)
-  getUsageTopSessions = (f?: UsageFilters) => this.obsValidated('/top-sessions', looseArray(usageSessionRowSchema), f)
-  getUsageSessions = (f?: UsageFilters) => this.obsValidated('/sessions', looseArray(usageSessionRowSchema), f)
+  getUsageTopSessions = (f?: UsageFilters) =>
+    this.obsValidated('/top-sessions', z.array(usageSessionRowSchema).max(10000), f)
+  getUsageSessions = (f?: UsageFilters) => this.obsValidated('/sessions', z.array(usageSessionRowSchema).max(10000), f)
   getUsageSessionDetail = (id: string) =>
-    this.get<UsageSessionDetail>(`/api/observability/sessions/${encodeURIComponent(id)}`)
-  getUsageSearch = (q: string) => this.get<UsageSearchHit[]>(`/api/observability/search?q=${encodeURIComponent(q)}`)
+    this.getValidated(`/api/observability/sessions/${encodeURIComponent(id)}`, usageSessionDetailSchema)
+  getUsageSearch = (q: string) =>
+    this.getValidated(`/api/observability/search?q=${encodeURIComponent(q)}`, z.array(usageSearchHitSchema).max(10000))
   getUsageTraces = () => this.getValidated('/api/observability/traces', usageTracesSchema)
 }
 
@@ -1265,58 +1279,6 @@ const fleetTopologySchema: z.ZodType<FleetTopology> = z.object({
   totals: z.object({ domains: z.number(), sessions: z.number() }),
 })
 const fleetApprovalsSchema = z.object({ pending: looseArray(z.unknown()) })
-
-// Usage / cost / observability (D-WUI-17 — UsageView: tools.length / tools.map, etc.)
-const usageSummarySchema: z.ZodType<UsageSummary> = z.object({
-  session_count: z.number(),
-  totals: z.object({
-    input_tokens: z.number(),
-    output_tokens: z.number(),
-    cache_creation_tokens: z.number(),
-    cache_read_tokens: z.number(),
-    reasoning_tokens: z.number(),
-    cost_usd: z.number(),
-  }),
-  cache_hit_rate: z.number(),
-})
-const usageBreakdownSchema: z.ZodType<UsageBreakdown> = z.object({
-  key: z.string(),
-  session_count: z.number(),
-  input_tokens: z.number(),
-  output_tokens: z.number(),
-  cost_usd: z.number(),
-})
-const usageToolStatSchema: z.ZodType<UsageToolStat> = z.object({
-  name: z.string(),
-  category: z.string(),
-  calls: z.number(),
-  success: z.number(),
-  success_rate: z.number(),
-})
-const usageActivityCellSchema: z.ZodType<UsageActivityCell> = z.object({
-  day_of_week: z.number(),
-  hour: z.number(),
-  sessions: z.number(),
-  cost_usd: z.number(),
-})
-const usageSessionRowSchema: z.ZodType<UsageSessionRow> = z.object({
-  id: z.string(),
-  project: z.string(),
-  agent: z.string(),
-  started_at: z.string().optional(),
-  ended_at: z.string().optional(),
-  message_count: z.number(),
-  total_output_tokens: z.number(),
-  cost_usd: z.number(),
-  health_grade: z.string().optional(),
-  outcome: z.string(),
-  origin: z.string(),
-})
-const usageTracesSchema: z.ZodType<UsageTraces> = z.object({
-  enabled: z.boolean(),
-  host: z.string(),
-  traces: looseArray(z.object({ session_id: z.string(), project: z.string(), url: z.string() })),
-})
 
 // Ontology actions (feeds ObjectExplorerView's bulk-action menu — D-WUI-10 territory)
 const ontologyActionSchema = z.object({

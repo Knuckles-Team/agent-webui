@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.3, WEBUI-APPS-R004.4
+// spec: WEBUI-APPS-R049.1.3, WEBUI-APPS-R004.4, WEBUI-APPS-R049.1.15
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'
@@ -7,6 +7,7 @@ import { PublicPageContextSchema, toPublicPageContext } from '@/lib/webmcp/contr
 import { parseBoundedWebMcpOutput } from '@/lib/webmcp/validation'
 import type { WebMcpToolDefinition } from '@/lib/webmcp/types'
 import { ApiError } from '@/lib/api-validation'
+import { api } from '@/lib/api'
 import { readCurrentPlan } from '@/lib/current-plan'
 import { navigateWork, parseWorkState, workApi, workHref } from '@/lib/work-workspace'
 import { useConversations } from '@/lib/chat-store'
@@ -391,4 +392,38 @@ describe('typed Work destinations', () => {
     expect(() => navigateWork({ ...selected, conversation: '\ud800' }, 'user')).toThrow()
     expect(push).not.toHaveBeenCalled()
   })
+})
+
+// The mounted Work surface consumes the contextual editor, never the old page.
+it('keeps a workflow preview while inspecting the selected task without retargeting conversation', async () => {
+  state.role = 'admin'
+  vi.spyOn(api, 'listWorkflows').mockResolvedValue([
+    { id: 'workflow:demo', name: 'Demo', steps: ['Check'], orchestrates: [] },
+  ])
+  vi.spyOn(api, 'listWorkflowCapabilities').mockResolvedValue({ agents: [], tools: [], skills: [] })
+  const save = vi.spyOn(api, 'saveWorkflow')
+  const run = vi.spyOn(api, 'runWorkflow')
+  window.history.replaceState(
+    {},
+    '',
+    '/workspace/work?conversation=conversation-a&task=task-a&lens=workflows&workflow=workflow%3Ademo',
+  )
+  mount()
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'workflow name' })).toHaveValue('Demo'))
+  fireEvent.change(screen.getByRole('textbox', { name: 'workflow name' }), {
+    target: { value: 'Retained local plan' },
+  })
+  fireEvent.click(screen.getByRole('link', { name: 'Inspect tasks and traces' }))
+  await screen.findByRole('heading', { name: 'Task task-a' })
+  expect(screen.queryByRole('region', { name: 'Workflow plan editor' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('link', { name: 'Workflow plans' }))
+  expect(screen.getByRole('textbox', { name: 'workflow name' })).toHaveValue('Retained local plan')
+  expect(screen.getByText('Active: /conversation-a')).toBeInTheDocument()
+  expect(parseWorkState(window.location.href)).toMatchObject({
+    conversation: 'conversation-a',
+    task: 'task-a',
+    workflow: 'workflow:demo',
+  })
+  expect(save).not.toHaveBeenCalled()
+  expect(run).not.toHaveBeenCalled()
 })

@@ -220,7 +220,10 @@
     "WEBUI-APPS-R049.1.12",
     "WEBUI-APPS-R049.1.13",
     "WEBUI-APPS-R049.2.1",
-    "WEBUI-APPS-R049.2.2"
+    "WEBUI-APPS-R049.2.2",
+    "WEBUI-APPS-R049.1.14",
+    "WEBUI-APPS-R049.1.15",
+    "WEBUI-APPS-R049.1.16"
   ],
   "requirements": [
     {
@@ -2008,7 +2011,10 @@
         "WEBUI-APPS-R049.1.10",
         "WEBUI-APPS-R049.1.11",
         "WEBUI-APPS-R049.1.12",
-        "WEBUI-APPS-R049.1.13"
+        "WEBUI-APPS-R049.1.13",
+        "WEBUI-APPS-R049.1.14",
+        "WEBUI-APPS-R049.1.15",
+        "WEBUI-APPS-R049.1.16"
       ]
     },
     {
@@ -2230,6 +2236,44 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R049.1.14",
+      "title": "Native read-only graph lens source slice",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "27acc988019e"
+      ],
+      "verified_by": [
+        "e2e/explore-graph.browser.ts:1",
+        "src/components/knowledge-graph/__tests__/GraphCanvas.engineMode.test.tsx:158",
+        "src/components/workspace/__tests__/ExploreGraphLens.test.tsx:1",
+        "src/lib/__tests__/explore-lens-state.test.ts:51"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R049.1.15",
+      "title": "Retained contextual workflow plan source",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "3b1fd81a5637"
+      ],
+      "verified_by": [
+        "src/components/views/__tests__/WorkflowEditorView.test.tsx:1",
+        "src/components/workspace/__tests__/WorkWorkflowLens.test.tsx:1",
+        "src/components/workspace/__tests__/WorkWorkspace.test.tsx:1"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R049.1.16",
+      "title": "Absorb existing usage analysis into Operate",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "src/components/workspace/__tests__/OperateUsageLens.test.tsx:1",
+        "src/lib/__tests__/usage-analytics-api.test.ts:1",
+        "src/lib/__tests__/usage-analytics.test.ts:1"
+      ]
     }
   ]
 }

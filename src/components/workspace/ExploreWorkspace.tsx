@@ -1,7 +1,12 @@
 import { ArrowUpRight, ChevronRight, FileText, FolderSearch, X } from 'lucide-react'
 import './ExploreWorkspace.css'
 import { conversationOwnerKey } from '@/lib/chat-store'
-import { parseExploreLensState } from '@/lib/explore-lens-state'
+import {
+  parseExploreLensState,
+  exploreLensHref,
+  navigateExploreLens,
+  type ExploreLensState,
+} from '@/lib/explore-lens-state'
 import { useWorkspaceCommands } from './WorkspaceCommands'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -11,7 +16,7 @@ import { usePageContextPublisher } from '@/lib/page-context'
 import { roleAtLeast } from '@/lib/nav-registry'
 import { useIdentity } from '@/lib/auth'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
-import { EXPLORE_TOOLS, exploreHref, navigateExplore, type ExploreState } from '@/lib/explore-workspace'
+import { EXPLORE_TOOLS, type ExploreState } from '@/lib/explore-workspace'
 import { useWebMcpToolSet } from '@/lib/webmcp/provider'
 import { makeTool } from '@/lib/webmcp/tools'
 import type { ObjectSetResult } from '@/components/views/ObjectExplorerView'
@@ -21,11 +26,13 @@ const button = 'explore-control'
 const revealNavigationFocus = () => true
 
 function useDestination(location: string) {
-  try {
-    return { state: parseExploreLensState(location), error: null }
-  } catch (error) {
-    return { state: { entity: null, tool: 'overview' } as ExploreState, error: String(error) }
-  }
+  return useMemo<{ state: ExploreLensState; error: string | null }>(() => {
+    try {
+      return { state: parseExploreLensState(location), error: null }
+    } catch (error) {
+      return { state: { entity: null, tool: 'overview', lens: 'evidence' }, error: String(error) }
+    }
+  }, [location])
 }
 
 /** A new collection/entity composition, not legacy pages mounted inside tabs. */
@@ -42,7 +49,7 @@ export default function ExploreWorkspace({
   const canRead = active && !identityLoading && !identity.needsSignIn && roleAtLeast(identity.role, 'user')
   const location = useWorkspaceLocation()
   const { state, error: destinationError } = useDestination(location)
-  const workspaceLens = 'lens' in state ? state.lens : 'evidence'
+  const workspaceLens = state.lens
   const query = state.query ?? ''
   const started = state.query !== undefined
   const [draft, setDraft] = useState(query)
@@ -64,33 +71,36 @@ export default function ExploreWorkspace({
     queryFn: () => api.getOntologyObject(state.entity!, 'standard'),
     enabled: canRead && Boolean(state.entity) && !destinationError,
   })
+  const collectionData = canRead && !results.isFetching && !results.isError ? results.data : undefined
+  const selectedData =
+    canRead && !object.isFetching && !object.isError && object.data?.id === state.entity ? object.data : undefined
   const commands = useMemo(
     () =>
       canRead
-        ? (results.data?.objects ?? []).map((row) => ({
+        ? (collectionData?.objects ?? []).map((row) => ({
             id: row.id,
             label: row.title ?? row.id,
-            href: exploreHref({ entity: row.id, tool: 'overview', query: state.query }),
+            href: exploreLensHref({ ...state, entity: row.id, tool: 'overview', lens: 'evidence' }),
           }))
         : [],
-    [canRead, results.data, state.query],
+    [canRead, collectionData, state],
   )
   useWorkspaceCommands(commands, conversationOwnerKey(identity))
   const conversationContext = useMemo(
     () => ({
       selection:
-        canRead && object.data
+        canRead && selectedData
           ? [
               {
                 kind: 'ontology-object',
-                id: object.data.id,
-                label: (object.data.title ?? object.data.id).slice(0, 256),
+                id: selectedData.id,
+                label: (selectedData.title ?? selectedData.id).slice(0, 256),
               },
             ]
           : [],
       filters: { collectionQuery: query.slice(0, 256), evidenceTool: state.tool, workspaceLens },
     }),
-    [canRead, object.data, query, state.tool, workspaceLens],
+    [canRead, selectedData, query, state.tool, workspaceLens],
   )
   usePageContextPublisher(conversationContext)
   useEffect(() => {
@@ -107,7 +117,9 @@ export default function ExploreWorkspace({
   }, [canRead, location, state.entity, revealFocus])
   const transition = (next: ExploreState) => {
     try {
-      navigateExplore({ ...next, query: next.query ?? state.query }, identity.role)
+      navigateExploreLens({ ...state, ...next, query: next.query ?? state.query, lens: 'evidence' }, identity.role, [
+        'evidence',
+      ])
       setNavigationError('')
     } catch (error) {
       setNavigationError(error instanceof Error ? error.message : 'Navigation failed')
@@ -120,11 +132,13 @@ export default function ExploreWorkspace({
       identity.role,
       identity.userKey,
       identity.raw?.tenant,
-      object.data,
-      results.data,
+      selectedData,
+      collectionData,
       state.entity,
       state.query,
       state.tool,
+      state.graphNode,
+      state.graphType,
     ],
   )
   const liveToolGeneration = useRef(toolGeneration)
@@ -141,8 +155,8 @@ export default function ExploreWorkspace({
     const schema = z.object({ entity: z.string().min(1).max(256).nullable(), tool: z.enum(EXPLORE_TOOLS) }).strict()
     const allowed = new Set([
       state.entity,
-      ...(results.data?.objects.map((row) => row.id) ?? []),
-      ...(object.data?.links.map((link) => link.target_id) ?? []),
+      ...(collectionData?.objects.map((row) => row.id) ?? []),
+      ...(selectedData?.links.map((link) => link.target_id) ?? []),
     ])
     return [
       makeTool({
@@ -160,7 +174,7 @@ export default function ExploreWorkspace({
             throw new Error('Evidence navigation context is stale')
           if (next.entity !== null && !allowed.has(next.entity))
             throw new Error('Entity is outside the loaded evidence context')
-          navigateExplore({ ...next, query: state.query }, identity.role)
+          navigateExploreLens({ ...state, ...next, lens: 'evidence' }, identity.role, ['evidence'])
           return next
         },
       }),
@@ -171,10 +185,10 @@ export default function ExploreWorkspace({
     identity.role,
     identity.userKey,
     identity.raw?.tenant,
-    object.data,
-    results.data,
+    selectedData,
+    collectionData,
     state.entity,
-    state.query,
+    state,
   ])
   useWebMcpToolSet(tools)
   if (identityLoading) return <p role="status">Checking workspace access…</p>
@@ -199,7 +213,7 @@ export default function ExploreWorkspace({
         {state.entity && (
           <>
             <span aria-hidden="true">/</span>
-            <span className="break-all">{object.data?.title ?? state.entity}</span>
+            <span className="break-all">{selectedData?.title ?? state.entity}</span>
             <span aria-hidden="true">/</span>
             <span>{state.tool}</span>
           </>
@@ -252,16 +266,18 @@ export default function ExploreWorkspace({
               Evidence search is unavailable. Your query is retained; try again when the service is available.
             </p>
           )}
-          {results.data && <p className="py-2 text-xs text-muted-foreground">{results.data.total} matching objects</p>}
-          {results.data?.objects.length === 0 && (
+          {collectionData && (
+            <p className="py-2 text-xs text-muted-foreground">{collectionData.total} matching objects</p>
+          )}
+          {collectionData?.objects.length === 0 && (
             <p className="py-3 text-sm">No matching evidence. Try a different query.</p>
           )}
           <ul className="explore-records" aria-label="Evidence results">
-            {results.data?.objects.map((row) => (
+            {collectionData?.objects.map((row) => (
               <li key={row.id}>
                 <a
                   className="explore-record"
-                  href={exploreHref({ entity: row.id, tool: 'overview', query: state.query })}
+                  href={exploreLensHref({ ...state, entity: row.id, tool: 'overview', lens: 'evidence' })}
                   onClick={(event) => {
                     if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.button === 0) {
                       event.preventDefault()
@@ -287,9 +303,9 @@ export default function ExploreWorkspace({
           <section aria-label="Selected evidence" className="explore-inspector">
             <div className="explore-inspector-heading">
               <div className="min-w-0">
-                <span className="explore-eyebrow">{object.data?.object_type ?? 'Selected evidence'}</span>
+                <span className="explore-eyebrow">{selectedData?.object_type ?? 'Selected evidence'}</span>
                 <h2 ref={heading} tabIndex={-1} className="break-words text-lg font-semibold">
-                  {object.data?.title ?? state.entity}
+                  {selectedData?.title ?? state.entity}
                 </h2>
               </div>
               <button
@@ -320,13 +336,13 @@ export default function ExploreWorkspace({
                   ))}
                 </div>
                 {object.isFetching && <p role="status">Loading evidence…</p>}
-                {object.isError && (
+                {(object.isError || (object.data && object.data.id !== state.entity)) && (
                   <p role="alert">This evidence could not be loaded. It may be unavailable or not permitted.</p>
                 )}
-                {object.data && (
-                  <div key={`${object.data.id}:${state.tool}`} className="explore-detail-content">
+                {selectedData && (
+                  <div key={`${selectedData.id}:${state.tool}`} className="explore-detail-content">
                     <EvidenceDetails
-                      object={object.data}
+                      object={selectedData}
                       tool={state.tool}
                       onSelect={(entity) => {
                         transition({ entity, tool: 'overview' })

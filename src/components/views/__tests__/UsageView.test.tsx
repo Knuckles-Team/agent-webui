@@ -4,6 +4,18 @@ import UsageView from '@/components/views/UsageView'
 import { api } from '@/lib/api'
 import { renderWithProviders } from '@/__tests__/fixtures'
 
+vi.mock('@/lib/auth', () => ({
+  useIdentity: () => ({
+    identity: {
+      userKey: 'usage-test',
+      role: 'user',
+      needsSignIn: false,
+      raw: { tenant: 'tenant-a', roles: ['usage:read'] },
+    },
+    loading: false,
+  }),
+}))
+
 /**
  * WEBUI-DESIGN-R006 rendered-state coverage for the Usage & Cost dashboard's shared
  * `StatusMessage` empty-state adoption (the local `Empty` wrapper). Spies on
@@ -36,8 +48,6 @@ function stubEveryUsageEndpointEmpty() {
 }
 
 beforeEach(() => {
-  // useIdentity() hits /auth/session; treat SSO as not configured so the
-  // view renders as the default full-access operator without extra mocking.
   vi.stubGlobal(
     'fetch',
     vi.fn(() => Promise.resolve(new Response('not json', { status: 404 }))),

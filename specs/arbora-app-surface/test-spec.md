@@ -639,3 +639,43 @@ Keep Work/Operate and unqualified native interactions visible as gaps rather tha
 
 The gate-wrapper metadata tests keep broad ancestor rollups open and preserve qualified source receipts.
 Those data-only guards do not establish product acceptance.
+
+### WEBUI-APPS-R049.1.14: Native sampled graph source qualification
+
+- Mount the graph lens in Explore, not the old GraphView. Use the same validated
+  read facades and actual read-only GraphCanvas regression contract.
+- Prove independent graph/evidence IDs, adjacency, query/result retention,
+  neighbor/history transitions, plain-text hostile properties, reader exclusion
+  from Explore, owner/role retirement and malformed URL refusal.
+- Defer provider reads. Refresh or change the type/identity; deny any endpoint;
+  late siblings cannot restore protected nodes, properties, edges or aggregates.
+  Unknown/unavailable/partial totals remain distinct from zero or empty data.
+- Check held WebMCP handles expire on lens, selection, request and identity
+  changes. Graph selection uses only the loaded sample and exposes no mutation.
+- Actual browser short/narrow layouts, native history/focus and served-provider
+  authorization remain independent acceptance, not implied by mounted fixtures.
+
+## Contextual workflow source verification
+
+R049.1.15 reuses the existing workflow serializers and mounts the extracted
+editor within WorkWorkflowLens. Source fixtures cover typed URL identity, draft retention, validation, capability state and unchanged conversation/trace selections.
+They retain these states while inspecting a different task.
+They cover keyboard addition, selection, editing, connections and node removal.
+They also check admin refusal, admission replacement, late reads and malformed canvases. Save and Run remain disabled against the current unavailable host;
+no mock effect success counts as persistence or execution evidence.
+
+These fixtures do not close served workflow effects, complete WebMCP parity,
+real-browser narrow/short focus reachability or performance acceptance. Those
+remain under R049.1.2, R047/R048, WEBUI-DESIGN-R004.1.2/R004.2.2 and WEBUI-API-R009.
+
+## WEBUI-APPS-R049.1.16 — contextual Operate usage
+
+Run typed Operate state and mounted Usage lens tests. Cover retained fleet/catalog, tenant and filter state.
+Cover summary, session and timeline selections plus browser history.
+Include independent unavailable panels, measured zero, malformed and nonfinite values, and denied refresh.
+Test owner/session/scope retirement and reordered results.
+Check existing search/detail/trace bindings never silently read another tenant.
+Exercise native links and keyboard controls without making navigation permission
+an execution capability. Add a browser journey at 320px and low height with keyboard,
+touch and real Back/Forward. Local component tests do not qualify browser geometry,
+served producer completeness or broad source ancestors.

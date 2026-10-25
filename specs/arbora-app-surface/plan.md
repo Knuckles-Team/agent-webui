@@ -883,8 +883,8 @@ remains unavailable, with no legacy fallback or fabricated graph.
 
 The bounded adapter validates the envelope, exact run/task identities, unique
 plan-step keys, explicit predecessor-to-dependent edges and evidence. The layout only places declared nodes; it does not schedule tasks or infer lineage.
-The inline diagram has an equivalent keyboard-accessible dependency list and
-wraps or scrolls within the existing Work panel at narrow widths. Labels remain
+The inline diagram has an equivalent keyboard-accessible dependency list.
+It wraps or scrolls within the existing Work panel at narrow widths. Labels remain
 plain text. Refresh, selection and identity changes retire the previous read;
 denied or malformed responses cannot reveal cached protected graph data.
 
@@ -1009,3 +1009,63 @@ Explicit retained-acceptance children now preserve those obligations in canonica
 Parent requirement text and qualified child evidence remain unchanged.
 Regenerate every spec status and audit ancestor states after source and receipt commits.
 The metadata regression must not create feature-acceptance bindings for retained work.
+
+### 2026-10-25: Native Explore sampled graph lens
+
+Extend R049.1.2 with bounded child R049.1.14. Share GraphView's validated graph
+reads, GraphCanvas and GraphAdapter, not its page/card/tab shell. Preserve the
+existing reader-level graph boundary within Explore's user-level boundary.
+Nodes and edges use the existing typed served facades; stats/type aggregates
+retain their existing honest unavailable and partial states. Do not substitute
+GraphSchema, which is an administrative operation, for any read capability.
+
+Graph selection and type filters are independent of evidence identity. Keep
+query drafts/results within the owner-and-role-scoped Explore lifetime. Clear
+obsolete/denied read data and retire hidden handles. Provide a keyboard list
+for the same sampled adjacency. Do not claim a complete neighborhood.
+Read-only canvas disables every edit entry point. Legacy local draft editing is
+not an engine write and remains unmigrated with Cypher and MAGMA. R030 writes,
+API R008.2 served parity, R046.2.2 full continuity, R047/R048 complete command
+coverage and R049.1.2 migration remain open. Mounted fixtures and metadata
+checks are not actual browser, installed-provider or full-redesign acceptance.
+
+
+## Contextual Work workflow continuation — 2026-10-25
+
+Extend the existing R049.1.2 migration owner with source child R049.1.15.
+Extract WorkflowEditorView into a contextual editor/controller that reuses the
+existing workflow client and graph-to-spec helpers. Retain the mounted editor
+while Work switches to task inspection. Workflow selection is independent of
+conversation, task and trace selections, and drafts stay out of URLs.
+
+The current host allows administrator workflow reads but does not implement the
+capabilities route. Save and Run explicitly report unavailable. Keep these
+effect controls disabled. Label each edit as an in-memory preview, never a durable save or successful run. Do not add endpoints or infer capability
+from a loaded list. Preserve errors instead of showing a successful empty catalog. Future effect activation still requires the existing authority and
+confirmation protocol and separate provider acceptance under WEBUI-API-R009.
+
+Scope source tests to retained draft/selection/validation, keyboard editing,
+failed or malformed reads, stale replies and admission replacement. Keep served, native-tool, performance and full responsive acceptance open under the original broad owners.
+Source tests do not establish those outcomes.
+
+### Contextual Operate usage — 2026-10-25
+
+R049.1.16 extracts the existing analytics presentation, not its standalone page shell.
+Operate keeps Health/Services context while selecting Usage, a session and its timeline.
+Use the current `/api/observability` bindings and server-derived user admission.
+Tenant totals from `usage.read` do not establish model costs, sessions or traces.
+The existing search, session detail and trace bindings have no tenant-filter argument.
+Do not issue those reads for an explicit foreign tenant or imply filtered results.
+The client has no instrumentation manifest, so a successful summary is not proof
+that every source is captured. No new backend, pricing, permissions or scheduler.
+Missing analytics and indexed harness producers remain explicit residuals under
+R004.8/R006.4 and WEBUI-API-R009/R011. Source and browser fixtures are not delivery
+of those producers. Keep broad navigation, authority, responsive and measured-design
+acceptance open under R047/R049.1.2 and WEBUI-DESIGN-R004.1.2/R004.2.2.
+
+Producer inspection found only client bindings for `/api/observability/*` in the
+current WebUI source, not matching WebUI host route implementations. The inspected
+Arbora `usage.read` operation declares only a tenant-scoped totals snapshot and
+`usage:read` scope. It is not an analytics/session replacement. Served analytics
+availability must therefore be demonstrated independently; this UI correctly
+shows unavailable responses instead of treating fixtures as producer delivery.

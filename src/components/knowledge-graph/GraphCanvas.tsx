@@ -11,12 +11,9 @@ import { adaptVizResult } from '../views/dashboards/queries'
 import { pickReadableTextColor, resolveThemeColors, useIsDarkMode } from './theme-colors'
 import { AccessibleImage } from '@/components/ai-elements/image'
 
-interface GraphCanvasProps {
+interface GraphCanvasBaseProps {
   nodes: GraphNode[]
   relationships: GraphRelationship[]
-  onUpdateNode: (id: string, properties: Record<string, unknown>) => void
-  onDeleteNode: (id: string) => void
-  onAddNode: (labels: string[], properties: Record<string, unknown>) => void
   selectedNodeExternally?: GraphNode | null
   onSelectNode: (node: GraphNode | null) => void
   /**
@@ -28,6 +25,18 @@ interface GraphCanvasProps {
   /** Render color for expired edges (defaults to the design-system grey). */
   expiredEdgeColor?: string
 }
+
+/** Read-only consumers cannot provide mutation callbacks. Selection and camera remain available. */
+type GraphCanvasProps = GraphCanvasBaseProps &
+  (
+    | { readOnly: true; onUpdateNode?: never; onDeleteNode?: never; onAddNode?: never }
+    | {
+        readOnly?: false
+        onUpdateNode: (id: string, properties: Record<string, unknown>) => void
+        onDeleteNode: (id: string) => void
+        onAddNode: (labels: string[], properties: Record<string, unknown>) => void
+      }
+  )
 
 /** Stable key for an edge, matching graphology's source/target ordering. */
 export const edgeKey = (source: string, target: string): string => `${source}|${target}`
@@ -472,6 +481,7 @@ function EnginePreviewPane({ nodeCount, enginePreview, onRunPreview }: EnginePre
 export const GraphCanvas: React.FC<GraphCanvasProps> = ({
   nodes,
   relationships,
+  readOnly = false,
   onUpdateNode,
   onDeleteNode,
   onAddNode,
@@ -596,21 +606,23 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
 
           <GraphLegend nodes={nodes} isDark={isDark} />
 
-          <GraphOverlayUI
-            selectedNode={selectedNodeExternally ?? null}
-            onClose={() => {
-              onSelectNode(null)
-            }}
-            onSave={(updatedProps: Record<string, unknown>) => {
-              if (selectedNodeExternally) onUpdateNode(selectedNodeExternally.id, updatedProps)
-              onSelectNode(null)
-            }}
-            onDelete={() => {
-              if (selectedNodeExternally) onDeleteNode(selectedNodeExternally.id)
-              onSelectNode(null)
-            }}
-            onAddNode={onAddNode}
-          />
+          {!readOnly && onUpdateNode && (
+            <GraphOverlayUI
+              selectedNode={selectedNodeExternally ?? null}
+              onClose={() => {
+                onSelectNode(null)
+              }}
+              onSave={(updatedProps: Record<string, unknown>) => {
+                if (selectedNodeExternally) onUpdateNode(selectedNodeExternally.id, updatedProps)
+                onSelectNode(null)
+              }}
+              onDelete={() => {
+                if (selectedNodeExternally) onDeleteNode(selectedNodeExternally.id)
+                onSelectNode(null)
+              }}
+              onAddNode={onAddNode}
+            />
+          )}
         </>
       ) : (
         <EnginePreviewPane

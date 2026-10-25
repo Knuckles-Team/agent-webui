@@ -154,3 +154,30 @@ describe('GraphCanvas renderer-mode seam', () => {
     expect(screen.getByText(/edges omitted/i)).toBeInTheDocument()
   })
 })
+
+// spec: WEBUI-APPS-R049.1.14
+describe('read-only Explore canvas capability', () => {
+  it('retains visualization controls but has no edit entry point for selection or gestures', () => {
+    const selected = makeNodes(1)[0]
+    const view = render(
+      <GraphCanvas
+        readOnly
+        nodes={[selected]}
+        relationships={[]}
+        selectedNodeExternally={selected}
+        onSelectNode={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Reset View' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Untangle Graph' })).toBeInTheDocument()
+    for (const name of ['+ Add Node', 'Delete', 'Save', 'Cancel'])
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    fireEvent.keyDown(view.container, { key: 'Delete' })
+    fireEvent.dblClick(view.container)
+    fireEvent.contextMenu(view.container)
+    fireEvent.drop(view.container)
+    expect(screen.queryByText('Edit Node')).not.toBeInTheDocument()
+    expect(screen.queryByText('Add Node')).not.toBeInTheDocument()
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+})

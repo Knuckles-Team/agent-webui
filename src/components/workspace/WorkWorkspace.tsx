@@ -25,6 +25,7 @@ import {
 } from '@/lib/work-workspace'
 import { useWorkspaceCommands } from './WorkspaceCommands'
 import { WorkPromptLens } from './WorkPromptLens'
+import { WorkWorkflowLens } from './WorkWorkflowLens'
 import { WorkTaskControls } from './WorkTaskControls'
 import { WorkConversationControls } from './WorkConversationControls'
 import { WorkTaskInspector } from './WorkTaskInspector'
@@ -164,6 +165,8 @@ function AuthorizedWork({
             !allowedConversations.has(next.conversation)
           )
             throw new Error('Conversation is outside the loaded context')
+          if ((next.workflow ?? null) !== (state.workflow ?? null))
+            throw new Error('Workflow selection requires the loaded workflow catalog')
           if (!allowedTasks.has(next.task)) throw new Error('Task is outside the loaded context')
           if (!allowedRuns.has(next.run)) throw new Error('Run is outside the loaded context')
           if (next.node && (next.run !== state.run || !allowedNodes.has(next.node)))
@@ -173,7 +176,17 @@ function AuthorizedWork({
         },
       }),
     ]
-  }, [conversations, rows, run, availableTasks, state.conversation, state.task, state.run, identity.role])
+  }, [
+    conversations,
+    rows,
+    run,
+    availableTasks,
+    state.conversation,
+    state.task,
+    state.run,
+    state.workflow,
+    identity.role,
+  ])
   useWebMcpToolSet(error ? [] : tools)
   return (
     <section aria-label="Work workspace" className="workspace-surface flex min-w-0 flex-col gap-3">
@@ -219,7 +232,14 @@ function AuthorizedWork({
         />
       </section>
       <WorkPromptLens state={state} role={identity.role} disabled={Boolean(error)} />
-      <div className={state.lens === 'prompts' ? 'hidden' : 'workspace-panels workspace-panels-balanced'}>
+      <WorkWorkflowLens state={state} role={identity.role} disabled={Boolean(error)} />
+      <div
+        className={
+          state.lens === 'prompts' || state.lens === 'workflows'
+            ? 'hidden'
+            : 'workspace-panels workspace-panels-balanced'
+        }
+      >
         <section aria-label="Agent tasks" className="rounded border p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-medium">Agent tasks</h2>
