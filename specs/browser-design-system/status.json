@@ -360,7 +360,8 @@
       "title": "Wallpaper effects remain bounded and optional",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "24dca66c8a72"
+        "24dca66c8a72",
+        "e039a440a145"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:467",
