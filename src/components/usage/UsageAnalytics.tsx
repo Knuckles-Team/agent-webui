@@ -1,3 +1,4 @@
+import { workspaceButtonClass } from '@/components/ui/button'
 import { useEffect, useRef, useState } from 'react'
 import type { Identity } from '@/lib/auth'
 import { roleAtLeast } from '@/lib/nav-registry'
@@ -77,12 +78,12 @@ export function UsageAnalytics({ identity, generation, state, onNavigate }: Usag
   if (!data.allowed)
     return <p role="alert">Usage requires a signed-in user role. Only an administrator can name another tenant.</p>
   return (
-    <section aria-label="Usage analysis" className="min-w-0 space-y-3 [overflow-wrap:anywhere]">
+    <section aria-label="Usage analysis" className="usage-analysis min-w-0 space-y-3 [overflow-wrap:anywhere]">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 ref={heading} tabIndex={-1} className="font-semibold">
           Usage &amp; cost analysis
         </h2>
-        <button type="button" className={control} onClick={data.refresh}>
+        <button type="button" className={workspaceButtonClass} onClick={data.refresh}>
           Refresh usage
         </button>
       </div>
@@ -118,7 +119,7 @@ export function UsageAnalytics({ identity, generation, state, onNavigate }: Usag
               <input className={control} type={type} name={key} defaultValue={state[key] ?? ''} maxLength={256} />
             </label>
           ))}
-          <button type="submit" className={control}>
+          <button type="submit" className={workspaceButtonClass}>
             Apply usage filters
           </button>
         </form>
@@ -152,7 +153,7 @@ export function UsageAnalytics({ identity, generation, state, onNavigate }: Usag
               <p className="text-sm">Selected session: {state.usageSession}</p>
               <div className="flex flex-wrap gap-2">
                 <button
-                  className={control}
+                  className={workspaceButtonClass}
                   onClick={() => {
                     onNavigate({ ...state, usageSession: undefined, usageDetail: undefined })
                   }}
@@ -160,7 +161,7 @@ export function UsageAnalytics({ identity, generation, state, onNavigate }: Usag
                   Back to usage results
                 </button>
                 <button
-                  className={control}
+                  className={workspaceButtonClass}
                   aria-pressed={state.usageDetail !== 'timeline'}
                   onClick={() => {
                     onNavigate({ ...state, usageDetail: 'overview' })
@@ -169,7 +170,7 @@ export function UsageAnalytics({ identity, generation, state, onNavigate }: Usag
                   Session overview
                 </button>
                 <button
-                  className={control}
+                  className={workspaceButtonClass}
                   aria-pressed={state.usageDetail === 'timeline'}
                   onClick={() => {
                     onNavigate({ ...state, usageDetail: 'timeline' })

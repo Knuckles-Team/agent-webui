@@ -176,7 +176,9 @@ describe('Operate contextual usage', () => {
     expect(screen.getByRole('table', { name: 'Session activity by day and hour' })).toBeVisible()
     await user.click(screen.getByRole('tab', { name: 'Search' }))
     await user.type(screen.getByRole('textbox', { name: 'Search sessions and messages' }), 'message{Enter}')
-    expect(await screen.findByRole('button', { name: /Matched message/ })).toBeVisible()
+    const result = await screen.findByRole('button', { name: /Matched message/ })
+    expect(result).toBeVisible()
+    expect(result).toHaveClass('workspace-control', 'block', 'text-left')
     await user.click(screen.getByRole('tab', { name: 'Traces' }))
     expect(screen.getByRole('link', { name: /session-one/ })).toHaveAttribute(
       'href',

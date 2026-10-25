@@ -16,7 +16,8 @@
   font-size: inherit;
   font-weight: 500;
 }
-.operate-panel {
+.operate-panel,
+.operate-workspace > .usage-analysis {
   padding: clamp(1rem, 2cqw, 1.5rem);
   border: 1px solid var(--glass-edge);
   border-radius: 1.5rem;
@@ -24,12 +25,14 @@
   box-shadow: var(--glass-shadow);
 }
 @supports (backdrop-filter: blur(12px)) {
-  .operate-panel {
+  .operate-panel,
+  .operate-workspace > .usage-analysis {
     background: var(--glass-primary);
     backdrop-filter: blur(16px) saturate(115%);
   }
 }
-.operate-reading {
+.operate-reading,
+.operate-workspace .usage-reading {
   background: var(--glass-reading);
   border-color: var(--glass-edge);
   border-radius: 1rem;
@@ -43,19 +46,23 @@
   border-radius: 0.875rem;
   font: inherit;
 }
-:root[data-transparency='opaque'] .operate-panel {
+:root[data-transparency='opaque'] .operate-panel,
+:root[data-transparency='opaque'] .operate-workspace > .usage-analysis {
   background: var(--card);
   backdrop-filter: none;
 }
 @media (prefers-reduced-transparency: reduce) {
-  .operate-panel {
+  .operate-panel,
+  .operate-workspace > .usage-analysis {
     background: var(--card);
     backdrop-filter: none;
   }
 }
 @media (forced-colors: active) {
   .operate-panel,
-  .operate-reading {
+  .operate-workspace > .usage-analysis,
+  .operate-reading,
+  .operate-workspace .usage-reading {
     background: Canvas;
     border-color: CanvasText;
     box-shadow: none;
