@@ -1,3 +1,4 @@
+import { workspaceButtonClass } from '@/components/ui/button'
 import { useId, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArboraApiError } from '@/lib/arbora-api/invoke'
@@ -8,7 +9,7 @@ interface Props {
   taskId: string
   generation: string
 }
-const button = 'my-2 min-h-11 rounded border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring'
+const button = `${workspaceButtonClass} my-2`
 const statuses = {
   unobserved: 'Unobserved',
   running: 'Observed running',

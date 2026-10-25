@@ -248,3 +248,87 @@ it('pins the approved palette and requested fifteen-percent glass refinement', (
   expect(frame).toContain('backdrop-filter: blur(16px) saturate(120%)')
   expect(explore).toContain('backdrop-filter: blur(16px) saturate(115%)')
 })
+
+// spec: WEBUI-DESIGN-R002.1.1
+it('uses quiet selection and aligned control type without losing keyboard focus', () => {
+  const frame = readFileSync(resolve(import.meta.dirname, '../components/workspace/WorkspaceFrame.css'), 'utf-8')
+  const explore = readFileSync(resolve(import.meta.dirname, '../components/workspace/ExploreWorkspace.css'), 'utf-8')
+  for (const css of [frame, explore]) {
+    expect(css).not.toMatch(/inset\s+(?:3px 0|0 -2px 0)\s+var\(--primary\)/)
+    expect(css).toContain('font-size: var(--workspace-control-size)')
+    expect(css).toContain('line-height: var(--workspace-control-leading)')
+  }
+  expect(frame).toContain('background: var(--button-neutral-active)')
+  expect(frame).toContain('background: var(--button-neutral-hover)')
+  expect(frame).toContain('--workspace-control-size: 0.875rem')
+  expect(frame).toContain('--workspace-control-leading: 1.25rem')
+  expect(frame).toContain('outline: 2px solid var(--workspace-ring)')
+  expect(frame).toContain('outline-offset: 3px')
+  expect(frame).toContain('forced-colors: active')
+  expect(explore).toContain('background: var(--glass-control)')
+  expect(explore).toContain('color: var(--primary-foreground)')
+})
+
+// spec: WEBUI-DESIGN-R002.1.1
+it.each(['light', 'dark'] as const)('keeps %s shared button states translucent and readable', (theme) => {
+  const tokens = theme === 'dark' ? DARK : LIGHT
+  for (const name of [
+    '--button-neutral',
+    '--button-neutral-hover',
+    '--button-neutral-active',
+    '--button-primary',
+    '--button-primary-hover',
+  ]) {
+    const values = tokens[name].match(/[\d.]+/g)!.map(Number)
+    const color =
+      '#' +
+      values
+        .slice(0, 3)
+        .map((value) => value.toString(16).padStart(2, '0'))
+        .join('')
+    const alpha = values[3] / 100
+    expect(alpha).toBeGreaterThan(0)
+    expect(alpha).toBeLessThan(1)
+    const foreground = name.startsWith('--button-primary')
+      ? tokens['--primary-foreground']
+      : tokens['--button-neutral-foreground']
+    for (const backdrop of [tokens['--glass-field-floor'], '#ffffff'])
+      expect(
+        contrastRatio(foreground, compositeHex(color, backdrop, alpha)),
+        `${theme} ${name}`,
+      ).toBeGreaterThanOrEqual(4.5)
+  }
+  const primitive = readFileSync(resolve(import.meta.dirname, '../components/ui/button.tsx'), 'utf-8')
+  expect(primitive).toContain('bg-[var(--button-neutral)]')
+  expect(primitive).toContain('border-transparent')
+  expect(primitive).toContain('aria-pressed:bg-[var(--button-neutral-active)]')
+  expect(primitive).toContain('focus-visible:outline-2')
+  expect(primitive).toContain('disabled:bg-muted')
+  expect(primitive).toContain('bg-destructive text-destructive-foreground')
+})
+
+it('keeps inventoried ordinary workspace actions on the shared button primitive', () => {
+  // WEBUI-DESIGN-R002.1.1: includes collapsed task and conversation actions.
+  for (const name of [
+    'WorkWorkspace',
+    'WorkTaskControls',
+    'WorkConversationControls',
+    'WorkExecutionGraph',
+    'OperateWorkspace',
+    'OperateCatalogPanel',
+    'OperateReadinessPanel',
+    'WorkspaceCommands',
+    'WorkspaceCommandDestinations',
+    'WorkspaceCommandBranches',
+  ]) {
+    const source = readFileSync(resolve(import.meta.dirname, '../components/workspace', name + '.tsx'), 'utf-8')
+    expect(source, name).toContain('workspaceButtonClass')
+    expect(source, name).not.toContain("const button = 'min-h-11 rounded border")
+    expect(source, name).not.toMatch(/<button\b[^>]*className="min-h-11 rounded border/)
+  }
+  const primitive = readFileSync(resolve(import.meta.dirname, '../components/ui/button.tsx'), 'utf-8')
+  expect(primitive).toContain('ui-button inline-flex')
+  expect(primitive).toContain("buttonVariants({ variant: 'destructive' })")
+  expect(CSS_SOURCE).toContain('.ui-button:focus-visible')
+  expect(CSS_SOURCE).toContain('.ui-button:disabled')
+})

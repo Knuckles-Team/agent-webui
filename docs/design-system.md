@@ -247,3 +247,9 @@ run, administration and authentication review, all-route mobile parity, manual
 accessibility, measured performance and installed-provider evidence remain open
 under the existing specifications. A passing token audit or screenshot alone
 cannot establish those outcomes.
+
+### Quiet selection and aligned controls
+
+Workspace navigation and selected records use a pale translucent fill without dark partial inset borders. Shared controls use 14px text, a 20px line height and aligned icons; selected navigation uses medium weight. Section and record titles retain a restrained hierarchy. Keyboard focus keeps its complete 2px perimeter outline, while semantic submit actions retain their contrasting colors. Forced colors use system selection and focus indicators.
+
+Ordinary buttons, including attachment, microphone and options controls, share `--button-neutral` (translucent sage), hover and pressed fills, with no resting outline. Primary submit uses the stronger `--button-primary` fill and its semantic foreground. Keyboard focus remains outlined; destructive, disabled, opaque and forced-color states retain distinct accessible treatment. These button tokens refine controls only, not the approved panel or wallpaper values.

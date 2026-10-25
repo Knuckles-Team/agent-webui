@@ -1,3 +1,4 @@
+import { workspaceButtonClass } from '@/components/ui/button'
 import { Search } from 'lucide-react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { z } from 'zod'
@@ -294,7 +295,7 @@ function OwnedPalette({ context }: { context: CommandContext }) {
         <button
           ref={trigger}
           aria-label="Find destination"
-          className="workspace-command-trigger min-h-11 rounded border px-3 text-sm"
+          className={`${workspaceButtonClass} workspace-command-trigger`}
         >
           <Search size={16} aria-hidden="true" />
           Find destination
@@ -324,7 +325,7 @@ function OwnedPalette({ context }: { context: CommandContext }) {
         </label>
         <WorkspaceCommandDestinations entries={context.entries} search={search} onSelect={select} />
         <button
-          className="min-h-11 rounded border px-3"
+          className={workspaceButtonClass}
           onClick={() => {
             setOpen(false)
           }}

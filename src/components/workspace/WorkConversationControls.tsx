@@ -1,3 +1,4 @@
+import { workspaceButtonClass as button, workspaceDestructiveButtonClass } from '@/components/ui/button'
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { z } from 'zod'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -16,7 +17,6 @@ const requestSchema = z
   .strict()
 type Request = z.infer<typeof requestSchema>
 const resultSchema = z.object({ reviewRequired: z.literal(true) }).strict()
-const button = 'min-h-11 rounded border px-3 py-2 text-sm'
 const titles = { new: 'Start a new conversation', rename: 'Rename local copy', remove: 'Remove local copy' }
 const descriptions = {
   new: 'This clears the unsent draft and opens a fresh conversation. Saved history and selected task or trace stay available.',
@@ -235,7 +235,7 @@ function ConversationReview({
           </button>
           <button
             type="button"
-            className={button}
+            className={review?.action === 'remove' ? workspaceDestructiveButtonClass : button}
             onClick={confirm}
             disabled={review?.action === 'rename' && !LocalConversationLabel.safeParse(label).success}
           >

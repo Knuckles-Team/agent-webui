@@ -1,3 +1,4 @@
+import { workspaceButtonClass as button, workspaceDestructiveButtonClass } from '@/components/ui/button'
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react'
 import { z } from 'zod'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -9,7 +10,6 @@ import { ApiError } from '@/lib/api-validation'
 const cancellable = new Set(['submitted', 'working', 'input-required', 'auth-required', 'running', 'pending'])
 const empty = z.object({}).strict()
 const reviewResult = z.object({ reviewRequired: z.literal(true) }).strict()
-const button = 'min-h-11 rounded border px-3 py-2 text-sm'
 
 /** Review changes local state. Only visible attended confirmation requests cancellation. */
 interface Props {
@@ -171,7 +171,7 @@ function OwnedTaskControls({
             </button>
             <button
               type="button"
-              className={button}
+              className={workspaceDestructiveButtonClass}
               disabled={review?.generation !== generation || running}
               onClick={(event) => {
                 void confirm(event)

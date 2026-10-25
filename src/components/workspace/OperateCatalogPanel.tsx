@@ -1,3 +1,4 @@
+import { workspaceButtonClass } from '@/components/ui/button'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { z } from 'zod'
@@ -88,7 +89,7 @@ export function OperateCatalogPanel({
       )}
       <button
         type="button"
-        className="min-h-11 rounded border px-3"
+        className={workspaceButtonClass}
         disabled={catalog.isFetching}
         onClick={() => {
           void catalog.refetch()
