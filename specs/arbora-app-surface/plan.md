@@ -1091,7 +1091,7 @@ Do not derive rich evidence from usage totals or add a producer endpoint. Durabl
 Extend R049.2.1 and R005.4/R049.1.3 in their existing composition. Replace the
 default assistant side column with a contextual Agent entry in existing chrome.
 Reserve no permanent bottom bar or idle column; never use a floating bubble.
-Expand the same Chat instance in place; preserve drafts, owner retirement, real
+Expand the same Chat instance in place. Preserve drafts, owner retirement, real
 status, pending approvals, mode, stop, attachment and message-option access.
 Give the released width to evidence results and selected detail. Render optional
 summary/source metadata only when returned by the existing evidence search.
@@ -1134,3 +1134,12 @@ geometry acceptance or provider completeness.
 ### Request handling without a mode (2026-10-25)
 
 R005.4.1 deletes Chat request-mode UI, storage and payload only. Reuse the existing agents.run host adapter, which already forwards ordinary user text without this field. Do not classify prompts locally or alter authorization, approvals, model selection or developer workspace routing.
+
+## Tools reading-surface consistency — 2026-10-25
+
+Extend R049.2.1 in place: give the retained Tools readiness, catalog and fleet
+sections the existing Knowledge glass material and shared control typography.
+Reuse palette-aware neutral buttons for catalog navigation. Preserve readiness
+evidence, status and disabled states, native links, focus and filtering. Keep
+opaque, reduced-transparency and forced-color fallbacks; no new layout, routing
+or backend behavior. Scoped browser captures do not close R049.2 acceptance.

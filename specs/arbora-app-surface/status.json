@@ -2232,15 +2232,15 @@
         "38c8f13794ee",
         "73051bf582bd",
         "93401c34a695",
-        "ac86f2de9817",
-        "fe8996c4e4d8"
+        "a6f6ee3874b2",
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:4",
         "e2e/conversation-first.browser.ts:1",
+        "e2e/workspace-catalog.browser.ts:87",
         "src/__tests__/Chat.conversation-identity.test.tsx:870",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:292",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:327"
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:292"
       ]
     },
     {
