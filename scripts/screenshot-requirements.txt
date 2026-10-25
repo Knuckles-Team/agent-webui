@@ -1,0 +1,2 @@
+# Documentation artifact encoding only; not an application runtime dependency.
+Pillow==12.3.0

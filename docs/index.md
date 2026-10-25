@@ -12,7 +12,7 @@
   </div>
 </section>
 
-![Canopy light Explore workspace with a synthetic research brief and the persistent assistant.](assets/screenshots/explore-wide.png)
+![Canopy light Explore workspace with a synthetic research brief and the persistent assistant.](assets/screenshots/explore-wide.webp)
 
 Canopy light with synthetic demo data and the persistent assistant. Open
 **Appearance** to choose Canopy light or dark and Glass or Opaque framing.

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "captures": [
     {
       "file": "work-wide.png",
@@ -50,7 +50,17 @@
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "fdb26b44d06ad42fadeb81a16802df2180074b38a41179f3a8c83d2bdfa3037c"
+      "sha256": "fdb26b44d06ad42fadeb81a16802df2180074b38a41179f3a8c83d2bdfa3037c",
+      "delivery": {
+        "file": "explore-wide.webp",
+        "sha256": "067b678dc65a8a667980eab9694255b1714e01a1af191ef9d6b81d66365294be",
+        "encoding": "lossless-webp",
+        "rgbaSha256": "9468dfe5ac8384a1977cdf0c45636d01bc4949860d238f7f74098d3b306d447f",
+        "optimizer": {
+          "pillow": "12.3.0",
+          "libwebp": "1.6.0"
+        }
+      }
     },
     {
       "file": "explore-narrow.png",
