@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R005.3, WEBUI-DESIGN-R005.4, WEBUI-DESIGN-R005.5
+// spec: WEBUI-DESIGN-R005.3.1, WEBUI-DESIGN-R005.4, WEBUI-DESIGN-R005.5
 import { useEffect, useRef } from 'react'
 import { useTheme, type WallpaperScene, type WallpaperWeather } from '../theme-provider'
 import './WorkspaceWallpaper.css'
@@ -19,7 +19,7 @@ function paint(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  scene: WallpaperScene,
+  scene: Exclude<WallpaperScene, 'context'>,
   weather: WallpaperWeather,
   time: number,
 ) {
@@ -105,14 +105,24 @@ function paint(
   }
 }
 
-export function WorkspaceWallpaper() {
+/** Canonical page selection only; never infer activity from identity or navigation. */
+export function resolveWallpaperScene(scene: WallpaperScene, routeId?: string): Exclude<WallpaperScene, 'context'> {
+  if (scene !== 'context') return scene
+  if (routeId === 'workspace.work-proof') return 'tree'
+  if (routeId === 'workspace.explore-proof') return 'canopy'
+  if (routeId === 'workspace.operate') return 'roots'
+  return 'fluid'
+}
+
+export function WorkspaceWallpaper({ routeId }: { routeId?: string }) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const { wallpaperMotion, wallpaperScene, wallpaperWeather, motion, transparency } = useTheme()
+  const scene = resolveWallpaperScene(wallpaperScene, routeId)
   useEffect(() => {
     const node = canvas.current
     if (!node) return
     // The accepted default photo needs no context, listeners or backing store.
-    if (wallpaperMotion === 'off' && wallpaperScene === 'canopy' && wallpaperWeather === 'clear') {
+    if (wallpaperMotion === 'off' && scene === 'canopy' && wallpaperWeather === 'clear') {
       node.width = 0
       node.height = 0
       return
@@ -150,7 +160,7 @@ export function WorkspaceWallpaper() {
           context,
           node!.width,
           node!.height,
-          wallpaperScene,
+          scene,
           wallpaperWeather,
           elapsed * (wallpaperMotion === 'expressive' ? 1 : 0.4),
         )
@@ -213,7 +223,9 @@ export function WorkspaceWallpaper() {
         query.removeEventListener('change', sync)
       })
     }
-  }, [wallpaperMotion, wallpaperScene, wallpaperWeather, motion, transparency])
-  const active = wallpaperMotion !== 'off' || wallpaperScene !== 'canopy' || wallpaperWeather !== 'clear'
-  return <canvas ref={canvas} className="workspace-wallpaper" data-active={active} aria-hidden="true" />
+  }, [wallpaperMotion, scene, wallpaperWeather, motion, transparency])
+  const active = wallpaperMotion !== 'off' || scene !== 'canopy' || wallpaperWeather !== 'clear'
+  return (
+    <canvas ref={canvas} className="workspace-wallpaper" data-active={active} data-scene={scene} aria-hidden="true" />
+  )
 }

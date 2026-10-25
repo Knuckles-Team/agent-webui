@@ -1,9 +1,9 @@
-// spec: WEBUI-DESIGN-R005.4, WEBUI-DESIGN-R005.5
+// spec: WEBUI-DESIGN-R005.3.1, WEBUI-DESIGN-R005.4, WEBUI-DESIGN-R005.5
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ThemeProvider } from '../../theme-provider'
 import { WorkspaceAppearance } from '../WorkspaceAppearance'
-import { WALLPAPER_BUDGET, wallpaperSize, WorkspaceWallpaper } from '../WorkspaceWallpaper'
+import { WALLPAPER_BUDGET, wallpaperSize, WorkspaceWallpaper, resolveWallpaperScene } from '../WorkspaceWallpaper'
 
 vi.mock('@/hooks/use-theme-colorizer', () => ({ useThemeColorizer: () => ({ baseColor: '', setBaseColor: vi.fn() }) }))
 const clearRect = vi.fn()
@@ -157,4 +157,44 @@ it('stops drawing and retains the photo when the context fails during painting',
   const failed = clearRect.mock.calls.length
   void act(() => vi.advanceTimersByTime(1000))
   expect(clearRect).toHaveBeenCalledTimes(failed)
+})
+
+it('resolves only canonical page context and preserves manual overrides', () => {
+  for (const [route, scene] of [
+    ['workspace.work-proof', 'tree'],
+    ['workspace.explore-proof', 'canopy'],
+    ['workspace.operate', 'roots'],
+    ['workspace.entry', 'fluid'],
+    ['unknown', 'fluid'],
+  ]) {
+    expect(resolveWallpaperScene('context', route)).toBe(scene)
+    expect(resolveWallpaperScene('tree', route)).toBe('tree')
+  }
+  expect(resolveWallpaperScene('context')).toBe('fluid')
+})
+
+it('follows route changes only by choice without enabling motion or retaining old effects', () => {
+  localStorage.setItem('agent-webui.wallpaper-scene', 'context')
+  const content = (routeId: string) => (
+    <ThemeProvider>
+      <WorkspaceAppearance />
+      <WorkspaceWallpaper routeId={routeId} />
+    </ThemeProvider>
+  )
+  const view = render(content('workspace.work-proof'))
+  expect(view.container.querySelector('canvas')).toHaveAttribute('data-scene', 'tree')
+  expect(screen.getByLabelText('Wallpaper motion')).toHaveValue('off')
+  const start = clearRect.mock.calls.length
+  act(() => {
+    vi.advanceTimersByTime(1000)
+  })
+  expect(clearRect).toHaveBeenCalledTimes(start)
+  view.rerender(content('workspace.operate'))
+  expect(disconnect).toHaveBeenCalled()
+  expect(view.container.querySelector('canvas')).toHaveAttribute('data-scene', 'roots')
+  fireEvent.change(screen.getByLabelText('Wallpaper scene'), { target: { value: 'fluid' } })
+  view.rerender(content('workspace.explore-proof'))
+  expect(view.container.querySelector('canvas')).toHaveAttribute('data-scene', 'fluid')
+  expect(localStorage.getItem('agent-webui.wallpaper-scene')).toBe('fluid')
+  expect(screen.getByLabelText('Wallpaper motion')).toHaveValue('off')
 })

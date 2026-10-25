@@ -352,3 +352,18 @@ derive coordinated action, neutral and focus tokens. Semantic status colors,
 typography, wallpaper and glass geometry stay unchanged. Preserve stored legacy
 accent provenance and unknown custom hues. Browser gallery qualification remains
 outstanding until exact-candidate pixels are reviewed.
+
+### Route-derived wallpaper selection (R005.3)
+
+Add Follow workspace to the existing scene selector without changing the default
+Canopy or Off motion preference. Resolve only the mounted canonical route ID.
+Work uses the harness tree; Explore uses knowledge canopy; Operate uses connector roots.
+The workspace entry or unknown context uses neutral fluid/light. Named scenes
+remain persisted manual overrides. Route selection is decorative context, not
+activity, graph topology, conversation identity, or weather evidence. Preserve
+renderer budgets, lifecycle cleanup and the stable task/chat subtree. Broader
+evidence-bound activity acceptance remains open.
+
+R005.3 now rolls up two distinct obligations without changing its original text.
+R005.3.1 covers route selection and manual overrides; R005.3.2 retains evidence-bound
+activity and topology. The latter remains planned with no fake implementation markers.

@@ -27,6 +27,8 @@
     "WEBUI-DESIGN-R002.1.2",
     "WEBUI-DESIGN-R004.1.2",
     "WEBUI-DESIGN-R005.3",
+    "WEBUI-DESIGN-R005.3.1",
+    "WEBUI-DESIGN-R005.3.2",
     "WEBUI-DESIGN-R005.4",
     "WEBUI-DESIGN-R005.5"
   ],
@@ -350,10 +352,36 @@
       "id": "WEBUI-DESIGN-R005.3",
       "title": "Contextual scenes preserve product meaning",
       "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "landed_in": [
+        "04c4742838cb"
+      ],
       "verified_by": [
-        "src/components/workspace/WorkspaceWallpaper.tsx:1"
+        "e2e/canopy-glass.browser.ts:711"
+      ],
+      "rollup_of": [
+        "WEBUI-DESIGN-R005.3.1",
+        "WEBUI-DESIGN-R005.3.2"
       ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R005.3.1",
+      "title": "Route-derived scene selection and manual overrides",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "22fe6f99d8ec"
+      ],
+      "verified_by": [
+        "e2e/canopy-glass.browser.ts:711",
+        "src/components/workspace/WorkspaceWallpaper.tsx:1",
+        "src/components/workspace/__tests__/WorkspaceWallpaper.test.tsx:1"
+      ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R005.3.2",
+      "title": "Evidence-bound activity and topology",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
     },
     {
       "id": "WEBUI-DESIGN-R005.4",
