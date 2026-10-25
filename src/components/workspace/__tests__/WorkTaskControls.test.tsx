@@ -156,6 +156,10 @@ describe('Work task lifecycle', () => {
     const oldConfirm = state.confirm
     rerender(<WorkTaskControls {...props} refreshing />)
     expect(screen.getByRole('button', { name: 'Refresh task' })).toBe(refresh)
+    expect(refresh).not.toBeDisabled()
+    expect(refresh).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(refresh)
+    expect(props.onRefresh).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(state.tools).toEqual([])
     expect(screen.getByRole('button', { name: 'Cancel task…' })).toBeDisabled()
@@ -173,6 +177,21 @@ describe('Work task lifecycle', () => {
       state.confirm()
     })
     expect(workApi.cancelTask).toHaveBeenCalledExactlyOnceWith('task-a')
+  })
+  it('ignores refresh activation while cancellation is pending', async () => {
+    const pending = deferred()
+    vi.mocked(workApi.cancelTask).mockReturnValueOnce(pending.promise)
+    const { props } = setup()
+    await confirm()
+    const refresh = screen.getByRole('button', { name: 'Refresh task' })
+    expect(refresh).not.toBeDisabled()
+    expect(refresh).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(refresh)
+    expect(props.onRefresh).not.toHaveBeenCalled()
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
   })
   it('does not offer cancellation for terminal or unknown states', () => {
     const { props, rerender } = setup()

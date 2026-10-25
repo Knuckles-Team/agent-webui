@@ -2075,18 +2075,18 @@
       "title": "Retained Work source slice",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "14c637ce2d13",
         "158591a6bcef",
+        "1dca15b53d26",
         "213863471869",
-        "38c8f13794ee",
-        "4d0f9693e45d",
-        "59583bc7fadb"
+        "38c8f13794ee"
       ],
       "verified_by": [
         "e2e/conversation-first.browser.ts:1",
         "e2e/native-chat.browser.ts:1",
+        "e2e/work-task-refresh.browser.ts:1",
         "e2e/workspace-task-lifecycle.spec.ts:1",
-        "e2e/workspace-task-lifecycle.spec.ts:132",
-        "e2e/workspace-task-lifecycle.spec.ts:267"
+        "e2e/workspace-task-lifecycle.spec.ts:132"
       ]
     },
     {
