@@ -1,8 +1,11 @@
-# Arbora web UI
+# Overstory
 
 <p align="center">
-  <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Arbora Agent Web UI logo" width="160" />
+  <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Overstory logo" width="160" />
 </p>
+
+Overstory is the browser workspace for Arbora. The repository and package remain
+`agent-webui`. Existing gallery images retain their original capture provenance.
 
 <p align="center">
   <strong>The browser workspace for governed agents, workflows, and knowledge in Arbora.</strong><br>
@@ -49,14 +52,14 @@ See the [workspace gallery and screenshot refresh guide](docs/screenshots.md).
 
 ## Overview
 
-Arbora Agent Web UI is the browser workspace composed by Arbora. It brings agent
+Overstory is the browser workspace composed by Arbora. It brings agent
 conversations, approvals, workflows, fleet activity, and Epistemic Graph
 exploration into one React application. Its FastAPI host keeps privileged
 credentials and gateway delegation on the server side.
 
-| Agent Web UI owns | Other components own |
+| Overstory owns | Other components own |
 |---|---|
-| Browser presentation, local interaction state, accessible route composition, and the FastAPI boundary | Arbora owns public routing, identity, policy, and fleet supervision; Agent Utilities owns agent behavior; Epistemic Graph owns durable knowledge; connector services own external-system effects |
+| Browser presentation, local interaction state, accessible route composition, and the FastAPI boundary | Arbora owns public routing, identity, policy, and fleet supervision; Trellis applies supplied plans; Epistemic Graph owns durable knowledge; connector services own external-system effects |
 
 Current package Version: 2.8.2.
 
@@ -71,19 +74,19 @@ Current package Version: 2.8.2.
 
 ## Documentation
 
-Start with the [Agent Web UI documentation](https://knuckles-team.github.io/agent-webui/),
+Start with the [Overstory documentation](https://knuckles-team.github.io/agent-webui/),
 then use the shared platform map to move between components:
 
 | Component | Role | Documentation |
 |---|---|---|
-| Agent Web UI | Browser operator workspace and Atlas knowledge views | [Docs](https://knuckles-team.github.io/agent-webui/) |
-| Agent Terminal UI | Terminal and headless client; REST operations are available, with no ACP conversational path | [Docs](https://knuckles-team.github.io/agent-terminal-ui/) |
-| Geniusbot | Desktop cockpit for chat, graph, fleet, health, and operator workflows | [Docs](https://knuckles-team.github.io/geniusbot/) |
-| Arbora messaging | Hosts chat and voice entrypoints; Agent Utilities supplies adapter and routing behavior | [Docs](https://knuckles-team.github.io/arbora/) |
+| Overstory | Browser operator workspace and Atlas knowledge views | [Docs](https://knuckles-team.github.io/agent-webui/) |
+| Tuig | Terminal and headless client; central A2A/REST and experimental headless local ACP; full session parity remains unqualified | [Docs](https://knuckles-team.github.io/agent-terminal-ui/) |
+| Axil Desk | Desktop cockpit for chat, graph, fleet, health, and operator workflows | [Docs](https://knuckles-team.github.io/geniusbot/) |
+| Arbora messaging | Chat and voice entrypoints hosted by Arbora | [Docs](https://knuckles-team.github.io/arbora/) |
 | Arbora | Public MCP, REST, A2A, identity, policy, and runtime composition | [Docs](https://knuckles-team.github.io/arbora/) |
-| Agent Utilities | Agent decisions, workflows, evaluation, and skills | [Docs](https://knuckles-team.github.io/agent-utilities/) |
+| Trellis | In-run harness that applies supplied plans | [Docs](https://knuckles-team.github.io/agent-utilities/) |
 | Epistemic Graph | Durable multimodal data, reasoning, provenance, and transactions | [Docs](https://knuckles-team.github.io/epistemic-graph/) |
-| Agent Connector SDK | Typed source adapters, connector serving, and write-back contracts | [Docs](https://knuckles-team.github.io/agent-connector-sdk/) |
+| Scion SDK | Typed source adapters, connector serving, and write-back contracts | [Docs](https://knuckles-team.github.io/agent-connector-sdk/) |
 
 ## Architecture
 
@@ -91,13 +94,13 @@ then use the shared platform map to move between components:
 
 [Explore the live architecture](https://knuckles-team.github.io/.github/architecture/#webui)
 
-People also enter through Agent Terminal UI and Geniusbot or Arbora-hosted
-messaging; Agent Terminal UI exposes REST operations, with no ACP conversational
-path. External applications connect over MCP, REST, or A2A. The browser talks
-only to its same-origin FastAPI host. Arbora injects gateway routes and
-verified request context, then delegates agent behavior to Agent Utilities and
-durable knowledge to Epistemic Graph. Source systems connect through Agent
-Connector SDK directly to Epistemic Graph. Agent Web UI renders typed results
+People also enter through Tuig and Axil Desk or Arbora-hosted
+messaging. Tuig retains central A2A/REST and experimental headless local ACP;
+full session parity remains unqualified. External applications connect over MCP,
+REST, or A2A. The browser talks only to its same-origin FastAPI host. Arbora injects gateway routes and
+verified request context. Trellis applies supplied plans; Epistemic Graph owns
+durable knowledge. Source systems connect through Scion SDK
+directly to Epistemic Graph. Overstory renders typed results
 and local presentation state while each service retains its own authority.
 
 See the [architecture guide](https://knuckles-team.github.io/agent-webui/architecture/)
@@ -105,7 +108,7 @@ for the request flow and trust boundaries.
 
 ## Quick start
 
-Generate a local profile and start Arbora with Agent Web UI enabled:
+Generate a local profile and start Arbora with Overstory enabled:
 
 ```bash
 uvx --from "arbora[webui]" setup-config generate --profile tiny
@@ -129,4 +132,4 @@ provenance and review before committing refreshed images.
 
 ## License
 
-Arbora Agent Web UI is available under the [MIT License](LICENSE).
+Overstory is available under the [MIT License](LICENSE).

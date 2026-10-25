@@ -35,6 +35,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
       <div className="workspace-header-row">
         <a
           id="workspace-home"
+          aria-label="Overstory"
           className="inline-flex min-h-11 items-center font-semibold"
           href={roleAtLeast(role, 'user') ? remembered.work : remembered.operate}
           onClick={(event) => {
@@ -45,7 +46,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
           }}
         >
           <img src={arboraLogo} alt="Arbora" className="workspace-brand-logo" />
-          <span aria-hidden="true">Arbora</span>
+          <span aria-hidden="true">Overstory</span>
         </a>
         <div className="workspace-context-navigation">
           <nav aria-label="Primary workspace contexts" className="flex flex-wrap gap-1">

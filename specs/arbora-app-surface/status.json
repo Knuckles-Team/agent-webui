@@ -229,7 +229,7 @@
   "requirements": [
     {
       "id": "WEBUI-APPS-R038",
-      "title": "Browser identity consistently reads Arbora across titles and assets",
+      "title": "Client display identity consistently reads Overstory",
       "delivery_state": "LANDED",
       "landed_in": [
         "4f0952b82845",
@@ -332,7 +332,7 @@
     },
     {
       "id": "WEBUI-APPS-R002",
-      "title": "Arbora brand layer covers user-visible strings",
+      "title": "Overstory is the client display brand",
       "delivery_state": "LANDED",
       "landed_in": [
         "19e4264b5f66",
@@ -2135,7 +2135,7 @@
       "verified_by": [
         "src/components/__tests__/ConsentBanner.test.tsx:204",
         "src/components/__tests__/ConsentBanner.test.tsx:23",
-        "src/components/__tests__/WorkspaceNavigation.test.tsx:51"
+        "src/components/__tests__/WorkspaceNavigation.test.tsx:55"
       ]
     },
     {

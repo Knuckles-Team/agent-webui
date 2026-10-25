@@ -19,6 +19,10 @@ function mount() {
 }
 
 describe('workspace branch navigator', () => {
+  it('shows Overstory without changing the home destination', () => {
+    mount()
+    expect(screen.getByRole('link', { name: 'Overstory' })).toHaveAttribute('href', '/')
+  })
   it('keeps branch and list navigation on the same registered destinations', () => {
     mount()
     fireEvent.click(screen.getByText('Explore branches'))

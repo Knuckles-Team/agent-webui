@@ -9,13 +9,13 @@ export default function NotFoundPage() {
       route={route}
       eyebrow="404"
       title="That page was not found"
-      description="The address does not match a registered Arbora route. Use the safe home link to continue."
+      description="The address does not match a registered Overstory route. Use the safe home link to continue."
     >
       <a
         href="/"
         className="inline-flex min-h-11 items-center rounded-md bg-primary px-5 py-3 text-sm font-medium text-primary-foreground"
       >
-        Open Arbora
+        Open Overstory
       </a>
     </PublicPageLayout>
   )

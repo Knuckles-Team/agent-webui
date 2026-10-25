@@ -1,8 +1,8 @@
 <section class="site-hero" aria-labelledby="webui-hero-title">
-  <p class="site-hero__eyebrow">Operator experience for Arbora</p>
+  <p class="site-hero__eyebrow">Overstory: operator experience for Arbora</p>
   <h1 class="site-hero__title" id="webui-hero-title">See the work. Guide the agent. Explore the evidence.</h1>
   <p class="site-hero__summary">
-    Arbora brings conversations, governed actions, workflows, fleet activity,
+    Overstory brings conversations, governed actions, workflows, fleet activity,
     and epistemic knowledge into one role-aware browser workspace.
   </p>
   <div class="site-hero__actions">
@@ -42,7 +42,7 @@ See the [workspace gallery and screenshot refresh guide](screenshots.md).
 <div class="site-card-grid">
   <article class="site-card">
     <h3 class="site-card__title">Try it</h3>
-    <p class="site-card__body">Install the Arbora WebUI integration, start one local composition, and open the browser workspace.</p>
+    <p class="site-card__body">Install the Overstory integration, start one local composition, and open the browser workspace.</p>
     <p><a href="start/">Open the start guide →</a></p>
   </article>
   <article class="site-card">

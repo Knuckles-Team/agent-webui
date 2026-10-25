@@ -2,7 +2,7 @@
  * Release gate for consistent product branding (WEBUI-APPS-R038, WEBUI-APPS-R002).
  *
  * Confirms the browser-facing title/metadata/web manifest, the docs site
- * name, and the README all present the Arbora product identity. This does
+ * name, and the README all present the Overstory product identity. This does
  * not check package, import, or environment naming — that is a separate,
  * larger identifier rename tracked by WEBUI-APPS-R039/WEBUI-APPS-R003.
  */
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const errors = []
 const fail = (message) => errors.push(message)
-const BRAND = /arbora/i
+const BRAND = /overstory/i
 
 async function text(path) {
   try {
@@ -25,7 +25,7 @@ async function text(path) {
 }
 
 function requireBrand(path, content, label) {
-  if (!BRAND.test(content)) fail(`${path} ${label} does not present the Arbora brand`)
+  if (!BRAND.test(content)) fail(`${path} ${label} does not present the Overstory brand`)
 }
 
 const indexHtml = await text('index.html')
@@ -41,6 +41,7 @@ const manifest = await text('public/site.webmanifest')
 try {
   const parsed = JSON.parse(manifest)
   requireBrand('public/site.webmanifest', parsed.name ?? '', 'name')
+  requireBrand('public/site.webmanifest', parsed.short_name ?? '', 'short_name')
 } catch (error) {
   fail(`public/site.webmanifest is not valid JSON: ${error.message}`)
 }
@@ -56,5 +57,5 @@ if (errors.length > 0) {
   for (const error of errors) console.error(`- ${error}`)
   process.exitCode = 1
 } else {
-  console.log('site brand check passed (title, web manifest, docs site name, and README all present the Arbora brand)')
+  console.log('site brand check passed (title, web manifest, docs site name, and README all present the Overstory brand)')
 }

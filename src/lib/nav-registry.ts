@@ -916,7 +916,7 @@ export const ROUTES: readonly RouteDef[] = [
 ]
 
 const DEFAULT_PAGE_DESCRIPTION =
-  'Use the Arbora to understand, operate, and safely improve your connected agent system.'
+  'Use Overstory to understand, operate, and safely improve your connected agent system.'
 
 /**
  * The public/legal pages are registered beside application routes for matching,
@@ -935,12 +935,12 @@ export const PUBLIC_ROUTES: readonly RouteDef[] = [
     mobile: 'full',
     element: lazy(() => import('@/components/public/ThankYouPage')),
     page: {
-      title: 'Thank you | Arbora',
+      title: 'Thank you | Overstory',
       description: 'Review the bounded confirmation for a submission the service accepted.',
       visibility: 'public',
       indexable: false,
       canonicalPath: '/thank-you',
-      cta: { label: 'Return to Arbora', target: '/', eventName: 'public_thank_you_return' },
+      cta: { label: 'Return to Overstory', target: '/', eventName: 'public_thank_you_return' },
       webmcpPageId: 'public.thank-you',
       loading: 'inline',
       error: 'inline',
@@ -951,14 +951,14 @@ export const PUBLIC_ROUTES: readonly RouteDef[] = [
     path: '/privacy',
     label: 'Privacy policy',
     section: 'documentation',
-    blurb: 'Read the reviewed privacy policy for this Arbora deployment.',
+    blurb: 'Read the reviewed privacy policy for this Overstory deployment.',
     icon: ShieldCheck,
     minRole: 'reader',
     mobile: 'full',
     element: lazy(() => import('@/components/public/PrivacyPage')),
     page: {
-      title: 'Privacy policy | Arbora',
-      description: 'Read the reviewed privacy policy for this Arbora deployment.',
+      title: 'Privacy policy | Overstory',
+      description: 'Read the reviewed privacy policy for this Overstory deployment.',
       visibility: 'public',
       indexable: true,
       canonicalPath: '/privacy',
@@ -979,7 +979,7 @@ export const PUBLIC_ROUTES: readonly RouteDef[] = [
     mobile: 'full',
     element: lazy(() => import('@/components/public/TermsPage')),
     page: {
-      title: 'Terms and conditions | Arbora',
+      title: 'Terms and conditions | Overstory',
       description: 'Read the reviewed terms and safe agent-control boundaries for this service.',
       visibility: 'public',
       indexable: true,
@@ -995,18 +995,18 @@ export const PUBLIC_ROUTES: readonly RouteDef[] = [
     path: '/contact',
     label: 'Contact',
     section: 'documentation',
-    blurb: 'Find the reviewed service contact details for this Arbora deployment.',
+    blurb: 'Find the reviewed service contact details for this Overstory deployment.',
     icon: MessageCircle,
     minRole: 'reader',
     mobile: 'full',
     element: lazy(() => import('@/components/public/ContactPage')),
     page: {
-      title: 'Contact | Arbora',
-      description: 'Find the reviewed service contact details for this Arbora deployment.',
+      title: 'Contact | Overstory',
+      description: 'Find the reviewed service contact details for this Overstory deployment.',
       visibility: 'public',
       indexable: true,
       canonicalPath: '/contact',
-      cta: { label: 'Open Arbora', target: '/', eventName: 'public_contact_open_app' },
+      cta: { label: 'Open Overstory', target: '/', eventName: 'public_contact_open_app' },
       webmcpPageId: 'public.contact',
       loading: 'inline',
       error: 'inline',
@@ -1020,17 +1020,17 @@ export const NOT_FOUND_ROUTE: RouteDef = {
   path: '*',
   label: 'Page not found',
   section: 'documentation',
-  blurb: 'The requested page was not found in Arbora.',
+  blurb: 'The requested page was not found in Overstory.',
   icon: Compass,
   minRole: 'reader',
   mobile: 'full',
   element: lazy(() => import('@/components/public/NotFoundPage')),
   page: {
-    title: 'Page not found | Arbora',
-    description: 'The requested page was not found in Arbora.',
+    title: 'Page not found | Overstory',
+    description: 'The requested page was not found in Overstory.',
     visibility: 'public',
     indexable: false,
-    cta: { label: 'Open Arbora', target: '/', eventName: 'public_not_found_home' },
+    cta: { label: 'Open Overstory', target: '/', eventName: 'public_not_found_home' },
     webmcpPageId: 'public.not-found',
     loading: 'inline',
     error: 'inline',
@@ -1064,7 +1064,7 @@ export function getRoutePageMetadata(route: RouteDef): RoutePageMetadata {
   const override = route.page ?? {}
   const canonicalPath = metadataValue(override.canonicalPath, defaultCanonicalPath(route))
   return {
-    title: metadataValue(override.title, `${route.label} | Arbora`),
+    title: metadataValue(override.title, `${route.label} | Overstory`),
     description: metadataValue(override.description, route.blurb || DEFAULT_PAGE_DESCRIPTION),
     visibility: metadataValue(override.visibility, 'private'),
     indexable: metadataValue(override.indexable, false),

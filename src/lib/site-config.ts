@@ -79,7 +79,7 @@ function analyticsConfig(envValues: Env): AnalyticsConfig | null {
 export function getSiteConfig(): SiteConfig {
   const values = env()
   return {
-    siteName: configuredValue(values.VITE_SITE_NAME) ?? 'Arbora',
+    siteName: configuredValue(values.VITE_SITE_NAME) ?? 'Overstory',
     canonicalOrigin: normalizeOrigin(configuredValue(values.VITE_SITE_ORIGIN)),
     indexableEnvironment:
       configuredValue(values.VITE_SITE_INDEXABLE ?? values.VITE_INDEXABLE_ENVIRONMENT)?.toLowerCase() === 'true',

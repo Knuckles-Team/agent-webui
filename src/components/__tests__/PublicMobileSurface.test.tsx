@@ -81,6 +81,6 @@ describe('public mobile surface contract', () => {
     const route = routeById('public.contact')
     expect(route).toBeDefined()
     render(<MobileCta route={route!} />)
-    expect(screen.getByRole('link', { name: 'Open Arbora' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: 'Open Overstory' })).toHaveAttribute('href', '/')
   })
 })
