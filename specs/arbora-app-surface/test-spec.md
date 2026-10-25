@@ -709,3 +709,37 @@ acceptance evidence from mounted source fixtures.
 ### Request handling without a mode (2026-10-25)
 
 R005.4.1: Chat.conversation-identity tests mount with stale agent-mode storage and send ordinary text with no mode field. Slash-command tests assert no /mode help or local selection; SWE tests preserve its separate runtime toggle. These are source checks, not served inference proof.
+
+## Persisted edit-and-fork acceptance (planned)
+
+| Requirement | Planned proving test | Required observation |
+|---|---|---|
+| WEBUI-APPS-R051 | All four child journeys below | No functional or durable-fork acceptance is claimed yet. |
+| WEBUI-APPS-R051.1 | `src/__tests__/Chat.edit-fork.test.tsx::own_message_editor` | Real mounted own-message action, boundary preview, keyboard/touch access and cancellation. |
+| WEBUI-APPS-R051.2 | `agent/agent_webui/__tests__/test_conversation_fork.py::test_bound_fork_adapter`; `src/__tests__/Chat.edit-fork.test.tsx::adopt_returned_branch` | Registered contract binding, exact returned lineage, original preservation and unsupported refusal. |
+| WEBUI-APPS-R051.3 | `src/__tests__/Chat.edit-fork.test.tsx::fork_lifecycle` | Duplicate, unknown, conflict, active-run, navigation, restart and owner outcomes. |
+| WEBUI-APPS-R051.4 | `e2e/conversation-fork-served.spec.ts::edit_prior_prompt_and_reopen` | Real browser-to-producer persistence and native `tuig` parity. |
+
+
+Use one synthetic three-turn conversation with distinct prompts and replies.
+Include one observable prior effect, two validated callers and an independently read original transcript. Edit the middle user turn. The first new model request must contain only the first completed pair and the edited text.
+It must omit the superseded reply and third turn. Editing the first turn has no
+prior history. Original bytes and prior effect count must not change.
+
+Cover duplicate submission before and after a lost response, idempotency/content conflict and unreadable or unsupported prefixes.
+Cover missing turn identity, forged user role, foreign context, stale revision and a pending original run.
+Cover cancellation before send, dismissal after send, delayed completion, newer navigation and owner switch. After server and client restart, read the same branch and lineage with
+no resend, then return to the unchanged original. If history is unavailable,
+show that state and make no model, tool or fork call. Do not infer success from
+local cache content. Check keyboard focus and retained drafts throughout.
+
+Record exact installed producer/client revisions, real entry points, first-model
+input, original/branch readback and side-effect count. The test must reject context-label reuse, copied client history and in-place regeneration.
+It must also reject lost lineage after restart. Fixture coverage is not served acceptance.
+
+The prefix may be a host-authorized snapshot of currently rendered completed
+text. Change a parent reply between preview and submission: the digest mismatch
+must refuse. Change it after successful admission: the child must retain its
+accepted snapshot. A later source append or independent active run must not
+cancel, retarget or alter that child. Missing legacy ordering stays unavailable;
+mutable parent storage alone is not a reason to require a new EG API.

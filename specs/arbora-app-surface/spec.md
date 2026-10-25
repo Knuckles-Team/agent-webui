@@ -77,3 +77,16 @@ The browser consumes hierarchy, dependencies, public records and capabilities; i
 ### Request handling without a mode (2026-10-25)
 
 The single composer under R005.4.1 sends requests without an interaction-mode choice. The backend owns request handling.
+
+## Edit a prompt and keep both conversations
+
+WEBUI-APPS-R051 adds an Edit and fork action to an earlier message the caller
+sent. A preview makes the retained context and omitted later replies clear.
+The original stays intact; the edited prompt begins a new persisted branch with
+explicit lineage and a return path. Forking does not undo earlier external
+actions. The existing shared Chat and conversation list remain the only UI.
+
+The client cannot implement this with cached-message copies or regeneration.
+It requires the producer-owned history and fork operation described in plan.md.
+The new rows remain SPECIFIED. Missing capability is unavailable, never a fake
+successful branch. Completed-child continuation remains a separate workflow.

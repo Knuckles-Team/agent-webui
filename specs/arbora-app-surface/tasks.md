@@ -416,3 +416,11 @@ Scoped source checks cannot close native-browser, real-provider, workflow-effect
 ### Request handling without a mode (2026-10-25)
 
 R005.4.1 local source work: delete obsolete request-mode controls and state; add mounted transport regressions; run scoped Chat suites. Full quality gates and served inference acceptance remain separate.
+
+## Edit-and-fork implementation order
+
+- [ ] **WEBUI-APPS-R051:** Complete all child acceptance. Producer history and immutable fork admission are blockers, not delivered UI features.
+- [ ] **WEBUI-APPS-R051.2:** First qualify the producer contract linked in plan.md. Then extend existing browser/host adapters without inventing a route or store.
+- [ ] **WEBUI-APPS-R051.1:** Add the own-message action, preview and cancellation through the mounted Chat/composer only after the bound contract exists.
+- [ ] **WEBUI-APPS-R051.3:** Add idempotent lifecycle, read reconciliation and owner/navigation invalidation to the existing request state.
+- [ ] **WEBUI-APPS-R051.4:** Run installed browser and cross-client restart proof; retain explicit unsupported and unverified states until it passes.

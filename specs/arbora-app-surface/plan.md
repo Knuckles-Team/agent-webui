@@ -1091,7 +1091,7 @@ Do not derive rich evidence from usage totals or add a producer endpoint. Durabl
 Extend R049.2.1 and R005.4/R049.1.3 in their existing composition. Replace the
 default assistant side column with a contextual Agent entry in existing chrome.
 Reserve no permanent bottom bar or idle column; never use a floating bubble.
-Expand the same Chat instance in place; preserve drafts, owner retirement, real
+Expand the same Chat instance in place. Preserve drafts, owner retirement, real
 status, pending approvals, mode, stop, attachment and message-option access.
 Give the released width to evidence results and selected detail. Render optional
 summary/source metadata only when returned by the existing evidence search.
@@ -1134,3 +1134,129 @@ geometry acceptance or provider completeness.
 ### Request handling without a mode (2026-10-25)
 
 R005.4.1 deletes Chat request-mode UI, storage and payload only. Reuse the existing agents.run host adapter, which already forwards ordinary user text without this field. Do not classify prompts locally or alter authorization, approvals, model selection or developer workspace routing.
+
+## Amendment 2026-10-25: edit an earlier own prompt and fork
+
+Scope: WEBUI-APPS-R051 and its four children. Keep WEBUI-APPS-R005.4's existing
+one-list proof, WEBUI-API-R011.2 identity contract and R049.1.3 retained Chat.
+At WebUI `1a9a46525e7f50a9e78aed359ec6480323cb2918`, `Chat.tsx` renders messages
+and retains browser-cached history. `chat-store.ts` scopes that cache by caller;
+`work-conversation-history.ts` only renames/deletes local copies.
+`orchestrator_model.py::_run_turn` forwards the latest user text and an explicit
+conversation label, not a producer-validated historical prefix. `regenerate`
+is not a persisted fork. None of these is authority to rewrite a transcript.
+
+Reuse the existing mounted Chat, message action slots, composer, shared selector,
+typed invoke transport and host adapter. No second chat instance, browser-only
+branch store, bespoke endpoint or client-owned runtime is needed. Put mobile,
+keyboard and focus behavior in the existing message/composer flow. The consumer
+must use the eventual producer schema rather than guessing its operation name.
+
+### Shared invariant and producer prerequisites
+
+Select source user turn U at revision R. The new branch contains authorized completed user/assistant pairs strictly before U, then the edited user text.
+It contains neither U's superseded assistant reply nor any later turn. Editing
+the first turn uses an empty prefix. Existing source turns remain unchanged;
+both contexts may later continue independently. This is a new run, not rewind:
+prior external effects are not undone or re-executed.
+
+Arbora must return a new durable context identity and lineage binding the source
+context, selected user-turn identity and revision. Source selection must use
+producer-issued identities and authorship, not an array index, local cache ID,
+rendered role or prompt-text match. The producer rechecks caller, tenant,
+readable prefix, boundary, revision and capability at submission. It also binds
+one idempotency identity to the exact source and edit. A repeated request returns
+the same result; changed content under that identity refuses. An uncertain
+outcome is reconciled by an authorized read, never a new automatic submission.
+
+Only supported completed model history crosses the boundary. Private reasoning and provider/system instructions do not become inherited authority.
+Neither do tool invocations, approval decisions, credentials, leases, usage budgets or stream cursors.
+Unsupported or incomplete history, including unsupported attachments, must
+refuse rather than silently lose context. Current policy and model admission
+apply afresh. No client may splice local messages into an asserted durable fork.
+
+Extend the existing [Arbora conversation owner](https://github.com/Knuckles-Team/arbora/blob/main/specs/a2a/requirements.md)
+`ARBORA-A2A-R001.3` and [AU completed-history owner](https://github.com/Knuckles-Team/agent-utilities/blob/main/specs/au-boundary-deconstruction/requirements.md)
+`AU-BOUNDARY-R043.9`, `.9.1` and `.9.2`. The missing shared Arbora adapter must create and read back the bound immutable branch.
+It must admit the fresh run and recover its idempotent result across restart. Reuse existing native admission and immutable
+records; a new EG fork endpoint or cross-context atomic operation is not a
+prerequisite. EG owns durable records and atomic admission. This spec reserves
+no endpoint or parallel store, and includes no EG change.
+
+Released EG 2.27.7 (`528c2af707434ed4a33a0ffab614abc21a599639`)
+`ConversationTurnAdmission` carries context, expected revision and predecessor
+run reservation, explicitly not completed history or execution authority. The
+public `Fork` method has no conversation boundary or lineage fields and is not
+this operation. AU main `90e58583202c82100cddc01a247d3c1f243da32a` already has
+`harness/conversation_history.py::decode_completed_history` and
+`host_ports.py::RunCheckpointSelection`. Reuse their strict text-history and
+current-run-precedence rules. They do not establish served fork persistence.
+Arbora `beea3a46f5ecb4e84e851e09bffcf1859cf3c1e0` binds A2A context ownership
+but does not yet compose typed conversation admission and that history-selection
+seam. Stable context labels, task-transition history and completed-child
+continuation are not substitutes.
+
+### Minimal shared adapter path
+
+EG already saves the entire `SubmitWorkItemRequest`, including its bounded
+metadata, as an immutable native admission. `GetRunWorkItem` returns that original
+admission only to the authenticated run owner. Use this record, not mutable
+`WorkItemView.metadata`, for source turn identity, exact revision and lineage.
+A new branch reserves a fresh context at revision zero with no predecessor.
+Put source context/run/turn/revision and the supported prefix binding in new immutable admission metadata, not `predecessor_run_id`.
+Native predecessor validation requires the same context. Persist the host-authorized completed
+prefix snapshot and its content digest in that admission. Parent reply storage need not become immutable first.
+The accepted child owns an immutable copy of the authorized rendered snapshot.
+It does not point to later parent changes.
+
+Reuse `native_run_admission.py::submit` and `recover` for exact request comparison
+and lost-response readback. Extend `work_items.py::submit_work_item_atomic` to
+carry typed conversation admission. Bind AU
+`host_ports.py::RunCheckpointSelection` to the validated new-run context. The
+metadata limit is 64 KiB; reject oversized inline history rather than inventing
+a storage layer. A producer-backed immutable content reference may be reused
+when one is already qualified.
+
+The shared preview/read must establish caller ownership, selected own-turn
+identity/revision, ordered completed pairs and exact rendered text. The client
+sends only that identity, edit intent and preview digest. Arbora rereads the authorized prefix and compares its digest before admission.
+Changed or missing content refuses; client history is not trusted. Source changes
+after the accepted read cannot alter the child snapshot. This requires no
+cross-context atomic transaction.
+
+Current Arbora submissions omit the typed ordered predecessor chain and do not
+project own-turn identities/revisions. Its `a2a/authority.py::_persisted_artifacts`
+can read one owner-authorized successful task reply, validating matching run IDs
+and one terminal payload. That payload is mutable and best-effort. When present, it can provide a snapshot.
+Immutability is not a prerequisite for a preview-bound copy. The concrete missing pieces are ordered own-turn/prefix projection,
+preview-digest binding, snapshot-bearing admission and AU history-port wiring.
+Use native `GetRunWorkItem.admission` for ownership and original request fields,
+not mutable scheduling metadata. Legacy contexts without proven ordering or
+missing reply bytes remain explicitly unsupported; do not reconstruct order
+from timestamps or browser caches. These are Arbora adapter and qualification
+gaps, not evidence that EG needs a new endpoint or a historical storage rewrite.
+
+### Lifecycle and rollout
+
+An incomplete or unvalidated selected prefix remains unavailable.
+A later active source run may continue independently when the selected snapshot prefix is complete.
+Do not inherit its state or silently cancel it. Preview
+may be dismissed with no effect, preserving the source draft, selection and
+focus. Label that earlier actions are not undone. Empty or unchanged edits send
+nothing. On success, select only the returned branch identity; keep a named
+return-to-original control and the producer-backed branch relation in history.
+
+Preserve the exact request identity through duplicate activation and restart.
+After timeout or disconnect, show unknown until read reconciliation succeeds.
+Do not claim cancellation after submission merely because the editor closed.
+A mismatched selected-turn revision requires refresh and explicit resubmission,
+never rebasing or resending automatically. Later source appends do not invalidate
+an already validated selected boundary. Superseded reads cannot select a branch after
+navigation or dismissal. Owner changes revoke protected drafts and results.
+Show unavailable for missing capability, older schema, denied reads or an unbound local transcript.
+Never fall back to ordinary chat or regeneration.
+
+Implement producer history and fork admission first, then the existing client
+adapter and controls, then served acceptance. Fixtures may prove presentation
+but cannot close durable-fork acceptance. No functional fork is claimed by this
+spec-only change. Existing history, transport and checkpoint obligations stay open.
