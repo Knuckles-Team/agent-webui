@@ -154,3 +154,7 @@ capabilities. Validate the explicit flat dependency graph and observed event
 evidence without adapting replay-v1 or synthesizing child targets. Unsupported,
 malformed and denied reads remain distinct. This partial source slice does not
 close the public transcript, nested-run or installed-producer requirements.
+
+## Embedded tracing and console ownership
+
+An embedded WebUI with Logfire disabled does not configure or replace its host tracing pipeline. Explicitly enabled WebUI tracing retains its existing export and instrumentation policy and directs console diagnostics to stderr. Structured application logging stays unchanged. No setting, credential or export destination is provisioned by this repair.

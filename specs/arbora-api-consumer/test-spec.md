@@ -63,3 +63,7 @@ WEBUI-API-R011.4 uses `execution-graph.test.ts` and mounted `WorkExecutionGraph.
 Require exact root-task/run identity, decoded tuple equality, Unicode preservation, unique evidence and a bounded acyclic dependency graph.
 Reject foreign or malformed keys, duplicates, dangling edges, conflicting evidence and unexpected schema or capability values.
 Missing operations stay unavailable without a fallback. Source fixtures do not establish installed-provider acceptance under R011.3.
+
+## Embedded tracing and console ownership
+
+WEBUI-API-R011.1: test_import_preserves_disabled_host_or_routes_enabled_console imports the actual server in isolated child processes. Disabled mode preserves an existing in-memory host exporter without a configure call. Enabled mode preserves the explicit export policy, emits a real diagnostic on stderr and leaves stdout as one JSON value. These source tests do not qualify a released package pair or browser operation authority.

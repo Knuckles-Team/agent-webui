@@ -71,8 +71,12 @@ _LOGFIRE_ENABLED = os.getenv('AGENT_WEBUI_LOGFIRE_ENABLED', '').strip().lower() 
     'yes',
     'on',
 }
-logfire.configure(send_to_logfire='if-token-present' if _LOGFIRE_ENABLED else False)
 if _LOGFIRE_ENABLED:
+    # An embedded, disabled UI must leave its host's tracing pipeline untouched.
+    logfire.configure(
+        send_to_logfire='if-token-present',
+        console=logfire.ConsoleOptions(output=sys.stderr),
+    )
     logfire.instrument_pydantic_ai()
 
 __version__ = '2.8.2'
