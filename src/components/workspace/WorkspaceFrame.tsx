@@ -51,7 +51,9 @@ function FrameControls({
       {slots.focus &&
         createPortal(
           <div className="workspace-frame-actions">
-            <button onClick={focusMap}>Focus map</button>
+            <button aria-label="Focus map" onClick={focusMap}>
+              Focus map
+            </button>
             <button aria-label="Focus current task" onClick={focusTask}>
               Focus task
             </button>

@@ -267,7 +267,11 @@ function OwnedPalette({ context }: { context: CommandContext }) {
       }}
     >
       <DialogTrigger asChild>
-        <button ref={trigger} className="workspace-command-trigger min-h-11 rounded border px-3 text-sm">
+        <button
+          ref={trigger}
+          aria-label="Find destination"
+          className="workspace-command-trigger min-h-11 rounded border px-3 text-sm"
+        >
           <Search size={16} aria-hidden="true" />
           Find destination
           <kbd aria-hidden="true">Ctrl / ⌘ K</kbd>
