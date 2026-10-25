@@ -2,6 +2,7 @@ import { toast } from 'sonner'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConsentBanner, PrivacyConsentSettings } from '@/components/ConsentBanner'
+import { WorkspaceAppearance } from '@/components/workspace/WorkspaceAppearance'
 import {
   CONSENT_DISMISSED_KEY,
   CONSENT_STORAGE_KEY,
@@ -198,4 +199,23 @@ describe('ConsentBanner lifecycle', () => {
     })
     expect(screen.getByLabelText('Analytics consent')).toHaveTextContent('denied')
   })
+})
+
+// spec: WEBUI-APPS-R049.2.1, WEBUI-APPS-R046.2.1
+it('keeps allow, disable and revoke in explicit Settings without changing the stored choice on open', () => {
+  getSiteConfigMock.mockReturnValue({ analytics: { provider: 'fixture' }, contactAddress: null })
+  window.localStorage.clear()
+  render(<WorkspaceAppearance />)
+  expect(screen.getByRole('button', { name: 'Allow analytics' })).not.toBeVisible()
+  fireEvent.click(screen.getByText('Settings'))
+  expect(readConsent()).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Allow analytics' }))
+  expect(readConsent()?.choice).toBe('granted')
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke' }))
+  expect(readConsent()?.choice).toBe('denied')
+  expect(screen.getByRole('button', { name: 'Disable optional' })).toHaveFocus()
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Disable optional' }), { key: 'Escape' })
+  expect(screen.getByText('Settings')).toHaveFocus()
+  expect(screen.getByText('Settings').closest('details')).not.toHaveAttribute('open')
+  expect(readConsent()?.choice).toBe('denied')
 })

@@ -163,7 +163,7 @@ it('presents legacy glass as the light palette with an independent material pref
       <WorkspaceAppearance />
     </ThemeProvider>,
   )
-  fireEvent.click(screen.getByText('Appearance'))
+  fireEvent.click(screen.getByText('Settings'))
   expect(screen.getByRole('combobox', { name: 'Theme' })).toHaveValue('light')
   expect(screen.queryByRole('option', { name: 'Canopy glass' })).not.toBeInTheDocument()
   expect(localStorage.getItem('theme-transition-test')).toBe('glass')

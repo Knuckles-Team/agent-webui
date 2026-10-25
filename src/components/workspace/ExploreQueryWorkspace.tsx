@@ -20,6 +20,13 @@ import EvidenceWorkspace from './ExploreWorkspace'
 import { QueryEditorTools } from './QueryEditorTools'
 import { ExploreGraphLens } from './ExploreGraphLens'
 
+const lensLabels: Record<ExploreLensState['lens'], string> = {
+  evidence: 'Stored records',
+  graph: 'Sampled graph',
+  query: 'Query stored data (SPARQL)',
+  validation: 'Check data schema',
+}
+
 /** New retained composition; no legacy feature-page shell is mounted. */
 export default function ExploreQueryWorkspace() {
   const { identity, loading } = useIdentity()
@@ -41,8 +48,8 @@ export default function ExploreQueryWorkspace() {
   if (!canUseExploreLens(identity.role, state.lens))
     return (
       <p role="alert">
-        Query and validation require maintainer access.{' '}
-        <a href={exploreLensHref({ ...state, lens: 'evidence' })}>Return to evidence</a>
+        Advanced data tools require maintainer access.{' '}
+        <a href={exploreLensHref({ ...state, lens: 'evidence' })}>Return to knowledge</a>
       </p>
     )
   return (
@@ -125,25 +132,31 @@ function OwnedExplore({
     <section aria-label="Explore workspace lenses" className="workspace-surface min-w-0 space-y-3">
       <div className="explore-lens-header">
         <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
-          Explore
+          Knowledge
         </h1>
-        <nav aria-label="Explore lenses" className="flex flex-wrap gap-2">
-          {available.map((lens) => (
-            <a
-              key={lens}
-              href={exploreLensHref({ ...state, lens })}
-              aria-current={state.lens === lens ? 'page' : undefined}
-              className="inline-flex min-h-11 items-center rounded border px-3 capitalize"
-              onClick={(event) => {
-                if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
-                event.preventDefault()
-                select(lens)
-              }}
-            >
-              {lens}
-            </a>
-          ))}
-        </nav>
+        <details open={state.lens !== 'evidence'} hidden={available.length < 2}>
+          <summary className="workspace-pane-toggle">Advanced</summary>
+          <p className="text-sm text-muted-foreground">
+            Query stored data or check a data schema. These tools do not fact-check agent replies.
+          </p>
+          <nav aria-label="Advanced knowledge tools" className="flex flex-wrap gap-2">
+            {available.map((lens) => (
+              <a
+                key={lens}
+                href={exploreLensHref({ ...state, lens })}
+                aria-current={state.lens === lens ? 'page' : undefined}
+                className="inline-flex min-h-11 items-center rounded border px-3 capitalize"
+                onClick={(event) => {
+                  if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+                  event.preventDefault()
+                  select(lens)
+                }}
+              >
+                {lensLabels[lens]}
+              </a>
+            ))}
+          </nav>
+        </details>
       </div>
       <div hidden={state.lens !== 'evidence'}>
         <EvidenceWorkspace showHeading={false} active={state.lens === 'evidence'} revealFocus={revealFocus} />

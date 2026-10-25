@@ -412,3 +412,7 @@ The production build and strict documentation build passed. Four hosted-selectio
 The hosted configuration discovers 24 synthetic journeys, including the nine new lens journeys.
 These journeys have not run here. Whole-repository ESLint received SIGKILL in two bounded attempts.
 Scoped source checks cannot close native-browser, real-provider, workflow-effect or full-migration acceptance.
+
+### Request handling without a mode (2026-10-25)
+
+R005.4.1 local source work: remove obsolete request-mode controls and state; add mounted transport regressions; run scoped Chat suites. Full quality gates and served inference acceptance remain separate.

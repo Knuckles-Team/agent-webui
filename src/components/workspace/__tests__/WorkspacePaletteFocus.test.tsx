@@ -92,7 +92,7 @@ describe('palette cancellation focus', () => {
     setNarrow(false)
     trigger.focus()
     fireEvent.click(trigger)
-    fireEvent.click(screen.getByRole('link', { name: /^Work$/ }))
+    fireEvent.click(screen.getByRole('link', { name: /^Chat & tasks$/ }))
     task.focus()
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10))

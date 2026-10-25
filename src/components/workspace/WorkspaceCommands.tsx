@@ -95,9 +95,9 @@ export function WorkspaceCommandsProvider({
   }, [])
   const entries = useMemo(() => {
     if (!enabled) return []
-    const roots = ['work', 'explore', 'operate'].map((id) => ({
+    const roots = (['work', 'explore', 'operate'] as const).map((id) => ({
       id,
-      label: id[0].toUpperCase() + id.slice(1),
+      label: { work: 'Chat & tasks', explore: 'Knowledge', operate: 'Tools & connections' }[id],
       href: `/workspace/${id}`,
     }))
     const loaded = [...sources.values()]
@@ -291,7 +291,11 @@ function OwnedPalette({ context }: { context: CommandContext }) {
       }}
     >
       <DialogTrigger asChild>
-        <button ref={trigger} className="workspace-command-trigger min-h-11 rounded border px-3 text-sm">
+        <button
+          ref={trigger}
+          aria-label="Find destination"
+          className="workspace-command-trigger min-h-11 rounded border px-3 text-sm"
+        >
           <Search size={16} aria-hidden="true" />
           Find destination
           <kbd aria-hidden="true">Ctrl / ⌘ K</kbd>

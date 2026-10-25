@@ -8,6 +8,7 @@ export default defineConfig({
   testMatch: [
     'canopy-glass.browser.ts',
     'native-chat.browser.ts',
+    'conversation-first.browser.ts',
     'explore-graph.browser.ts',
     'work-workflows.browser.ts',
     'operate-usage.browser.ts',

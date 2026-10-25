@@ -129,6 +129,10 @@ beforeEach(() => {
 })
 const invoke = (name: string, value: unknown = {}) =>
   context.tools.get(`agent-webui.explore.graph.${name}`)!.execute(value, { signal: new AbortController().signal })
+function openAdvanced() {
+  const summary = screen.getByText('Advanced')
+  if (!summary.closest('details')!.open) fireEvent.click(summary)
+}
 async function ready() {
   await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh graph' })).toBeEnabled())
 }
@@ -167,7 +171,8 @@ describe('native graph lens', () => {
       original(nodes[0])
     })
     expect(window.location.search).toContain('graphNode=g1')
-    fireEvent.click(screen.getByRole('link', { name: 'evidence' }))
+    openAdvanced()
+    fireEvent.click(screen.getByRole('link', { name: 'Stored records' }))
     const before = window.location.href
     act(() => {
       original(nodes[1])
@@ -177,21 +182,24 @@ describe('native graph lens', () => {
   it('retains query results/drafts, evidence history and graph selection through neighbor and history navigation', async () => {
     renderWithProviders(surface())
     await ready()
-    fireEvent.click(screen.getByRole('link', { name: 'query' }))
+    openAdvanced()
+    fireEvent.click(screen.getByRole('link', { name: 'Query stored data (SPARQL)' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'SPARQL query' }), {
       target: { value: 'SELECT ?kept WHERE {}' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Run Query' }))
     await screen.findByText('Retained answer')
-    fireEvent.click(screen.getByRole('link', { name: 'evidence' }))
+    openAdvanced()
+    fireEvent.click(screen.getByRole('link', { name: 'Stored records' }))
     await screen.findByRole('heading', { name: 'Evidence e1' })
-    fireEvent.click(screen.getByRole('button', { name: 'relationships' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Related records' }))
     fireEvent.click(await screen.findByRole('button', { name: /Neighbor evidence/ }))
     await screen.findByRole('heading', { name: 'Evidence e2' })
     expect(window.location.search).toContain('graphNode=g1')
     const neighborHref = window.location.href
-    fireEvent.click(screen.getByRole('button', { name: 'history' }))
-    fireEvent.click(screen.getByRole('link', { name: 'query' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Change history' }))
+    openAdvanced()
+    fireEvent.click(screen.getByRole('link', { name: 'Query stored data (SPARQL)' }))
     expect(screen.getByRole('textbox', { name: 'SPARQL query' })).toHaveValue('SELECT ?kept WHERE {}')
     expect(screen.getByText('Retained answer')).toBeInTheDocument()
     act(() => {
@@ -199,7 +207,8 @@ describe('native graph lens', () => {
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
     await screen.findByRole('heading', { name: 'Evidence e2' })
-    fireEvent.click(screen.getByRole('link', { name: 'graph' }))
+    openAdvanced()
+    fireEvent.click(screen.getByRole('link', { name: 'Sampled graph' }))
     await ready()
     expect(screen.getByRole('region', { name: 'Graph inspector' })).toHaveTextContent('Node one')
     expect(api.runSparqlQuery).toHaveBeenCalledTimes(1)
@@ -241,7 +250,8 @@ describe('native graph lens', () => {
     await ready()
     await expect(invoke('select', { node: 'not-loaded' })).rejects.toThrow('outside')
     const visible = context.tools.get('agent-webui.explore.graph.select')!
-    fireEvent.click(screen.getByRole('link', { name: 'evidence' }))
+    openAdvanced()
+    fireEvent.click(screen.getByRole('link', { name: 'Stored records' }))
     await expect(visible.execute({ node: 'g2' }, { signal: new AbortController().signal })).rejects.toThrow('stale')
   })
   it('withdraws a filtered sample and ignores a late response after returning to all types', async () => {
@@ -340,7 +350,8 @@ describe('native graph lens', () => {
     context.role = 'maintainer'
     view.rerender(surface())
     await ready()
-    fireEvent.click(screen.getByRole('link', { name: 'query' }))
+    openAdvanced()
+    fireEvent.click(screen.getByRole('link', { name: 'Query stored data (SPARQL)' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'SPARQL query' }), {
       target: { value: 'SELECT ?secret WHERE {}' },
     })

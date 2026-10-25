@@ -89,7 +89,7 @@ describe('bounded workspace commands', () => {
     render(<Surface />)
     open()
     const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByRole('link', { name: 'Work' })).toHaveAttribute('href', '/workspace/work')
+    expect(within(dialog).getByRole('link', { name: 'Chat & tasks' })).toHaveAttribute('href', '/workspace/work')
     fireEvent.change(screen.getByRole('textbox', { name: 'Search destinations' }), { target: { value: 'Alpha' } })
     const link = screen.getByRole('link', { name: 'Evidence Alpha' })
     expect(link).toHaveAttribute('href', loaded[0].href)
@@ -121,7 +121,7 @@ describe('bounded workspace commands', () => {
     )
     open()
     expect(screen.getAllByRole('link')).toHaveLength(1)
-    expect(screen.getByRole('link', { name: 'Operate' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Tools & connections' })).toBeInTheDocument()
   })
   it('withdraws denied-session commands and rejects held handles', async () => {
     const view = render(<Surface />)
@@ -234,7 +234,7 @@ describe('native lens command admission', () => {
   it('keeps reader commands out of Explore and Usage without hiding services', () => {
     render(<Surface role="reader" entries={[graph, ...queries, workflows, usage]} />)
     open()
-    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(['Operate'])
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(['Tools & connections'])
   })
   it('admits query and validation for maintainers but requires admin for workflow plans', () => {
     const view = render(<Surface role="maintainer" entries={[...queries, workflows]} />)

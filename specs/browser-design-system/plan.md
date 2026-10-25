@@ -71,7 +71,7 @@ primitive library or data layer. The design is original: reference imagery infor
 material and hierarchy, not copied artwork, component markup or runtime APIs.
 Use the repository's existing Arbora logo without tracing or replacing it and
 keep same-origin Inter. Light and glass use calm ivory/sage; dark uses deep green.
-Keep shell translucency separate from opaque native reading surfaces. No new
+Use higher-opacity translucent native reading surfaces over the same atmospheric field. No new
 public asset, package or telemetry is required by this slice.
 
 The topbar fills the workspace width, with visibly labelled Work, Explore and
@@ -211,3 +211,18 @@ Explicit retained-acceptance children now preserve those obligations in canonica
 Parent requirement text and qualified child evidence remain unchanged.
 Regenerate every spec status and audit ancestor states after source and receipt commits.
 The metadata regression must not create feature-acceptance bindings for retained work.
+
+## Reference-matched Liquid Glass correction — 2026-10-25
+
+R002.1.1/R004.1.1/R005.2 retain their existing owners. The earlier 92 percent
+chrome opacity and solid primary panels did not produce the intended material.
+Replace them with visibly translucent sage/blue framing, luminous edges and
+higher-opacity white evidence cards. Author the nonliteral static light field
+in CSS, without remote imagery or idle animation. Keep a thin full-width inset
+header and an integrated contextual Agent entry with in-place expansion.
+
+Compare real desktop/mobile browser captures against the supplied composition
+references. Record a short normal-motion selection/assistant disclosure video
+and a separate reduced-motion fixture. Source tests or mockups alone cannot
+accept visual fidelity. Opaque, unsupported-blur, reduced-transparency and forced
+colors retain readable surfaces and all controls. No backend authority changes.

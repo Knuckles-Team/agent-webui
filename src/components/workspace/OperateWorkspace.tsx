@@ -144,11 +144,11 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
   return (
     <section aria-label="Operate workspace" className="workspace-surface flex min-w-0 flex-col gap-3">
       <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
-        Operate
+        Tools & connections
       </h1>
       <p className="text-sm text-muted-foreground">
-        Inspect service health, caller-visible capabilities and usage evidence in context. Discovery is not permission
-        to execute.
+        Check registered tools and services. Registration does not confirm a working connection or permission to use
+        it.
       </p>
       {invalid ? (
         <p role="alert">

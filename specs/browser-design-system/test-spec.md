@@ -191,7 +191,7 @@ workspace component and browser suites before claiming any listed result.
 
 | Requirement | Proof seam | Required checks |
 |---|---|---|
-| WEBUI-DESIGN-R002.1.1 | `design-tokens.test.ts`, `ThemeProvider.test.tsx`, rendered identity/Explore journeys | Check light/dark/glass native and composited contrast. Cover hover/selected/focus states, opaque reading surfaces and original logo. Test compact/comfortable persistence and invalid/blocked storage fallback. |
+| WEBUI-DESIGN-R002.1.1 | `design-tokens.test.ts`, `ThemeProvider.test.tsx`, rendered identity/Explore journeys | Check light/dark/glass native and composited contrast. Cover hover/selected/focus states, higher-opacity glass reading surfaces and original logo. Test compact/comfortable persistence and invalid/blocked storage fallback. |
 | WEBUI-DESIGN-R004.1.1 | `WorkspaceContextRail.test.tsx`, `WorkspaceFrame.test.tsx`, rendered identity/density journeys | Use one full-width header. Keep labelled contexts, current context, search and main actions visible without opening More. Reject capsule/max-width working gutters, overflow and duplicate navigation. Check useful map resizing and optional selected detail. |
 | WEBUI-DESIGN-R005.2 | Provider/frame/palette tests and actual rendered motion checks | Check system reduced motion from first render and in-app reduction precedence. Exercise immediate state on repeated input and close/cancel during transition. Reject stale callback focus and idle decoration. Retain all text. |
 | WEBUI-APPS-R049.2.1 | `ExploreWorkspace.test.tsx`, shell/query/palette suites and rendered Explore journey | Retain query/results through each detail tool. Cover return, real Back/Forward and resize. Reject placeholder inspectors and auth/tool authority changes. |
@@ -290,6 +290,39 @@ Instead, require a useful working pane larger than the compact assistant and at 
 Require adjacent task and assistant edges, ordinary scrolling, complete composer hit targets and retained draft text.
 Enlarged-text cases retain their full keyboard and wheel reachability checks without fixed-height assumptions.
 
-The 200-percent-text journey must inspect the selected Agent mode glyphs, not only the combobox accessibility name.
-Use intrinsic, text-scaled selector sizing so Ask, Plan and Code stay readable.
-Changing this existing presentation must not change execution handlers, request fields or authority.
+The 200-percent-text journey must inspect the remaining Message options label,
+not only its accessible name. Preserve text bounds and keyboard reachability.
+WEBUI-APPS-R005.4.1 removes the obsolete Ask, Plan and Code selector.
+This presentation must not change action handlers or authority.
+
+## Liquid Glass reference correction acceptance
+
+R002.1.1/R004.1.1/R005.2: inspect actual alpha and backdrop-filter on the
+header, map, collection, inspector and native assistant. Check transparent
+ancestors, a static multihued field, 20–24 px framing and luminous edges.
+Composite each authored material over the field's bounded darkest/lightest
+colors for normal and muted text. Keep native controls/focus readable.
+
+At 1440×900, the full-width inset header stays thin. The evidence region uses the released assistant width.
+The idle assistant reserves no strip or third column. Capture selected list/detail and unselected card grid,
+320 px mobile, dark, opaque and forced-color states. Record one short native
+selection/disclosure video with normal motion and check reduced motion separately.
+Review pixels against both references before claiming fidelity; fixtures do not
+prove live-provider completeness or close broader parent requirements.
+
+
+The 2026-10-25 desktop material baseline is approved at source `9478612`.
+`design-tokens.test.ts` pins its palette and original wallpaper digest.
+The next owner-requested refinement reduces the five light glass fill alphas by about 15 percent relative to that baseline.
+The composited contrast tests remain unchanged; dark and accessibility fallback materials remain unchanged.
+The real preview run `40157438929` records desktop/mobile, collection/detail and Agent disclosure with synthetic records.
+Keep product-language clarity, all-route accessibility and required checks separate from this bounded visual approval.
+
+The next synthetic capture uses plain-language Chat, Knowledge and Tools destinations.
+Capture the actual visible default composer and first-use guidance at desktop and narrow widths.
+Knowledge records use project documentation, setup notes and task results, not research-specific product labels.
+Keep Settings and advanced data tools available through their native disclosures.
+Keyboard-only skip controls must reveal with visible focus, without reserving idle header cells.
+At 200-percent text, text-bearing header controls reflow rather than overflow fixed icon columns.
+An expanded secondary assistant must remain reachable by ordinary wheel scrolling as well as focus.
+These cases do not claim live-provider execution or full-route acceptance.

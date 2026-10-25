@@ -36,7 +36,6 @@ vi.mock('@/components/ChatPanel', () => ({ default: () => <p>Assistant</p> }))
 vi.mock('@/components/UserMenu', () => ({ UserMenu: () => null }))
 vi.mock('@/components/mode-toggle', () => ({ ModeToggle: () => null }))
 vi.mock('@/components/PageHead', () => ({ PageHead: () => null }))
-vi.mock('@/components/ConsentBanner', () => ({ ConsentBanner: () => null }))
 vi.mock('@/lib/mcp-context', () => ({ MCPProvider: ({ children }: { children: ReactNode }) => children }))
 vi.mock('@/lib/webmcp/provider', () => ({
   WebMcpProvider: ({ children, controlPlacement }: { children: ReactNode; controlPlacement: string }) => (

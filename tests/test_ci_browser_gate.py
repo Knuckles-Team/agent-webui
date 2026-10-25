@@ -25,6 +25,7 @@ class BrowserGateTests(unittest.TestCase):
             for step in steps
             if step.get('id')
             in {
+                'liquid_glass_preview',
                 'workspace_identity',
                 'workspace_catalog',
                 'canopy_native',
@@ -34,7 +35,7 @@ class BrowserGateTests(unittest.TestCase):
                 'execution_graph',
             }
         ]
-        self.assertEqual(len(journeys), 7)
+        self.assertEqual(len(journeys), 8)
         for step in journeys:
             self.assertEqual(
                 step['if'],
@@ -49,7 +50,15 @@ class BrowserGateTests(unittest.TestCase):
         native = next(step for step in steps if step.get('id') == 'canopy_native')
         self.assertEqual(
             native['run'],
-            'pnpm exec playwright test --config e2e/canopy-glass.config.ts',
+            'pnpm exec playwright test --config e2e/canopy-glass.config.ts '
+            "--grep-invert 'Liquid Glass reference preview'",
+        )
+        preview = next(step for step in steps if step.get('id') == 'liquid_glass_preview')
+        self.assertEqual(
+            preview['run'],
+            'LIQUID_GLASS_PREVIEW=1 pnpm exec playwright test '
+            "--config e2e/canopy-glass.config.ts --grep 'Liquid Glass reference preview' "
+            '--output test-results/liquid-glass-preview',
         )
         config = (ROOT / 'e2e/canopy-glass.config.ts').read_text()
         for suite in (

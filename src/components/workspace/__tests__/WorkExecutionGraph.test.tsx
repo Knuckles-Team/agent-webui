@@ -116,7 +116,7 @@ describe('flat graph in the real Work selection path', () => {
     await user.click(join)
     expect(join.parentElement).toHaveAttribute('open')
     expect(within(join.parentElement!).getByText('left, right')).toBeInTheDocument()
-    expect(screen.getByText('Active: /conversation-a')).toBeInTheDocument()
+    expect(screen.getByText('Current conversation selected')).toBeInTheDocument()
     expect(window.location.search).toContain('run=independent-trace')
     expect(
       screen.queryByRole('button', { name: /Message active child|Continue completed child/ }),
@@ -225,7 +225,7 @@ describe('flat graph in the real Work selection path', () => {
     })
     expect(screen.queryByText('join')).not.toBeInTheDocument()
     expect(window.location.search).toContain('task=task-two')
-    expect(screen.getByText('Active: /conversation-a')).toBeInTheDocument()
+    expect(screen.getByText('Current conversation selected')).toBeInTheDocument()
   })
   it('retires protected graph data when the observed identity changes', async () => {
     const view = mount()

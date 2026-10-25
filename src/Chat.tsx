@@ -57,6 +57,7 @@ import {
   type KeyboardEvent,
 } from 'react'
 
+import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useThrottle } from '@uidotdev/usehooks'
 import { nanoid } from 'nanoid'
@@ -230,30 +231,10 @@ interface ChatResponse {
 }
 
 /**
- * Agent interaction mode.
- *
- * - `ask`: conversational Q&A (default)
- * - `plan`: produce an execution plan without running tools
- * - `code`: build/code mode — the agent may call tools and modify files
- *
- * Persisted in localStorage under `AGENT_MODE_STORAGE_KEY` so refreshes keep
- * the user's last selection.
- */
-type AgentMode = 'ask' | 'plan' | 'code'
-
-const AGENT_MODE_STORAGE_KEY = 'agent-mode'
-const AGENT_MODES: readonly AgentMode[] = ['ask', 'plan', 'code'] as const
-
-function isAgentMode(value: unknown): value is AgentMode {
-  return typeof value === 'string' && (AGENT_MODES as readonly string[]).includes(value)
-}
-
-/**
  * SWE mode (relocated from the former dedicated `/swe` page, OS-5.34): when on, a
  * sent message drives the developer-workspace runtime (a sandboxed session, OS-5.33)
- * instead of the normal agent reply. Persisted in localStorage like `mode` above so
- * refreshes/navigation keep the user's last selection, independent of `mode` because
- * it toggles an entirely different send path rather than a request body parameter.
+ * instead of the normal agent reply. Persisted in localStorage so refreshes and
+ * navigation preserve this separate developer workspace send path.
  */
 const SWE_MODE_STORAGE_KEY = 'swe-mode'
 
@@ -723,6 +704,8 @@ interface ChatProps {
   pageContext: PageContextEnvelope
   /** Secondary native docks must not steal fresh task-entry focus. */
   focusOnMount?: boolean
+  /** Move only canonical status presentation to the contextual entry, never chat state. */
+  compactStatusTarget?: HTMLElement | null
 }
 
 /** Arrow-key/Enter/Tab/Escape navigation while the slash-command autocomplete popover
@@ -791,6 +774,23 @@ function submitAccessibleName(status: string): string {
     submitted: 'Sending message',
   }
   return names[status] ?? 'Send message'
+}
+
+/** Status may move into contextual chrome; the conversation itself never moves. */
+function renderCompactStatus(text: string, target?: HTMLElement | null, state = 'idle'): ReactNode {
+  const status = (
+    <p
+      role="status"
+      className={cn(
+        'chat-compact-status shrink-0 px-2 pt-1 text-xs text-muted-foreground',
+        state !== 'access' && 'hidden',
+      )}
+      data-chat-state={state}
+    >
+      {text}
+    </p>
+  )
+  return target ? createPortal(status, target) : status
 }
 
 /** Compact dock feedback derives only from the current canonical chat state. */
@@ -1104,6 +1104,7 @@ const OwnedChat = ({
   ownerKey,
   role,
   focusOnMount = true,
+  compactStatusTarget,
 }: ChatProps & { ownerKey: string; role: Role }) => {
   const [input, setInput] = useState('')
   const [composerOptionsOpen, setComposerOptionsOpen] = useState(false)
@@ -1138,16 +1139,6 @@ const OwnedChat = ({
     }
   }, [input])
   const [model, setModel] = useState<string>('')
-  const [mode, setMode] = useState<AgentMode>(() => {
-    // Hydrate from localStorage on mount; tolerate SSR and quota errors.
-    if (typeof window === 'undefined') return 'ask'
-    try {
-      const stored = window.localStorage.getItem(AGENT_MODE_STORAGE_KEY)
-      return isAgentMode(stored) ? stored : 'ask'
-    } catch {
-      return 'ask'
-    }
-  })
   const [enabledTools, setEnabledTools] = useState<string[]>([])
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -1249,17 +1240,7 @@ const OwnedChat = ({
     setSweBackend('')
   }, [userKey, requestConversationId])
 
-  // Persist mode selection so navigation/reload preserves the user's choice.
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      window.localStorage.setItem(AGENT_MODE_STORAGE_KEY, mode)
-    } catch {
-      // Storage may be disabled (private mode, quota); non-fatal.
-    }
-  }, [mode])
-
-  // Persist SWE mode selection the same way `mode` is persisted.
+  // Persist the separate developer workspace selection.
   useEffect(() => {
     if (typeof window === 'undefined') return
     try {
@@ -1511,7 +1492,6 @@ Available commands:
 - **\`/new [model]\`**: Archive the current conversation and start a new one. Optionally specify a model ID (e.g. \`/new\`, \`/new gpt-4o\`).
 - **\`/tools\`**: List all tools configured for the current agent/model.
 - **\`/model [model_id]\`**: View active model or switch to a new model (e.g. \`/model\`, \`/model gemini-2.5-pro\`).
-- **\`/mode [ask|plan|code]\`**: View or change the agent interaction mode (e.g. \`/mode\`, \`/mode code\`).
 - **\`/system\`**: Retrieve the active agent's system prompt.
 - **\`/prompt [name]\`**: View or list system prompt profiles (e.g. \`/prompt\`, \`/prompt mobile_programmer\`).
 - **\`/skills\`**: List loaded custom skills centrally.
@@ -1591,19 +1571,6 @@ Available commands:
 
   /** Body of the `/model` slash command. */
   const slashModel = (arg: string): string => (arg ? slashModelSwitch(arg) : slashModelStatus())
-
-  /** Body of the `/mode` slash command. */
-  const slashMode = (arg: string): string => {
-    if (!arg) {
-      return `Active agent interaction mode: **${mode}** (options: \`ask\`, \`plan\`, \`code\`).`
-    }
-    const normalized = arg.toLowerCase()
-    if (normalized === 'ask' || normalized === 'plan' || normalized === 'code') {
-      setMode(normalized)
-      return `🔄 Interaction mode switched to **${normalized}**.`
-    }
-    return `❌ Invalid mode \`${arg}\`. Valid options are: \`ask\`, \`plan\`, \`code\`.`
-  }
 
   /** Body of the `/system` slash command. */
   const slashSystem = async (): Promise<string> => {
@@ -1706,7 +1673,7 @@ Available commands:
       case '/model':
         return slashModel(arg)
       case '/mode':
-        return slashMode(arg)
+        return 'Send your request directly. Request handling is managed by the agent; no interaction mode is needed.'
       case '/system':
         return await slashSystem()
       case '/prompt':
@@ -1820,7 +1787,6 @@ Available commands:
         body: {
           model,
           builtinTools: enabledTools,
-          mode,
         },
       }).catch((error: unknown) => {
         console.error('Error sending message:', error)
@@ -1886,17 +1852,56 @@ Available commands:
 
   return (
     <div className="chat-flow flex min-h-0 flex-col h-full overflow-auto" data-testid="chat-flow">
-      <p role="status" className="chat-compact-status hidden shrink-0 px-2 pt-1 text-xs text-muted-foreground">
-        {sweMode
+      {renderCompactStatus(
+        sweMode
           ? sweBusy
             ? 'Developer workspace command in progress.'
             : sweSessionId
               ? 'Developer workspace session active.'
               : 'Developer workspace mode enabled.'
-          : compactChatStatus(status, messages.length)}
-      </p>
+          : compactChatStatus(status, messages.length),
+        compactStatusTarget,
+        sweMode ? 'active' : status === 'ready' ? 'idle' : status,
+      )}
       <Conversation className="chat-transcript min-h-24 flex-1 shrink-0">
         <ConversationContent>
+          {messages.length === 0 && !sweMode && (
+            <section aria-label="Get started" className="space-y-2 p-3 text-sm">
+              <h2 className="font-semibold">Give your agent a task</h2>
+              <p>Start with notes or text you provide. Review the reply and any task details it returns.</p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ['Plan from notes', 'Turn these notes into a three-step plan:\n\n'],
+                  ['Summarize text', 'Summarize the text below and list its key points:\n\n'],
+                ].map(([label, prompt]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className="min-h-11 rounded border px-3 py-2 disabled:opacity-50"
+                    disabled={Boolean(input.trim())}
+                    onClick={() => {
+                      setInput(prompt)
+                      textareaRef.current?.focus()
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <details>
+                <summary className="min-h-11 cursor-pointer py-2">New to Arbora?</summary>
+                <ul className="list-disc space-y-1 pl-5">
+                  <li>Chat: ask for work, continue conversations and review returned task details.</li>
+                  <li>Knowledge: search stored records when the knowledge service is available.</li>
+                  <li>Tools: inspect registered services and their reported status, not a guarantee of connection.</li>
+                </ul>
+                <p className="mt-2">
+                  What your agent can do depends on this workspace's configured models, tools and permissions. Examples
+                  only fill your draft; add your text before sending.
+                </p>
+              </details>
+            </section>
+          )}
           {messages.map((message: UIMessage) => (
             <div key={message.id}>
               {message.role === 'assistant' &&
@@ -2067,26 +2072,7 @@ Available commands:
                   void stopSweSession()
                 },
               )}
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground hidden sm:inline" aria-hidden>
-                  Mode:
-                </span>
-                <PromptInputModelSelect
-                  onValueChange={(value) => {
-                    if (isAgentMode(value)) setMode(value)
-                  }}
-                  value={mode}
-                >
-                  <PromptInputModelSelectTrigger className="w-auto min-w-[5.625rem] shrink-0" aria-label="Agent mode">
-                    <PromptInputModelSelectValue />
-                  </PromptInputModelSelectTrigger>
-                  <PromptInputModelSelectContent>
-                    <PromptInputModelSelectItem value="ask">Ask</PromptInputModelSelectItem>
-                    <PromptInputModelSelectItem value="plan">Plan</PromptInputModelSelectItem>
-                    <PromptInputModelSelectItem value="code">Code</PromptInputModelSelectItem>
-                  </PromptInputModelSelectContent>
-                </PromptInputModelSelect>
-              </div>
+
             </div>
             <PromptInputTools
               id="chat-composer-options"
@@ -2145,17 +2131,22 @@ Available commands:
 /** Preserve workspace continuity only while the observed owner remains the same. */
 const Chat = (props: ChatProps) => {
   const { identity, loading } = useIdentity()
-  if (loading) return <p role="status">Checking conversation access…</p>
-  if (identity.needsSignIn) return <p role="status">Conversation access is not authorized. Sign in to continue.</p>
+  if (loading) return renderCompactStatus('Checking conversation access…', props.compactStatusTarget, 'access')
+  if (identity.needsSignIn)
+    return renderCompactStatus(
+      'Conversation access is not authorized. Sign in to continue.',
+      props.compactStatusTarget,
+      'access',
+    )
   const ownerKey = conversationOwnerKey(identity)
   return (
     <>
-      {hasUnassignedConversationHistory(identity.userKey) && (
-        <p role="status">
-          Older browser-only conversations are preserved but cannot be safely assigned to this account and tenant. Keep
-          this browser’s site data. Owner-verified history migration is not available yet.
-        </p>
-      )}
+      {hasUnassignedConversationHistory(identity.userKey) &&
+        renderCompactStatus(
+          'Older browser-only conversations are preserved but cannot be safely assigned to this account and tenant. Keep this browser’s site data. Owner-verified history migration is not available yet.',
+          props.compactStatusTarget,
+          'access',
+        )}
       <OwnedChat key={ownerKey} {...props} ownerKey={ownerKey} role={identity.role} />
     </>
   )

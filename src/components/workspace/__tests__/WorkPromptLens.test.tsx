@@ -48,12 +48,12 @@ it('round trips strict lens URLs without leaking drafts or losing task context',
 it('uses the existing editor and preserves unsaved edits across lenses without saving', async () => {
   renderWithProviders(<Harness />)
   expect(fetch).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('link', { name: 'Prompt authoring' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Saved instructions' }))
   const role = await screen.findByRole('textbox', { name: 'Role / Title' })
   fireEvent.change(role, { target: { value: 'Unsaved investigation instructions' } })
-  fireEvent.click(screen.getByRole('link', { name: 'Investigation' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Task details' }))
   expect(screen.queryByRole('textbox', { name: 'Role / Title' })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('link', { name: 'Prompt authoring' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Saved instructions' }))
   expect(screen.getByRole('textbox', { name: 'Role / Title' })).toHaveValue('Unsaved investigation instructions')
   expect(window.location.search).toContain('task=task-a')
   expect(window.location.search).toContain('conversation=conversation-a')
@@ -84,7 +84,7 @@ it('refuses non-admin deep links and tool selection without fetching prompt data
   window.history.replaceState({}, '', '/workspace/work?lens=prompts')
   renderWithProviders(<Harness userRole="user" />)
   expect(screen.getByRole('alert')).toHaveTextContent('administrator access')
-  expect(screen.queryByRole('link', { name: 'Prompt authoring' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Saved instructions' })).not.toBeInTheDocument()
   await expect(captured.tool!.execute({ lens: 'prompts' }, { signal: new AbortController().signal })).rejects.toThrow(
     'not permitted',
   )

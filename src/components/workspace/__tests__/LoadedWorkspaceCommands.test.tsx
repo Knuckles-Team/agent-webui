@@ -164,7 +164,7 @@ describe('loaded Work and Operate command adapters', () => {
     if (change === 'role') {
       open()
       expect(screen.queryByRole('link', { name: 'Task: task-a' })).not.toBeInTheDocument()
-      expect(screen.queryByRole('link', { name: 'Work' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: 'Chat & tasks' })).not.toBeInTheDocument()
     }
   })
   it('removes failed task discoveries and invalidates held command identifiers', async () => {
