@@ -214,5 +214,6 @@ export function WorkspaceWallpaper() {
       })
     }
   }, [wallpaperMotion, wallpaperScene, wallpaperWeather, motion, transparency])
-  return <canvas ref={canvas} className="workspace-wallpaper" aria-hidden="true" />
+  const active = wallpaperMotion !== 'off' || wallpaperScene !== 'canopy' || wallpaperWeather !== 'clear'
+  return <canvas ref={canvas} className="workspace-wallpaper" data-active={active} aria-hidden="true" />
 }

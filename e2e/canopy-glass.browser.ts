@@ -679,3 +679,16 @@ test('Canopy palette follows supported system reduced transparency', async ({ pa
   }
   await session.detach()
 })
+
+// spec: WEBUI-DESIGN-R005.4
+// Golden crop comes from the accepted #180 desktop capture (runtime 83d52c8).
+// A text-free inspector region pins actual frost, not merely computed blur.
+test('default wallpaper preserves accepted glass backdrop pixels', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await prepare(page, 'light')
+  await expect(page.locator('.workspace-wallpaper')).toHaveAttribute('data-active', 'false')
+  await expect(page.locator('.workspace-wallpaper')).toBeHidden()
+  await expect(page.locator('.workspace-frame')).toHaveCSS('isolation', 'auto')
+  const region = await page.screenshot({ clip: { x: 1250, y: 600, width: 120, height: 150 }, animations: 'disabled' })
+  expect(region).toMatchSnapshot('canopy-default-glass-region.png', { threshold: 0, maxDiffPixels: 0 })
+})

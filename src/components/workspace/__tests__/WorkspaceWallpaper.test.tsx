@@ -73,10 +73,12 @@ it('caps backing pixels and DPR for small and ultra-wide displays', () => {
 it('defaults off, animates only by choice, pauses offscreen and cleans up', () => {
   const view = mount()
   expect(screen.getByLabelText('Wallpaper motion')).toHaveValue('off')
+  expect(view.container.querySelector('canvas')).toHaveAttribute('data-active', 'false')
   const baseline = clearRect.mock.calls.length
   void act(() => vi.advanceTimersByTime(1000))
   expect(clearRect).toHaveBeenCalledTimes(baseline)
   fireEvent.change(screen.getByLabelText('Wallpaper motion'), { target: { value: 'expressive' } })
+  expect(view.container.querySelector('canvas')).toHaveAttribute('data-active', 'true')
   const start = clearRect.mock.calls.length
   void act(() => vi.advanceTimersByTime(1000))
   expect(clearRect.mock.calls.length - start).toBeGreaterThan(0)
