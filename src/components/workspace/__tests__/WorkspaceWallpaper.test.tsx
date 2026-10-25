@@ -70,7 +70,8 @@ it('caps backing pixels and DPR for small and ultra-wide displays', () => {
     expect(size.width).toBeLessThanOrEqual(width * WALLPAPER_BUDGET.dpr)
   }
 })
-it('defaults off, animates only by choice, pauses offscreen and cleans up', () => {
+it('preserves saved Off, allows animation, pauses offscreen and cleans up', () => {
+  localStorage.setItem('agent-webui.wallpaper-motion', 'off')
   const view = mount()
   expect(screen.getByLabelText('Wallpaper motion')).toHaveValue('off')
   expect(view.container.querySelector('canvas')).toHaveAttribute('data-active', 'false')
@@ -174,6 +175,7 @@ it('resolves only canonical page context and preserves manual overrides', () => 
 })
 
 it('follows route changes only by choice without enabling motion or retaining old effects', () => {
+  localStorage.setItem('agent-webui.wallpaper-motion', 'off')
   localStorage.setItem('agent-webui.wallpaper-scene', 'context')
   const content = (routeId: string) => (
     <ThemeProvider>
@@ -197,4 +199,70 @@ it('follows route changes only by choice without enabling motion or retaining ol
   expect(view.container.querySelector('canvas')).toHaveAttribute('data-scene', 'fluid')
   expect(localStorage.getItem('agent-webui.wallpaper-scene')).toBe('fluid')
   expect(screen.getByLabelText('Wallpaper motion')).toHaveValue('off')
+})
+
+it.each([null, 'invalid'])('defaults to bounded Subtle for preference %s without persisting it', (stored) => {
+  if (stored) localStorage.setItem('agent-webui.wallpaper-motion', stored)
+  const view = mount()
+  expect(screen.getByLabelText('Wallpaper motion')).toHaveValue('subtle')
+  expect(screen.getByLabelText('Wallpaper scene')).toHaveValue('canopy')
+  const start = clearRect.mock.calls.length
+  act(() => {
+    vi.advanceTimersByTime(1000)
+  })
+  expect(clearRect.mock.calls.length - start).toBeGreaterThan(0)
+  expect(clearRect.mock.calls.length - start).toBeLessThanOrEqual(12)
+  expect(localStorage.getItem('agent-webui.wallpaper-motion')).toBe(stored)
+  fireEvent.change(screen.getByLabelText('Wallpaper motion'), { target: { value: 'off' } })
+  expect(localStorage.getItem('agent-webui.wallpaper-motion')).toBe('off')
+  expect(view.container.querySelector('canvas')).toHaveAttribute('data-active', 'false')
+  const stopped = clearRect.mock.calls.length
+  act(() => {
+    vi.advanceTimersByTime(1000)
+  })
+  expect(clearRect).toHaveBeenCalledTimes(stopped)
+})
+
+it.each(['reduce', 'save-data', 'low-memory', 'system-reduce'])('keeps default animation static with %s', (guard) => {
+  if (guard === 'reduce') localStorage.setItem('agent-webui.motion', 'reduce')
+  if (guard === 'system-reduce') reduced = true
+  if (guard === 'save-data')
+    Object.defineProperty(navigator, 'connection', { configurable: true, value: { saveData: true } })
+  if (guard === 'low-memory') Object.defineProperty(navigator, 'deviceMemory', { configurable: true, value: 2 })
+  mount()
+  const start = clearRect.mock.calls.length
+  act(() => {
+    vi.advanceTimersByTime(1000)
+  })
+  expect(clearRect).toHaveBeenCalledTimes(start)
+  if (guard === 'save-data') Reflect.deleteProperty(navigator, 'connection')
+  if (guard === 'low-memory') Reflect.deleteProperty(navigator, 'deviceMemory')
+})
+
+it('retains saved manual scene and motion choices', () => {
+  localStorage.setItem('agent-webui.wallpaper-motion', 'off')
+  localStorage.setItem('agent-webui.wallpaper-scene', 'roots')
+  mount()
+  expect(screen.getByLabelText('Wallpaper motion')).toHaveValue('off')
+  expect(screen.getByLabelText('Wallpaper scene')).toHaveValue('roots')
+})
+
+it.each(['opaque', 'forced-colors', 'reduced-transparency'])('hides default decoration for %s', (guard) => {
+  if (guard === 'opaque') localStorage.setItem('agent-webui.transparency', 'opaque')
+  else
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({
+          matches: query.includes(guard),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }) as unknown as MediaQueryList,
+    )
+  const view = mount()
+  expect(view.container.querySelector('canvas')).toHaveAttribute('hidden')
+  const start = clearRect.mock.calls.length
+  act(() => {
+    vi.advanceTimersByTime(1000)
+  })
+  expect(clearRect).toHaveBeenCalledTimes(start)
 })

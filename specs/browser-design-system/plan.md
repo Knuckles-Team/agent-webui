@@ -367,3 +367,14 @@ evidence-bound activity acceptance remains open.
 R005.3 now rolls up two distinct obligations without changing its original text.
 R005.3.1 covers route selection and manual overrides; R005.3.2 retains evidence-bound
 activity and topology. The latter remains planned with no fake implementation markers.
+
+### Wallpaper default policy update (R005.4)
+
+The latest user direction supersedes the earlier Off-default policy above.
+Missing or invalid motion preferences now use Subtle, capped at 12 frames per second.
+Keep the Canopy scene default and all valid saved choices, including Off and manual scenes.
+Persistence writes only on explicit selection, so no preference migration is needed.
+Reduced motion, resource constraints, hidden/offscreen pauses and material safeguards still take precedence.
+No weather, audio, live activity or topology defaults change.
+The accepted static glass golden now explicitly selects Off; it is not the animated default capture.
+Review separate new-default screenshots and keep the original golden unchanged.

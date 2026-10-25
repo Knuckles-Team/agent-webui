@@ -37,7 +37,7 @@ interface ThemeProviderState {
 }
 
 const initialState: ThemeProviderState = {
-  wallpaperMotion: 'off',
+  wallpaperMotion: 'subtle',
   setWallpaperMotion: () => undefined,
   wallpaperScene: 'canopy',
   setWallpaperScene: () => undefined,
@@ -97,7 +97,7 @@ export function ThemeProvider({
   const [wallpaperMotion, setWallpaperMotion] = usePreference<WallpaperMotion>(
     'agent-webui.wallpaper-motion',
     ['off', 'subtle', 'expressive'],
-    'off',
+    'subtle',
   )
   const [wallpaperScene, setWallpaperScene] = usePreference<WallpaperScene>(
     'agent-webui.wallpaper-scene',

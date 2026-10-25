@@ -145,7 +145,10 @@ export function WorkspaceAppearance() {
           Follow workspace: Chat tree, Knowledge canopy, Tools roots, workspace light. Named scenes override context.
         </p>
         <p>Decorative scenery, not system activity. Manual weather only; no location or live provider is used.</p>
-        <p>System motion and transparency reductions take precedence.</p>
+        <p>
+          Subtle motion is on by default. Choose Off to stop animation. System motion and transparency reductions take
+          precedence.
+        </p>
         <div className="col-span-2 min-w-0">
           <PrivacyConsentSettings />
           <a className="mt-2 inline-flex min-h-11 items-center underline" href="/privacy">
