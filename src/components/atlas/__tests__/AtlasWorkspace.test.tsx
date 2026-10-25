@@ -24,10 +24,10 @@ describe('AtlasWorkspace', () => {
   it('provides guided starting points and one unified workbench', () => {
     render(<AtlasWorkspace />)
 
-    expect(screen.getByTestId('atlas-workspace')).toHaveTextContent('Atlas')
+    expect(screen.getByTestId('atlas-workspace')).toHaveTextContent('Understory')
     expect(screen.getByRole('heading', { name: 'Start with a question' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Knowledge Graph:/ })).toHaveAttribute('href', '/graph')
-    expect(screen.getByRole('link', { name: /Open the unified Atlas workbench/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Open the unified Understory workbench/ })).toHaveAttribute(
       'href',
       '#atlas-workbench',
     )
@@ -53,6 +53,6 @@ describe('AtlasWorkspace', () => {
 
     expect(screen.queryByRole('link', { name: /Cypher Console:/ })).toBeNull()
     expect(screen.getAllByRole('status')).toHaveLength(1)
-    expect(screen.getAllByRole('status')[0]).toHaveTextContent('Loading available Atlas tools')
+    expect(screen.getAllByRole('status')[0]).toHaveTextContent('Loading available Understory tools')
   })
 })

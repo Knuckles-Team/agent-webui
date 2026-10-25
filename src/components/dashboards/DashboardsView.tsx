@@ -184,7 +184,7 @@ export default function DashboardsView() {
     <div className="space-y-4 p-4" data-testid="dashboards-view">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Dashboards</h1>
+          <h1 className="text-xl font-semibold">Overstory Studio</h1>
           <p className="text-sm text-muted-foreground">
             Build panels from graph queries, by hand or with the chat agent.
           </p>

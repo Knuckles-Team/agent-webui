@@ -169,8 +169,9 @@ describe('nav-registry: ROUTES', () => {
     ).toBe(true)
   })
 
-  it('consolidates Knowledge destinations under Atlas without removing deep links', () => {
+  it('consolidates Knowledge destinations under Understory without removing deep links', () => {
     expect(routesBySection('knowledge').map((route) => route.id)).toEqual(['knowledge.atlas'])
+    expect(matchRoute('/explore')?.route.label).toBe('Understory')
     expect(routesForAtlas('guided').length).toBeGreaterThan(0)
     expect(routesForAtlas('expert').length).toBeGreaterThan(0)
 

@@ -19,7 +19,7 @@ vi.mock('@/lib/nav-registry', () => ({
   roleAtLeast: () => true,
   isAtlasPath: () => false,
   routesBySection: () => [
-    { id: 'knowledge.atlas', path: '/explore', label: 'Atlas', icon: () => null },
+    { id: 'knowledge.atlas', path: '/explore', label: 'Understory', icon: () => null },
     { id: 'apps.markets', path: '/apps/markets', label: 'Markets', capability: 'app:markets', icon: () => null },
     { id: 'apps.reports', path: '/apps/reports', label: 'Reports', capability: 'app:reports', icon: () => null },
   ],
@@ -31,7 +31,7 @@ function sidebarLink() {
       <AppSidebar />
     </SidebarProvider>,
   )
-  return screen.getByRole('link', { name: 'Atlas' })
+  return screen.getByRole('link', { name: 'Understory' })
 }
 
 function sidebarFixtureResponse(url: string) {
@@ -105,5 +105,5 @@ it('renders only available app links after the real catalog query resolves', asy
   )
   expect(await screen.findByRole('link', { name: 'Markets' })).toHaveAttribute('href', '/apps/markets')
   expect(screen.queryByRole('link', { name: 'Reports' })).not.toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'Atlas' })).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Understory' })).toBeInTheDocument()
 })

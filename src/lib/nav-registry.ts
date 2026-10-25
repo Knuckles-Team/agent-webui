@@ -215,7 +215,7 @@ export const ROUTES: readonly RouteDef[] = [
   {
     id: 'workspace.dashboards',
     path: '/data-dashboards',
-    label: 'Dashboards',
+    label: 'Overstory Studio',
     section: 'workspace',
     navigation: 'primary',
     blurb: 'Build dashboards from graph queries, by hand or with the chat agent.',
@@ -446,7 +446,7 @@ export const ROUTES: readonly RouteDef[] = [
   {
     id: 'knowledge.atlas',
     path: '/explore',
-    label: 'Atlas',
+    label: 'Understory',
     section: 'knowledge',
     navigation: 'primary',
     blurb: 'Explore and filter graph data as a table, a tree, or in 3D.',

@@ -61,7 +61,7 @@ See the [workspace gallery and screenshot refresh guide](screenshots.md).
 
 - Hold agent conversations with sources, tool activity, and approval prompts.
 - Build workflows and inspect active sessions, goals, schedules, and fleet health.
-- Use Atlas to move between graph, RDF, schema, object, table, document, code,
+- Use Understory to move between graph, RDF, schema, object, table, document, code,
   and memory views.
 - Discover MCP Apps and connector capabilities through the Arbora boundary.
 - Apply the same role-aware navigation and server authorization model across
@@ -90,7 +90,7 @@ See the [workspace gallery and screenshot refresh guide](screenshots.md).
 
 ## Explore the interface
 
-- [Atlas workspace](atlas.md) — guided and expert knowledge exploration.
+- [Understory workspace](atlas.md) — guided and expert knowledge exploration.
 - [Capability Workbench](capability-workbench.md) — discover, preflight, invoke,
   and follow governed capabilities.
 - [Agents and events](agents.md) — event types, routing, and graph activity.

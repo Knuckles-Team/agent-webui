@@ -9,7 +9,7 @@ Overstory is the browser workspace for Arbora. The repository and package remain
 
 <p align="center">
   <strong>The browser workspace for governed agents, workflows, and knowledge in Arbora.</strong><br>
-  <sub>Conversations · approvals · workflows · fleet activity · Atlas knowledge views</sub>
+  <sub>Conversations · approvals · workflows · fleet activity · Understory knowledge views</sub>
 </p>
 
 <p align="center">
@@ -53,13 +53,13 @@ See the [workspace gallery and screenshot refresh guide](docs/screenshots.md).
 ## Overview
 
 Overstory is the browser workspace composed by Arbora. It brings agent
-conversations, approvals, workflows, fleet activity, and Epistemic Graph
+conversations, approvals, workflows, fleet activity, and Medulla
 exploration into one React application. Its FastAPI host keeps privileged
 credentials and gateway delegation on the server side.
 
 | Overstory owns | Other components own |
 |---|---|
-| Browser presentation, local interaction state, accessible route composition, and the FastAPI boundary | Arbora owns public routing, identity, policy, and fleet supervision; Trellis applies supplied plans; Epistemic Graph owns durable knowledge; connector services own external-system effects |
+| Browser presentation, local interaction state, accessible route composition, and the FastAPI boundary | Arbora owns public routing, identity, policy, and fleet supervision; Meristem applies supplied plans; Medulla owns durable knowledge; connector services own external-system effects |
 
 Current package Version: 2.8.2.
 
@@ -67,7 +67,7 @@ Current package Version: 2.8.2.
 
 - Stream agent responses with sources, governed tool activity, and approval prompts.
 - Build and run workflows while observing sessions, goals, schedules, and fleet health.
-- Explore property graphs, RDF, schemas, objects, tables, documents, code, and memories through Atlas and Epistemic Graph.
+- Explore property graphs, RDF, schemas, objects, tables, documents, code, and memories through Understory and Medulla.
 - Discover MCP Apps and connector capabilities without exposing service credentials to the browser.
 - Apply one role-aware navigation and server authorization model across the complete workspace.
 - Run as the Arbora-hosted browser co-service or as an independently deployed ASGI application.
@@ -79,13 +79,13 @@ then use the shared platform map to move between components:
 
 | Component | Role | Documentation |
 |---|---|---|
-| Overstory | Browser operator workspace and Atlas knowledge views | [Docs](https://knuckles-team.github.io/agent-webui/) |
+| Overstory | Browser operator workspace and Understory knowledge views | [Docs](https://knuckles-team.github.io/agent-webui/) |
 | Tuig | Terminal and headless client; central A2A/REST and experimental headless local ACP; full session parity remains unqualified | [Docs](https://knuckles-team.github.io/agent-terminal-ui/) |
-| Axil Desk | Desktop cockpit for chat, graph, fleet, health, and operator workflows | [Docs](https://knuckles-team.github.io/geniusbot/) |
+| Axil | Desktop cockpit for chat, graph, fleet, health, and operator workflows | [Docs](https://knuckles-team.github.io/geniusbot/) |
 | Arbora messaging | Chat and voice entrypoints hosted by Arbora | [Docs](https://knuckles-team.github.io/arbora/) |
 | Arbora | Public MCP, REST, A2A, identity, policy, and runtime composition | [Docs](https://knuckles-team.github.io/arbora/) |
-| Trellis | In-run harness that applies supplied plans | [Docs](https://knuckles-team.github.io/agent-utilities/) |
-| Epistemic Graph | Durable multimodal data, reasoning, provenance, and transactions | [Docs](https://knuckles-team.github.io/epistemic-graph/) |
+| Meristem | In-run harness that applies supplied plans | [Docs](https://knuckles-team.github.io/agent-utilities/) |
+| Medulla | Durable multimodal data, reasoning, provenance, and transactions | [Docs](https://knuckles-team.github.io/epistemic-graph/) |
 | Scion SDK | Typed source adapters, connector serving, and write-back contracts | [Docs](https://knuckles-team.github.io/agent-connector-sdk/) |
 
 ## Architecture
@@ -94,13 +94,13 @@ then use the shared platform map to move between components:
 
 [Explore the live architecture](https://knuckles-team.github.io/.github/architecture/#webui)
 
-People also enter through Tuig and Axil Desk or Arbora-hosted
+People also enter through Tuig and Axil or Arbora-hosted
 messaging. Tuig retains central A2A/REST and experimental headless local ACP;
 full session parity remains unqualified. External applications connect over MCP,
 REST, or A2A. The browser talks only to its same-origin FastAPI host. Arbora injects gateway routes and
-verified request context. Trellis applies supplied plans; Epistemic Graph owns
+verified request context. Meristem applies supplied plans; Medulla owns
 durable knowledge. Source systems connect through Scion SDK
-directly to Epistemic Graph. Overstory renders typed results
+directly to Medulla. Overstory renders typed results
 and local presentation state while each service retains its own authority.
 
 See the [architecture guide](https://knuckles-team.github.io/agent-webui/architecture/)

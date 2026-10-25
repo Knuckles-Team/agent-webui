@@ -98,7 +98,7 @@ describe('conversation deep links across workspace navigation', () => {
       const view = renderWithProviders(panel)
       expect(screen.getByLabelText('Active conversation')).toHaveTextContent('/session-1')
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        fireEvent.click(screen.getByRole('link', { name: 'Atlas' }))
+        fireEvent.click(screen.getByRole('link', { name: 'Understory' }))
         expect(window.location.pathname).toBe('/explore')
         expect(screen.getByLabelText('Active conversation')).toHaveTextContent('/session-1')
         fireEvent.click(screen.getByRole('link', { name: 'Chat' }))

@@ -1,6 +1,6 @@
 /**
  * @file AtlasView.tsx
- * @description `/explore` — Atlas, the unified data explorer.
+ * @description `/explore` — Understory, the unified data explorer.
  *
  * One workbench for every epistemic-graph modality: pick a modality, filter it with
  * the same facet UI whatever it is, and render the answer as a table, a JSON tree, a

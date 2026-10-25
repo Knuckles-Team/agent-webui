@@ -1159,3 +1159,18 @@ Use Overstory as the client display name in the primary UI, package description,
 and documentation entry points. Keep repository, distribution, import, command,
 protocol and storage identifiers unchanged. Arbora remains the backend and
 ecosystem name. Existing image assets and capture provenance remain unchanged.
+
+## Amendment 2026-10-25: Understory and shared zoom direction
+
+Understory is the display name of the existing Atlas knowledge explorer. Keep
+`atlas` route, component, API and storage identifiers unchanged. Overstory Studio
+names the existing dashboard-authoring surface owned by `agent-dashboards`.
+
+The Understory conversion should share the ecosystem architecture explorer’s
+infinite-zoom visual direction: a continuous semantic journey from ecosystem
+to branch to entity, with readable controls and the existing map/list state,
+URLs, history, focus, keyboard navigation and accessible table/list alternatives.
+Respect reduced motion and reuse the existing renderer and design-system seams;
+do not introduce a competing renderer in this naming patch. This records a
+requested direction, not delivered zoom behavior or completed conversion.
+Outstanding R049.1.2 destination and native-provider acceptance remains open.
