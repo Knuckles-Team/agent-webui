@@ -11,11 +11,7 @@ const transcript = [
   { id: 'native-reply', role: 'assistant', parts: [{ type: 'text', text: 'Retained assistant evidence.' }] },
 ]
 
-async function prepare(
-  page: Page,
-  messages: unknown[] = transcript,
-  path = '/workspace/work?conversation=%2Fnative-dock',
-) {
+async function prepare(page: Page, messages: unknown[] = transcript, path = '/workspace/explore') {
   await page.route('**/*', (route) => {
     const url = new URL(route.request().url())
     if (url.origin !== baseURL) return route.abort('blockedbyclient')
@@ -29,6 +25,7 @@ async function prepare(
   await page.addInitScript((messages) => {
     localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1')
     localStorage.setItem('pydantic-chat-ui-theme', 'light')
+    localStorage.setItem('activeConversationId', '/native-dock')
     localStorage.setItem(
       'chat:["owner-v1","synthetic","documentation-demo"]:messages:/native-dock',
       JSON.stringify(messages),
@@ -81,7 +78,53 @@ async function reachComposerByWheel(page: Page, input: Locator) {
     await page.mouse.wheel(0, (direction * size.height) / 2)
     await page.waitForTimeout(50)
   }
-  expect(await visible()).toBe(true)
+  const reached = await visible()
+  if (!reached) {
+    const geometry = await input.evaluate((element) => {
+      function describe(node: Element) {
+        const style = getComputedStyle(node)
+        const box = node.getBoundingClientRect()
+        return {
+          tag: node.tagName,
+          id: node.id,
+          className: node.getAttribute('class'),
+          rect: { x: box.x, y: box.y, width: box.width, height: box.height },
+          scrollTop: node.scrollTop,
+          scrollHeight: node.scrollHeight,
+          clientHeight: node.clientHeight,
+          scrollWidth: node.scrollWidth,
+          clientWidth: node.clientWidth,
+          overflowY: style.overflowY,
+          overflowX: style.overflowX,
+          minHeight: style.minHeight,
+          maxHeight: style.maxHeight,
+          gridTemplateRows: style.gridTemplateRows,
+          fontSize: style.fontSize,
+        }
+      }
+      const box = element.getBoundingClientRect()
+      const centerHit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return {
+        viewport: { width: innerWidth, height: innerHeight },
+        input: describe(element),
+        centerHit: centerHit ? describe(centerHit) : null,
+        wheelHitStack: document.elementsFromPoint(innerWidth * 0.7, innerHeight - 24).map(describe),
+        scrollSurfaces: Array.from(
+          document.querySelectorAll(
+            '.workspace-viewport, .workspace-frame, .workspace-frame-layout, .workspace-task-surface, ' +
+              '.workspace-chat-boundary, .workspace-chat-layout, .workspace-context-content, .workspace-route-content, ' +
+              '.workspace-assistant, .workspace-assistant-content, .chat-flow, .chat-transcript, .chat-composer',
+          ),
+          describe,
+        ),
+      }
+    })
+    await test.info().attach('native-composer-wheel-geometry', {
+      body: JSON.stringify(geometry, null, 2),
+      contentType: 'application/json',
+    })
+  }
+  expect(reached).toBe(true)
 }
 
 test('one native assistant retains draft, controls and context through navigation and constrained resizing', async ({
@@ -94,12 +137,26 @@ test('one native assistant retains draft, controls and context through navigatio
   await input.fill('Unsent question carried through the workspace')
   await input.evaluate((element) => element.setAttribute('data-retained-composer', 'true'))
   const navigation = page.getByRole('navigation', { name: 'Primary workspace contexts' })
-  for (const context of ['explore', 'operate', 'work', 'explore']) {
-    await navigation.getByRole('link', { name: context, exact: true }).click()
+  for (const [context, label, heading] of [
+    ['explore', 'Knowledge', 'Knowledge'],
+    ['operate', 'Tools', 'Tools & connections'],
+    ['work', 'Chat', 'Chat & tasks'],
+    ['explore', 'Knowledge', 'Knowledge'],
+  ] as const) {
+    await navigation.getByRole('link', { name: label, exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`/workspace/${context}`))
     await expect(input).toHaveValue('Unsent question carried through the workspace')
     await expect(input).toHaveAttribute('data-retained-composer', 'true')
-    await expect(panel.locator('header')).toContainText(new RegExp(context, 'i'))
+    await expect(panel.locator('header')).toContainText(heading)
+    await expect(panel).toHaveAttribute('data-primary', String(context === 'work'))
+    if (context === 'work') {
+      await expect(page.locator('.workspace-chat-layout')).toHaveAttribute('data-conversation-first', 'true')
+      await expect(panel.getByRole('heading', { name: 'Chat & tasks', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Expand chat', exact: true })).toHaveCount(0)
+      const chatBox = await panel.boundingBox()
+      const contextBox = await page.locator('.workspace-context-content').boundingBox()
+      expect(chatBox!.y + chatBox!.height).toBeLessThanOrEqual(contextBox!.y)
+    }
     await expect(page.locator('#chat-panel-toggle, #agent-chat-drawer')).toHaveCount(0)
     await expect(input).toHaveCount(1)
   }
@@ -273,8 +330,7 @@ test('contextual activity survives closing and live SWE stop stays reachable wit
     }
     return route.fulfill({ json: { session_id: 'synthetic-session', backend: 'synthetic', workdir: '/synthetic' } })
   })
-  await page.getByRole('combobox', { name: 'Agent mode' }).click()
-  await page.getByRole('option', { name: 'Code', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Agent mode' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Toggle SWE mode' }).click()
   await page.getByRole('textbox', { name: 'Message input' }).fill('synthetic command')
   await page.getByRole('button', { name: 'Send message', exact: true }).click()
@@ -287,7 +343,7 @@ test('contextual activity survives closing and live SWE stop stays reachable wit
   await expect(page.getByRole('button', { name: 'Message options' })).toHaveAttribute('aria-expanded', 'false')
   await expect(page.getByText('Developer workspace mode', { exact: true })).toBeVisible()
   await expect(page.getByText('Developer workspace session active.', { exact: true })).toBeVisible()
-  await expect(page.getByRole('combobox', { name: 'Agent mode' })).toHaveText('Code')
+  await expect(page.getByRole('combobox', { name: 'Agent mode' })).toHaveCount(0)
   const stop = page.getByRole('button', { name: 'Stop SWE session' })
   await hitTarget(stop)
   await stop.click()
@@ -322,8 +378,8 @@ test('contextual approval cue follows the existing review arrival, disclosure an
         },
       ]),
     )
-    history.pushState({}, '', '/workspace/work?conversation=%2Fpending-review')
-    window.dispatchEvent(new Event('history-state-changed'))
+    localStorage.setItem('activeConversationId', '/pending-review')
+    window.dispatchEvent(new Event('active-conversation-changed'))
   })
   await expect(review).toBeVisible()
   await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
@@ -388,20 +444,19 @@ test('native composer and task remain reachable with enlarged text at narrow and
     await reachComposerByWheel(page, input)
     await input.fill('Enlarged text draft')
     await hitTarget(input)
-    const mode = page.getByRole('combobox', { name: 'Agent mode' })
-    // The selected execution mode must remain legible, not merely an accessible name on a clipped button.
-    await mode.click()
-    await page.getByRole('option', { name: 'Code', exact: true }).click()
-    const selectedMode = mode.locator('[data-slot="select-value"]')
-    await expect(selectedMode).toHaveText('Code')
+    await expect(page.getByRole('combobox', { name: 'Agent mode' })).toHaveCount(0)
+    const options = page.getByRole('button', { name: 'Message options' })
+    // The remaining message options label must remain legible at enlarged text.
+    const optionsLabel = options.locator('span')
+    await expect(optionsLabel).toHaveText('Options')
     await expect
       .poll(() =>
-        selectedMode.evaluate((element) => {
+        optionsLabel.evaluate((element) => {
           const range = document.createRange()
           range.selectNodeContents(element)
           const text = range.getBoundingClientRect()
           const box = element.getBoundingClientRect()
-          const control = element.closest('[role="combobox"]')!.getBoundingClientRect()
+          const control = element.closest('button')!.getBoundingClientRect()
           return (
             text.left >= 0 &&
             text.right <= innerWidth &&
@@ -424,7 +479,7 @@ test('native composer and task remain reachable with enlarged text at narrow and
     await input.focus()
     const expand = page.getByRole('button', { name: 'Restore chat size', exact: true })
     for (const [control, key] of [
-      [mode, 'Tab'],
+      [options, 'Tab'],
       [expand, 'Shift+Tab'],
     ] as const) {
       for (let attempt = 0; attempt < 32; attempt += 1) {

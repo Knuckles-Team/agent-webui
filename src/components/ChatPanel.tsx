@@ -8,7 +8,7 @@ import './ChatPanel.css'
 
 interface ChatPanelProps {
   currentView: string
-  /** Only the standalone compatibility surface takes the entire task area. */
+  /** The default conversation and standalone compatibility surface foreground Chat. */
   isPrimary: boolean
   contextLabel?: string
   purpose?: string
@@ -164,7 +164,7 @@ export default function ChatPanel({ currentView, isPrimary, contextLabel, purpos
       >
         <header className="workspace-assistant-header">
           <div className="workspace-assistant-context">
-            <h2>Assistant</h2>
+            {isPrimary ? <h1>Chat & tasks</h1> : <h2>Agent</h2>}
             <p>
               <span>{contextLabel ?? currentView}</span>
               {selection && <span className="workspace-assistant-selection">{selection.label ?? selection.id}</span>}

@@ -953,7 +953,8 @@ R045–R050 and WEBUI-DESIGN-R004.1/R004.2 retain full co-navigation, native Web
 mobile/device, all-route migration and installed-provider acceptance.
 
 Critical compact-state controls remain outside optional message tools: the
-existing Agent mode selector, SWE mode, live session and Stop controls. Pending
+existing SWE mode, live session and Stop controls. Request-mode selection is
+removed under R005.4.1. Pending
 approval renderers mark their actual review state. The shell exposes
 Review required approval, which only expands and focuses that same UI.
 No approval decision, execution path or provider is added. Clearing the existing
@@ -1023,3 +1024,29 @@ No empty inspector, invented status or evidence, extra data access, or new route
 
 Hosted browser captures and a short disclosure/selection video remain required
 for reference review. Keep broad all-route and installed-provider acceptance open.
+
+### 2026-10-25: Conversation-first product clarity
+
+Extend R005.4, R045, R049.1.3 and R049.2/.1 in place. The accepted Liquid Glass
+materials remain unchanged. Work foregrounds the one mounted Chat with zero
+disclosure clicks. Saved conversations, tasks and independent technical traces
+remain reachable without invented associations. Show Chat, Knowledge and Tools.
+Keep stable route IDs, URLs, permissions and owner retirement.
+Use generic stored-record language rather than screenshot fixture titles.
+Source tests do not close broad redesign or installed-provider acceptance.
+
+The same amendment moves private-workspace privacy controls into the existing
+Settings disclosure for every admitted role. Omit the automatic prompt and header link.
+This must not grant consent, change a stored choice or start analytics.
+Keep the Privacy page and existing allow/disable/revoke controls reachable there.
+An empty conversation explains the core jobs. Text-only examples fill the existing draft.
+They do not submit, execute or change configuration.
+
+This scope includes retained private routes and public or signed-out entry.
+No route mounts an automatic privacy banner. Retained private navigation uses
+the same Settings controls. The public policy page stays reachable. This change
+does not suppress tool, action or browser permission reviews.
+
+### Request handling without a mode (2026-10-25)
+
+R005.4.1 removes Chat request-mode UI, storage and payload only. Reuse the existing agents.run host adapter, which already forwards ordinary user text without this field. Do not classify prompts locally or alter authorization, approvals, model selection or developer workspace routing.

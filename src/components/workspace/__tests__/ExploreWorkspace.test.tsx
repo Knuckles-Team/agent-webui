@@ -83,7 +83,7 @@ function renderWorkspace() {
 }
 
 async function searchAndOpen() {
-  fireEvent.change(screen.getByRole('textbox', { name: 'Find evidence' }), { target: { value: 'sample query' } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'Search knowledge' }), { target: { value: 'sample query' } })
   fireEvent.click(screen.getByRole('button', { name: 'Search' }))
   fireEvent.click(await screen.findByRole('link', { name: /Evidence A/ }))
   await screen.findByText('Body a')
@@ -99,7 +99,7 @@ describe('retained Explore investigation', () => {
         </WorkspaceCommandsProvider>
       </PageContextProvider>,
     )
-    fireEvent.change(screen.getByRole('textbox', { name: 'Find evidence' }), { target: { value: 'sample query' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search knowledge' }), { target: { value: 'sample query' } })
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
     await screen.findByRole('link', { name: /Evidence A/ })
     fireEvent.click(screen.getByRole('button', { name: 'Find destination' }))
@@ -111,39 +111,39 @@ describe('retained Explore investigation', () => {
   it('retains the search and collection while traversing evidence and synthetic history events', async () => {
     renderWorkspace()
     await searchAndOpen()
-    expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveValue('sample query')
+    expect(screen.getByRole('textbox', { name: 'Search knowledge' })).toHaveValue('sample query')
     expect(window.location.search).toBe('?q=sample+query&entity=a')
     expect(screen.getByLabelText('Conversation evidence')).toHaveTextContent('a')
-    expect(screen.getByRole('region', { name: 'Related evidence preview' })).toHaveTextContent('Evidence B')
-    expect(screen.getByRole('region', { name: 'Recent evidence history' })).toHaveTextContent('set_property title')
-    fireEvent.click(screen.getByRole('button', { name: 'relationships' }))
+    expect(screen.getByRole('region', { name: 'Related records' })).toHaveTextContent('Evidence B')
+    expect(screen.getByRole('region', { name: 'Recent history' })).toHaveTextContent('set_property title')
+    fireEvent.click(screen.getByRole('button', { name: 'Related records' }))
     expect(await screen.findByRole('button', { name: /cited by.*←.*Evidence C/ })).toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: /cites.*Evidence B/ }))
     await screen.findByText('Body b')
-    fireEvent.click(screen.getByRole('button', { name: 'history' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Change history' }))
     await screen.findByText('set_property title')
     act(() => {
       window.history.replaceState({}, '', '/workspace/explore?q=sample+query&entity=a')
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
     await screen.findByText('Body a')
-    expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveValue('sample query')
+    expect(screen.getByRole('textbox', { name: 'Search knowledge' })).toHaveValue('sample query')
     expect(screen.getByRole('link', { name: /Evidence A/ })).toHaveAttribute('aria-current', 'true')
-    fireEvent.click(screen.getByRole('button', { name: 'Evidence collection' }))
-    expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: 'Search knowledge' }))
+    expect(screen.getByRole('textbox', { name: 'Search knowledge' })).toHaveFocus()
     expect(window.location.search).toBe('?q=sample+query')
   })
 
   // spec: WEBUI-APPS-R049.2.1
   it('only opens detail for a selection and closes back to the retained searchable collection', async () => {
     renderWorkspace()
-    expect(screen.queryByRole('region', { name: 'Selected evidence' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Record details' })).not.toBeInTheDocument()
     await searchAndOpen()
-    expect(screen.getByRole('region', { name: 'Selected evidence' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Close evidence details' }))
-    expect(screen.queryByRole('region', { name: 'Selected evidence' })).not.toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveFocus()
-    expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveValue('sample query')
+    expect(screen.getByRole('region', { name: 'Record details' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Close record details' }))
+    expect(screen.queryByRole('region', { name: 'Record details' })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Search knowledge' })).toHaveFocus()
+    expect(screen.getByRole('textbox', { name: 'Search knowledge' })).toHaveValue('sample query')
     expect(screen.getByRole('link', { name: /Evidence A/ })).toBeInTheDocument()
   })
 
@@ -162,7 +162,7 @@ describe('retained Explore investigation', () => {
     state.role = 'reader'
     view.rerender(surface())
     expect(screen.queryByText('Body a')).not.toBeInTheDocument()
-    expect(screen.queryByRole('list', { name: 'Evidence results' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Knowledge results' })).not.toBeInTheDocument()
     expect(state.tools).toEqual([])
   })
 
@@ -173,7 +173,7 @@ describe('retained Explore investigation', () => {
       await state.tools[0].execute({ entity: 'a', tool: 'history' }, { signal: new AbortController().signal })
     })
     expect(window.location.search).toBe('?q=sample+query&entity=a&tool=history')
-    expect(screen.getByRole('button', { name: 'history' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Change history' })).toHaveAttribute('aria-pressed', 'true')
     await expect(
       state.tools[0].execute({ entity: 'unrelated', tool: 'overview' }, { signal: new AbortController().signal }),
     ).rejects.toThrow('outside')
@@ -183,10 +183,10 @@ describe('retained Explore investigation', () => {
   it('bounds published context without truncating the actual search input', async () => {
     renderWorkspace()
     const query = 'x'.repeat(300)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Find evidence' }), { target: { value: query } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search knowledge' }), { target: { value: query } })
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
     await screen.findByRole('link', { name: /Evidence A/ })
-    expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveValue(query)
+    expect(screen.getByRole('textbox', { name: 'Search knowledge' })).toHaveValue(query)
     expect(screen.getByLabelText('Published query').textContent).toHaveLength(256)
     expect(api.ontologySearch).toHaveBeenCalledWith({ query, filters: [] })
   })
@@ -218,7 +218,7 @@ describe('retained Explore investigation', () => {
     vi.mocked(api.getOntologyObject).mockRejectedValueOnce(new Error('Object not found'))
     window.history.replaceState({}, '', '/workspace/explore?entity=missing&tool=overview')
     renderWorkspace()
-    expect(await screen.findByRole('alert')).toHaveTextContent('This evidence could not be loaded')
+    expect(await screen.findByRole('alert')).toHaveTextContent('This record could not be loaded')
     expect(screen.getByLabelText('Conversation evidence').textContent).toBe('')
     expect(window.location.search).toContain('entity=missing')
     expect(screen.queryByText('Body missing')).not.toBeInTheDocument()
@@ -237,17 +237,17 @@ describe('retained Explore investigation', () => {
     await screen.findByText('Body a')
     await screen.findByRole('link', { name: /Evidence A/ })
     expect(api.ontologySearch).toHaveBeenCalledWith({ query: 'sample query', filters: [] })
-    expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveValue('sample query')
+    expect(screen.getByRole('textbox', { name: 'Search knowledge' })).toHaveValue('sample query')
     expect(screen.getByLabelText('Conversation evidence')).toHaveTextContent('a')
   })
 
   it('shows a retryable search failure and keeps the user query', async () => {
     vi.mocked(api.ontologySearch).mockRejectedValueOnce(new Error('Unavailable'))
     renderWorkspace()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Find evidence' }), { target: { value: 'retained' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search knowledge' }), { target: { value: 'retained' } })
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
     await screen.findByRole('alert')
-    expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveValue('retained')
+    expect(screen.getByRole('textbox', { name: 'Search knowledge' })).toHaveValue('retained')
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
     await waitFor(() => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -267,4 +267,33 @@ describe('typed Explore destination authority', () => {
     expect(() => navigateExplore({ entity: 'a', tool: 'history' }, 'reader')).toThrow('not permitted')
     expect(push).not.toHaveBeenCalled()
   })
+})
+
+// spec: WEBUI-APPS-R049.2.1
+it('uses a returned related-record title without inventing identity or fetching another record', async () => {
+  vi.mocked(api.ontologySearch).mockResolvedValueOnce({
+    total: 2,
+    objects: [
+      { id: 'a', type: 'Document', title: 'Evidence A' },
+      { id: 'b', type: 'Document', title: 'Project setup notes' },
+    ],
+  })
+  vi.mocked(api.getOntologyObject).mockResolvedValueOnce({
+    id: 'a',
+    object_type: 'Document',
+    title: 'Evidence A',
+    properties: [{ name: 'title', value: 'Body a' }],
+    derived: [],
+    markings: [],
+    history: [],
+    links: [{ link_type: 'references', target_id: 'b', direction: 'out' }],
+  })
+  renderWorkspace()
+  await searchAndOpen()
+  const related = screen.getByRole('button', { name: /references.*Project setup notes.*b/ })
+  expect(related).toBeVisible()
+  expect(api.getOntologyObject).toHaveBeenCalledTimes(1)
+  fireEvent.click(related)
+  await screen.findByText('Body b')
+  expect(parseExploreState(window.location.href).entity).toBe('b')
 })

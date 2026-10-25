@@ -26,7 +26,6 @@ import { useMemo, Suspense, lazy, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppSidebar } from './components/app-sidebar.tsx'
 import { AuthModeBanner } from './components/AuthModeBanner.tsx'
-import { ConsentBanner } from './components/ConsentBanner.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { PageHead } from './components/PageHead.tsx'
 import { ResponsiveLimitation } from './components/ResponsiveLimitation.tsx'
@@ -48,6 +47,7 @@ import {
 import { getDefaultPageActions, PageContextProvider, type PageContextSelection } from './lib/page-context.tsx'
 import { cn } from './lib/utils.ts'
 import { conversationOwnerKey } from '@/lib/chat-store'
+import { isWorkConversationLanding } from '@/lib/work-workspace'
 import { WorkspaceCommandsProvider } from './components/workspace/WorkspaceCommands'
 import { WorkspaceContextRail } from './components/workspace/WorkspaceContextRail'
 import { WorkspaceViewport } from './components/workspace/WorkspaceViewport'
@@ -339,6 +339,13 @@ export function PrivateAppSurface({
   identityLoading = false,
   ...routeContentProps
 }: PrivateAppSurfaceProps) {
+  const location = useWorkspaceLocation()
+  const conversationFirst =
+    route.id === 'workspace.work-proof' &&
+    !routeContentProps.routeAccessDenied &&
+    !identityLoading &&
+    isWorkConversationLanding(location)
+  const primaryChat = routeContentProps.isChat || conversationFirst
   return (
     <WorkspaceCommandsProvider
       enabled={!identityLoading && !routeContentProps.identity.needsSignIn}
@@ -361,14 +368,17 @@ export function PrivateAppSurface({
               role={routeContentProps.identity.role}
             />
           )}
-          <ConsentBanner placement="workspace" />
           <div className="max-h-[35dvh] shrink-0 overflow-auto">
             <WorkspaceWebMcpControl collapsible={!isWorkspaceProof(route)} />
           </div>
 
           <WorkspaceFrame enabled={isWorkspaceProof(route)}>
             <div className="workspace-body workspace-chat-boundary">
-              <div className="workspace-chat-layout" data-primary={routeContentProps.isChat}>
+              <div
+                className="workspace-chat-layout"
+                data-primary={primaryChat}
+                data-conversation-first={conversationFirst}
+              >
                 <div className="workspace-context-content" hidden={routeContentProps.isChat}>
                   {/* Legacy dashboard remains mounted only outside migrated contexts. */}
                   {!isWorkspaceProof(route) && <DashboardSurface isDashboard={routeContentProps.isDashboard} />}
@@ -378,8 +388,8 @@ export function PrivateAppSurface({
                 <ChatPanel
                   currentView={currentView}
                   contextLabel={route.label}
-                  purpose={routeContentProps.isChat ? route.blurb : undefined}
-                  isPrimary={routeContentProps.isChat}
+                  purpose={primaryChat ? route.blurb : undefined}
+                  isPrimary={primaryChat}
                 />
               </div>
             </div>
@@ -450,10 +460,6 @@ function isFloatingChrome(isPublicRoute: boolean, isNotFound: boolean, identityL
   return isPublicRoute || isNotFound || (!identityLoading && identity.needsSignIn)
 }
 
-function showsPublicConsent(routeId: string, floatingChrome: boolean) {
-  return routeId !== 'public.privacy' && floatingChrome
-}
-
 export default function App() {
   const {
     currentRoute,
@@ -507,7 +513,6 @@ export default function App() {
                   pathname={new URL(currentRoute, window.location.origin).pathname}
                   authMode={identity.raw?.mode}
                 />
-                {showsPublicConsent(pageRoute.id, usesFloatingChrome) && <ConsentBanner />}
                 <AppSurface
                   pageRoute={pageRoute}
                   isPublicRoute={isPublicRoute}

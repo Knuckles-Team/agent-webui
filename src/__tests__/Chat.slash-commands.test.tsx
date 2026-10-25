@@ -95,7 +95,7 @@ describe('Chat handleSlashCommand', () => {
     await waitFor(() => {
       expect(screen.getByText(/Arbora Slash Commands/i)).toBeInTheDocument()
     })
-    expect(screen.getByText((_, el) => el?.tagName === 'CODE' && el.textContent === '/mode')).toBeInTheDocument()
+    expect(screen.queryByText((_, el) => el?.tagName === 'CODE' && el.textContent === '/mode')).not.toBeInTheDocument()
   })
 
   it('/clear wipes messages and the input, without appending a reply', async () => {
@@ -143,26 +143,13 @@ describe('Chat handleSlashCommand', () => {
     })
   })
 
-  it('/mode with no argument reports the active mode', async () => {
-    await sendSlashCommand('/mode')
-    await waitFor(() => {
-      expect(screen.getByText(/Active agent interaction mode:/i)).toBeInTheDocument()
-    })
-  })
-
-  it('/mode with an invalid value reports the error', async () => {
-    await sendSlashCommand('/mode not-a-real-mode')
-    await waitFor(() => {
-      expect(screen.getByText(/Valid options are:/i)).toBeInTheDocument()
-    })
-  })
-
-  it('/mode with a valid value switches modes', async () => {
+  it('does not switch modes or dispatch a retired /mode command', async () => {
+    const customFetch = vi.fn(() => undefined)
+    fetchImpl = customFetch
     await sendSlashCommand('/mode plan')
-    await waitFor(() => {
-      expect(screen.getByText(/Interaction mode switched to/i)).toBeInTheDocument()
-    })
-    expect(screen.getByText('plan')).toBeInTheDocument()
+    expect(await screen.findByText(/no interaction mode is needed/i)).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Agent mode' })).not.toBeInTheDocument()
+    expect(customFetch).not.toHaveBeenCalledWith('/api/enhanced/commands/execute')
   })
 
   it('/system renders the fetched system prompt', async () => {

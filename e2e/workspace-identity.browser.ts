@@ -85,7 +85,7 @@ for (const theme of ['light', 'dark', 'glass']) {
       await page.screenshot({ path: info.outputPath(`identity-${theme}-${size.width}x${size.height}.png`) })
       await closeNarrowMap(page, map, size)
     }
-    await checkWorkDisclosure(page)
+    await checkWorkForeground(page)
   })
 }
 
@@ -199,7 +199,7 @@ async function checkNarrowTask(page: Page, map: Locator, size: { width: number; 
   if (size.width !== 320) return
   await expect(map).not.toBeVisible()
   const sizes = await page
-    .locator('.workspace-header-row button:visible')
+    .locator('.workspace-header-row button:visible:not(.sr-only)')
     .evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().height))
   for (const height of sizes) expect(height).toBeGreaterThanOrEqual(44)
   const task = await page.getByRole('region', { name: 'Current workspace task' }).boundingBox()
@@ -250,7 +250,7 @@ async function checkNarrowTask(page: Page, map: Locator, size: { width: number; 
 
 async function openNarrowMap(page: Page, map: Locator, size: { width: number; height: number }) {
   if (size.width !== 320) return
-  await tabTo(page, page.getByRole('button', { name: 'Show map', exact: true }))
+  await tabTo(page, page.getByRole('button', { name: 'Browse workspace', exact: true }))
   await page.keyboard.press('Enter')
   await expect(map).toBeVisible()
   await page.setViewportSize({ width: 740, height: 320 })
@@ -260,7 +260,7 @@ async function openNarrowMap(page: Page, map: Locator, size: { width: number; he
 
 async function closeNarrowMap(page: Page, map: Locator, size: { width: number; height: number }) {
   if (size.width !== 320) return
-  await tabTo(page, page.getByRole('button', { name: 'Hide map', exact: true }))
+  await tabTo(page, page.getByRole('button', { name: 'Hide workspace navigation', exact: true }))
   await page.keyboard.press('Enter')
   await page.setViewportSize({ width: 1440, height: 900 })
   await expect(map).not.toBeVisible()
@@ -307,23 +307,42 @@ async function checkNativeAssistant(page: Page) {
   await expect(expand).toBeFocused()
   await expectClosedAssistant(page)
 }
-async function checkWorkDisclosure(page: Page) {
+async function checkWorkForeground(page: Page) {
   await page.setViewportSize({ width: 320, height: 740 })
   await openContext(page)
-  await page
-    .getByRole('navigation', { name: 'Primary workspace contexts' })
-    .getByRole('link', { name: 'work', exact: true })
-    .click()
+  const navigation = page.getByRole('navigation', { name: 'Primary workspace contexts' })
+  await navigation.getByRole('link', { name: 'Chat', exact: true }).click()
   await expect(page.locator('#chat-panel-toggle')).toHaveCount(0)
   await expect
     .poll(() => page.locator('.workspace-viewport').evaluate((element) => element.getBoundingClientRect().height))
     .toBe(740)
+  const panel = page.locator('#workspace-assistant')
+  const input = page.locator('#chat-message-input')
+  await expect(panel).toHaveAttribute('data-primary', 'true')
+  await expect(page.locator('.workspace-chat-layout')).toHaveAttribute('data-conversation-first', 'true')
+  await expect(panel.getByRole('heading', { name: 'Chat & tasks', exact: true })).toBeVisible()
+  await expect(input).toHaveCount(1)
+  await expect(input).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Expand chat', exact: true })).toHaveCount(0)
+  await input.fill('Retained conversation-first draft')
+  await input.evaluate((element) => element.setAttribute('data-work-retention', 'original'))
+  const options = panel.getByRole('button', { name: 'Message options' })
+  await expect(options).toHaveAttribute('aria-expanded', 'false')
+  await options.click()
+  // Empty history has no export action; seeded native-chat journeys retain that coverage.
+  const attachment = panel.getByRole('button', { name: 'Attach image files', exact: true })
+  await attachment.scrollIntoViewIfNeeded()
+  await hit(attachment)
+  await options.click()
+  await input.press('Escape')
+  await expect(panel).toBeVisible()
+  await navigation.getByRole('link', { name: 'Knowledge', exact: true }).click()
   await expectClosedAssistant(page)
-  await page
-    .locator('#workspace-assistant-entry-slot')
-    .getByRole('button', { name: 'Expand chat', exact: true })
-    .click()
-  await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible()
+  await expect(input).toHaveValue('Retained conversation-first draft')
+  await expect(input).toHaveAttribute('data-work-retention', 'original')
+  await page.getByRole('button', { name: 'Expand chat', exact: true }).click()
+  await expect(input).toBeVisible()
+  await expect(input).toHaveAttribute('data-work-retention', 'original')
 }
 
 async function openContext(page: Page) {
@@ -398,10 +417,24 @@ async function checkCompactFocus(page: Page) {
   await tabTo(page, current)
   await page.keyboard.press('Enter')
   await expect(current).toBeFocused()
-  const focus = page.getByRole('button', { name: 'Focus current task' })
+  const map = page.getByRole('complementary', { name: 'Workspace map' })
+  const mapWasVisible = await map.isVisible()
+  const skipNavigation = page.getByRole('button', { name: 'Skip to navigation', exact: true })
+  await tabTo(page, skipNavigation)
+  await hit(skipNavigation)
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('searchbox', { name: 'Find a page or item' })).toBeFocused()
+  const focus = page.getByRole('button', { name: 'Skip to content' })
   await tabTo(page, focus)
+  await hit(focus)
   await page.keyboard.press('Enter')
   await expect(page.getByRole('region', { name: 'Current workspace task' })).toBeFocused()
+  if (!mapWasVisible) {
+    const hideNavigation = page.getByRole('button', { name: 'Hide workspace navigation', exact: true })
+    await tabTo(page, hideNavigation)
+    await page.keyboard.press('Enter')
+    await expect(map).toBeHidden()
+  }
   const find = page.getByRole('button', { name: 'Find destination' })
   await tabTo(page, find)
   await page.keyboard.press('Enter')

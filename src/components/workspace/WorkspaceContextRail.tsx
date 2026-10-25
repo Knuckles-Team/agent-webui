@@ -51,7 +51,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
           <nav aria-label="Primary workspace contexts" className="flex flex-wrap gap-1">
             {(['work', 'explore', 'operate'] as const).map((context) => (
               <a
-                key={context}
+                key={{ work: 'Chat', explore: 'Knowledge', operate: 'Tools' }[context]}
                 className="inline-flex min-h-11 items-center rounded border px-3 capitalize"
                 aria-disabled={!roleAtLeast(role, context === 'operate' ? 'reader' : 'user')}
                 aria-current={active === context ? 'page' : undefined}
@@ -69,7 +69,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
                   else navigateOperate(parseOperateState(remembered.operate), role)
                 }}
               >
-                {context}
+                {{ work: 'Chat', explore: 'Knowledge', operate: 'Tools' }[context]}
               </a>
             ))}
           </nav>
@@ -82,9 +82,6 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
         <div id="workspace-assistant-entry-slot" />
         <div className="workspace-header-utilities">
           <WorkspaceAppearance />
-          <a className="inline-flex min-h-11 items-center text-sm underline" href="/privacy">
-            Privacy
-          </a>
         </div>
       </div>
     </header>

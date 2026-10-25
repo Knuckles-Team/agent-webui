@@ -111,7 +111,7 @@ export function WorkspaceMap({
         <strong>{view.root?.command.label ?? 'Workspace'}</strong>
       </div>
       <label className="workspace-map-search">
-        Filter loaded destinations
+        Find a page or item
         <input
           value={search}
           onChange={(event) => {
@@ -127,7 +127,7 @@ export function WorkspaceMap({
             setMode('map')
           }}
         >
-          Map
+          Tree
         </button>
         <button
           aria-pressed={mode === 'list'}
@@ -144,9 +144,7 @@ export function WorkspaceMap({
       )}
       {view.map && view.branch && (
         <div className="workspace-map-parent">
-          <span className="workspace-frame-eyebrow">
-            {view.branch === view.root ? 'Context root' : 'Parent destination'}
-          </span>
+          <span className="workspace-frame-eyebrow">{view.branch === view.root ? 'Workspace' : 'Parent item'}</span>
           <Destination command={view.branch.command} current={current} onSelect={onSelect} />
         </div>
       )}
@@ -158,11 +156,11 @@ export function WorkspaceMap({
         ))}
       </ul>
       {!view.shown.length && (
-        <p role="status">{search ? 'No matching loaded destinations.' : 'No further destinations are loaded here.'}</p>
+        <p role="status">{search ? 'No matching loaded destinations.' : 'No more items here.'}</p>
       )}
       <details className="workspace-map-help">
-        <summary>Map help</summary>
-        <p>Loaded destinations. Your task stays beside the map.</p>
+        <summary>Navigation help</summary>
+        <p>Browse available pages and loaded items. This is navigation, not a knowledge graph.</p>
         <p>Native task controls remain available when a destination has not loaded.</p>
       </details>
     </>

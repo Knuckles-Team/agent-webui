@@ -36,8 +36,8 @@ it('retires callbacks when catalog ownership changes or the consumer unmounts', 
   const view = render(<Surface />)
   const stale = catalog.select
   view.rerender(<Surface owner="two" />)
-  expect(screen.getAllByRole('button', { name: 'Show map' })).toHaveLength(1)
-  expect(screen.getAllByRole('button', { name: 'Focus map' })).toHaveLength(1)
+  expect(screen.getAllByRole('button', { name: 'Browse workspace' })).toHaveLength(1)
+  expect(screen.getAllByRole('button', { name: 'Skip to navigation' })).toHaveLength(1)
   expect(() => {
     stale('/workspace/explore')
   }).toThrow('stale or unavailable')
@@ -65,15 +65,15 @@ it('retains native task DOM and draft through map visibility and legacy layout c
   const draft = screen.getByRole('textbox', { name: 'Retained draft' })
   fireEvent.change(draft, { target: { value: 'unsent work' } })
   expect(screen.queryByRole('complementary', { name: 'Workspace map' })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Show map' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Hide map' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Browse workspace' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Hide workspace navigation' }))
   expect(screen.queryByRole('complementary', { name: 'Workspace map' })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Focus map' }))
-  expect(screen.getByRole('searchbox', { name: 'Filter loaded destinations' })).toHaveFocus()
-  fireEvent.click(screen.getByRole('button', { name: 'Focus current task' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Skip to navigation' }))
+  expect(screen.getByRole('searchbox', { name: 'Find a page or item' })).toHaveFocus()
+  fireEvent.click(screen.getByRole('button', { name: 'Skip to content' }))
   expect(screen.getByRole('region', { name: 'Current workspace task' })).toHaveFocus()
   view.rerender(<Surface enabled={false} />)
-  expect(screen.queryByRole('button', { name: 'Focus map' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Skip to navigation' })).not.toBeInTheDocument()
   expect(screen.getByRole('textbox', { name: 'Retained draft' })).toBe(draft)
   expect(draft).toHaveValue('unsent work')
   view.rerender(<Surface />)
@@ -174,26 +174,26 @@ it('reflows the automatic map default but preserves an explicit expansion and re
   try {
     render(<Surface />)
     const draft = screen.getByRole('textbox', { name: 'Retained draft' })
-    expect(screen.getByRole('button', { name: 'Hide map' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Hide workspace navigation' })).toBeInTheDocument()
     act(() => {
       wide = false
       media.dispatchEvent(new Event('change'))
     })
-    expect(screen.getByRole('button', { name: 'Show map' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Browse workspace' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Retained draft' })).toBe(draft)
     act(() => {
       wide = true
       media.dispatchEvent(new Event('change'))
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Focus map' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Focus current task' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Skip to navigation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Skip to content' }))
     act(() => {
       wide = false
       media.dispatchEvent(new Event('change'))
     })
-    expect(screen.getByRole('button', { name: 'Hide map' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Hide map' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Focus map' }))
+    expect(screen.getByRole('button', { name: 'Hide workspace navigation' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Hide workspace navigation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Skip to navigation' }))
     expect(screen.getByRole('searchbox')).toHaveFocus()
     act(() => {
       wide = true
@@ -203,7 +203,7 @@ it('reflows the automatic map default but preserves an explicit expansion and re
       wide = false
       media.dispatchEvent(new Event('change'))
     })
-    expect(screen.getByRole('button', { name: 'Hide map' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Hide workspace navigation' })).toBeInTheDocument()
     expect(screen.getByRole('searchbox')).toHaveFocus()
   } finally {
     match.mockRestore()

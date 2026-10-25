@@ -107,7 +107,7 @@ describe('Chat SWE mode', () => {
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
     expect(toggle.closest('.chat-composer-options')).toBeNull()
     expect(screen.getByText('Developer workspace mode')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Agent mode' }).closest('.chat-composer-options')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Agent mode' })).not.toBeInTheDocument()
   })
 
   it('drives the developer-workspace runtime when a message is sent in SWE mode', async () => {

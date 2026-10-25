@@ -52,8 +52,8 @@
         "93401c34a695"
       ],
       "verified_by": [
-        "src/__tests__/design-tokens.test.ts:113",
-        "src/__tests__/design-tokens.test.ts:57",
+        "src/__tests__/design-tokens.test.ts:114",
+        "src/__tests__/design-tokens.test.ts:58",
         "src/components/__tests__/ThemeProvider.test.tsx:1"
       ],
       "rollup_of": [
@@ -101,7 +101,7 @@
         "a4c402f68f1b"
       ],
       "verified_by": [
-        "src/__tests__/design-tokens.test.ts:74"
+        "src/__tests__/design-tokens.test.ts:75"
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R005.1",
@@ -175,7 +175,7 @@
       ],
       "verified_by": [
         "e2e/workspace-density.spec.ts:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:170",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:195",
         "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:1"
       ],
       "rollup_of": [
@@ -223,7 +223,9 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "4d0f9693e45d",
-        "f91c2a3a3446"
+        "ae46fe4be9a5",
+        "f91c2a3a3446",
+        "fbb47596cec2"
       ],
       "verified_by": [
         "e2e/native-chat.browser.ts:2",
@@ -263,7 +265,9 @@
       "title": "Repeatable documentation screenshots",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "1cac40d60bc3"
+        "1cac40d60bc3",
+        "ae46fe4be9a5",
+        "fbb47596cec2"
       ],
       "verified_by": [
         "e2e/documentation-screenshots.browser.ts:1",
@@ -277,16 +281,16 @@
       "landed_in": [
         "12b5f5624953",
         "73051bf582bd",
+        "7dc17e5b2d4c",
         "93401c34a695",
-        "ac86f2de9817",
-        "db4c750394cc"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
-        "src/__tests__/design-tokens.test.ts:120",
-        "src/__tests__/design-tokens.test.ts:171",
-        "src/__tests__/design-tokens.test.ts:200",
-        "src/components/__tests__/ThemeProvider.test.tsx:158"
+        "src/__tests__/design-tokens.test.ts:121",
+        "src/__tests__/design-tokens.test.ts:172",
+        "src/__tests__/design-tokens.test.ts:201",
+        "src/__tests__/design-tokens.test.ts:215"
       ]
     },
     {
@@ -297,8 +301,8 @@
         "12b5f5624953",
         "19b439519a22",
         "47885260902d",
-        "73051bf582bd",
-        "93401c34a695"
+        "667aa894cc3d",
+        "73051bf582bd"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
@@ -312,6 +316,7 @@
       "title": "Meaningful interruptible motion",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "667aa894cc3d",
         "73051bf582bd",
         "836d8895cd6f",
         "ac86f2de9817"

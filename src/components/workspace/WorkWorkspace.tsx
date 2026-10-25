@@ -177,253 +177,258 @@ function AuthorizedWork({
   useWebMcpToolSet(error ? [] : tools)
   return (
     <section aria-label="Work workspace" className="workspace-surface flex min-w-0 flex-col gap-3">
-      <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
-        Work
-      </h1>
       {error && <p role="alert">{error}</p>}
-      <section aria-label="Conversation selection" className="rounded border p-3">
-        <h2 className="font-medium">Conversation</h2>
-        <p className="text-sm text-muted-foreground">
-          The same assistant stays mounted while you inspect execution evidence.
-        </p>
-        <label className="flex flex-col gap-1 text-sm">
-          Available conversation
-          <select
-            className="min-h-11 min-w-0 rounded border bg-background px-2"
-            value={state.conversation ?? ''}
-            onChange={(event) => {
-              navigateWork({ ...state, conversation: event.target.value || null }, identity.role)
-            }}
-          >
-            <option value="">Keep current conversation</option>
-            {state.conversation && !conversations.some((entry) => entry.id === state.conversation) && (
-              <option value={state.conversation}>Linked conversation</option>
-            )}
-            {conversations.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.firstMessage?.trim() ? entry.firstMessage : entry.id}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p className="mt-2 break-all text-xs">
-          Active: {activeConversation === '/' ? 'New conversation' : activeConversation}
-        </p>
-        <WorkConversationControls
-          enabled={!error}
-          owner={conversationOwnerKey(identity)}
-          conversation={activeConversation}
-          onNew={() => {
-            setActiveConversation('/')
-          }}
-        />
-      </section>
-      <WorkPromptLens state={state} role={identity.role} disabled={Boolean(error)} />
-      <div className={state.lens === 'prompts' ? 'hidden' : 'workspace-panels workspace-panels-balanced'}>
-        <section aria-label="Agent tasks" className="rounded border p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-medium">Agent tasks</h2>
-            <button
-              className={button}
-              onClick={() => {
-                void tasks.refetch()
+      <details open={Boolean(state.task ?? state.run ?? (state.lens && state.lens !== 'investigation'))}>
+        <summary className="workspace-pane-toggle">
+          <h2 ref={heading} tabIndex={-1} className="inline font-semibold">
+            Tasks and conversations
+          </h2>
+        </summary>
+        <section aria-label="Conversation selection" className="rounded border p-3">
+          <h2 className="font-medium">Conversation</h2>
+          <p className="text-sm text-muted-foreground">Resume a saved conversation or start a new one.</p>
+          <label className="flex flex-col gap-1 text-sm">
+            Available conversation
+            <select
+              className="min-h-11 min-w-0 rounded border bg-background px-2"
+              value={state.conversation ?? ''}
+              onChange={(event) => {
+                navigateWork({ ...state, conversation: event.target.value || null }, identity.role)
               }}
             >
-              Refresh tasks
-            </button>
-          </div>
-          <p className="my-2 text-sm">
-            Caller-visible tasks from Arbora. Conversation ownership and trace linkage are not supplied.
+              <option value="">Keep current conversation</option>
+              {state.conversation && !conversations.some((entry) => entry.id === state.conversation) && (
+                <option value={state.conversation}>Linked conversation</option>
+              )}
+              {conversations.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.firstMessage?.trim() ? entry.firstMessage : 'Untitled conversation'}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="mt-2 text-xs">
+            {activeConversation === '/' ? 'New conversation' : 'Current conversation selected'}
           </p>
-          {tasks.isFetching && <p role="status">Loading tasks…</p>}
-          {tasks.isError && (
-            <p role="alert">
-              {tasks.error instanceof ApiError && [404, 501].includes(tasks.error.status)
-                ? 'Task inspection is unavailable on this backend.'
-                : 'Task listing failed. Refresh to retry.'}
+          <WorkConversationControls
+            enabled={!error}
+            owner={conversationOwnerKey(identity)}
+            conversation={activeConversation}
+            onNew={() => {
+              setActiveConversation('/')
+            }}
+          />
+        </section>
+        <WorkPromptLens state={state} role={identity.role} disabled={Boolean(error)} />
+        <div className={state.lens === 'prompts' ? 'hidden' : 'workspace-panels workspace-panels-balanced'}>
+          <section aria-label="Agent tasks" className="rounded border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-medium">Agent tasks</h2>
+              <button
+                className={button}
+                onClick={() => {
+                  void tasks.refetch()
+                }}
+              >
+                Refresh tasks
+              </button>
+            </div>
+            <p className="my-2 text-sm">
+              Tasks you can access. They are not automatically linked to this conversation.
             </p>
-          )}
-          {tasks.data?.length === 0 && <p>No tasks were returned.</p>}
-          <ul>
-            {!tasks.isError &&
-              tasks.data?.map((entry) => (
-                <li key={entry.id}>
+            {tasks.isFetching && <p role="status">Loading tasks…</p>}
+            {tasks.isError && (
+              <p role="alert">
+                {tasks.error instanceof ApiError && [404, 501].includes(tasks.error.status)
+                  ? 'Task inspection is unavailable on this backend.'
+                  : 'Task listing failed. Refresh to retry.'}
+              </p>
+            )}
+            {!tasks.isError && tasks.data?.length === 0 && <p>No tasks yet.</p>}
+            <ul>
+              {!tasks.isError &&
+                tasks.data?.map((entry) => (
+                  <li key={entry.id}>
+                    <a
+                      href={workHref({ ...state, task: entry.id })}
+                      className={`${button} my-1 inline-flex max-w-full flex-wrap break-all`}
+                      aria-current={state.task === entry.id ? 'true' : undefined}
+                      onClick={(event) => {
+                        if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+                        event.preventDefault()
+                        navigateWork({ ...state, task: entry.id }, identity.role)
+                      }}
+                    >
+                      {entry.id}
+                      {entry.status?.state && ` · ${entry.status.state}`}
+                    </a>
+                  </li>
+                ))}
+            </ul>
+            {state.task && (
+              <div className="mt-2 border-t pt-2">
+                <button className={button} onClick={() => navigateWork({ ...state, task: null }, identity.role)}>
+                  All tasks
+                </button>
+                {task.isFetching && <p role="status">Loading task…</p>}
+                {(task.isError || taskMismatch) && (
+                  <p role="alert">
+                    Task detail could not be loaded.{' '}
+                    <button
+                      className={button}
+                      onClick={() => {
+                        void task.refetch()
+                      }}
+                    >
+                      Retry task
+                    </button>
+                  </p>
+                )}
+                {taskData && !task.isError && (
+                  <>
+                    <h3 className="break-all font-medium">Task {taskData.id}</h3>
+                    <p>Status: {taskData.status?.state ?? 'Not reported'}</p>
+                    <WorkTaskControls
+                      taskId={taskData.id}
+                      taskState={taskData.status?.state}
+                      context={location}
+                      refreshing={task.isFetching}
+                      cancellation={cancellation}
+                      onRefresh={() => {
+                        void task.refetch()
+                        void tasks.refetch()
+                      }}
+                    />
+                    <WorkTaskInspector task={taskData} />
+                    {!task.isFetching && (
+                      <>
+                        <CurrentPlanPanel
+                          taskId={taskData.id}
+                          runId={currentPlanRunId(taskData)}
+                          generation={generation}
+                        />
+                        <WorkExecutionGraph
+                          taskId={taskData.id}
+                          runId={currentPlanRunId(taskData)}
+                          generation={generation}
+                        />
+                      </>
+                    )}
+                    <p className="text-sm">
+                      Child-agent execution and relationships to listed traces are not supplied by this task contract.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+          </section>
+          <details open={Boolean(state.run)} aria-label="Execution inspection" className="min-w-0 rounded border p-3">
+            <summary className="workspace-pane-toggle">Technical traces</summary>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-medium">Available execution traces</h2>
+              <button
+                className={button}
+                onClick={() => {
+                  void runs.refetch()
+                }}
+                disabled={runs.isFetching}
+              >
+                Refresh traces
+              </button>
+            </div>
+            <p className="my-2 text-sm text-muted-foreground">
+              These technical records are not linked to the selected conversation. A recorded step is not proof of a
+              child agent.
+            </p>
+            {runs.isFetching && <p role="status">Loading traces…</p>}
+            {runs.data?.unavailable && <p role="status">Trace inspection is not activated on this backend.</p>}
+            {(runs.isError || (runs.data && !runs.data.ok && !runs.data.unavailable)) && (
+              <p role="alert">Trace listing failed. Refresh to retry.</p>
+            )}
+            {runs.data?.ok && rows.length === 0 && <p>No execution traces were returned.</p>}
+            <ul className="space-y-1">
+              {rows.map((row) => (
+                <li key={row.id}>
                   <a
-                    href={workHref({ ...state, task: entry.id })}
-                    className={`${button} my-1 inline-flex max-w-full flex-wrap break-all`}
-                    aria-current={state.task === entry.id ? 'true' : undefined}
+                    className={`${button} inline-flex max-w-full flex-wrap gap-2`}
+                    href={workHref({ ...state, run: row.id, node: null })}
+                    aria-current={state.run === row.id ? 'true' : undefined}
                     onClick={(event) => {
                       if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
                       event.preventDefault()
-                      navigateWork({ ...state, task: entry.id }, identity.role)
+                      navigateWork({ ...state, run: row.id, node: null }, identity.role)
                     }}
                   >
-                    {entry.id}
-                    {entry.status?.state && ` · ${entry.status.state}`}
+                    <span className="break-all">{row.name ?? row.id}</span>
+                    {row.status && <span>{row.status}</span>}
                   </a>
                 </li>
               ))}
-          </ul>
-          {state.task && (
-            <div className="mt-2 border-t pt-2">
-              <button className={button} onClick={() => navigateWork({ ...state, task: null }, identity.role)}>
-                All tasks
-              </button>
-              {task.isFetching && <p role="status">Loading task…</p>}
-              {(task.isError || taskMismatch) && (
-                <p role="alert">
-                  Task detail could not be loaded.{' '}
-                  <button
-                    className={button}
-                    onClick={() => {
-                      void task.refetch()
-                    }}
-                  >
-                    Retry task
-                  </button>
-                </p>
-              )}
-              {taskData && !task.isError && (
-                <>
-                  <h3 className="break-all font-medium">Task {taskData.id}</h3>
-                  <p>Status: {taskData.status?.state ?? 'Not reported'}</p>
-                  <WorkTaskControls
-                    taskId={taskData.id}
-                    taskState={taskData.status?.state}
-                    context={location}
-                    refreshing={task.isFetching}
-                    cancellation={cancellation}
-                    onRefresh={() => {
-                      void task.refetch()
-                      void tasks.refetch()
-                    }}
-                  />
-                  <WorkTaskInspector task={taskData} />
-                  {!task.isFetching && (
-                    <>
-                      <CurrentPlanPanel
-                        taskId={taskData.id}
-                        runId={currentPlanRunId(taskData)}
-                        generation={generation}
-                      />
-                      <WorkExecutionGraph
-                        taskId={taskData.id}
-                        runId={currentPlanRunId(taskData)}
-                        generation={generation}
-                      />
-                    </>
-                  )}
-                  <p className="text-sm">
-                    Child-agent execution and relationships to listed traces are not supplied by this task contract.
-                  </p>
-                </>
-              )}
-            </div>
-          )}
-        </section>
-        <section aria-label="Execution inspection" className="min-w-0 rounded border p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-medium">Available execution traces</h2>
-            <button
-              className={button}
-              onClick={() => {
-                void runs.refetch()
-              }}
-              disabled={runs.isFetching}
-            >
-              Refresh traces
-            </button>
-          </div>
-          <p className="my-2 text-sm text-muted-foreground">
-            Conversation-to-run association is unavailable. These are independent caller-visible traces, not runs
-            attributed to the selected conversation.
-          </p>
-          {runs.isFetching && <p role="status">Loading traces…</p>}
-          {runs.data?.unavailable && <p role="status">Trace inspection is not activated on this backend.</p>}
-          {(runs.isError || (runs.data && !runs.data.ok && !runs.data.unavailable)) && (
-            <p role="alert">Trace listing failed. Refresh to retry.</p>
-          )}
-          {runs.data?.ok && rows.length === 0 && <p>No execution traces were returned.</p>}
-          <ul className="space-y-1">
-            {rows.map((row) => (
-              <li key={row.id}>
-                <a
-                  className={`${button} inline-flex max-w-full flex-wrap gap-2`}
-                  href={workHref({ ...state, run: row.id, node: null })}
-                  aria-current={state.run === row.id ? 'true' : undefined}
-                  onClick={(event) => {
-                    if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
-                    event.preventDefault()
-                    navigateWork({ ...state, run: row.id, node: null }, identity.role)
+            </ul>
+            {state.run && (
+              <div className="mt-3 border-t pt-3">
+                <button
+                  className={button}
+                  onClick={() => navigateWork({ ...state, run: null, node: null }, identity.role)}
+                >
+                  All traces
+                </button>
+                <button
+                  className={button}
+                  disabled={detail.isFetching}
+                  onClick={() => {
+                    void detail.refetch()
                   }}
                 >
-                  <span className="break-all">{row.name ?? row.id}</span>
-                  {row.status && <span>{row.status}</span>}
-                </a>
-              </li>
-            ))}
-          </ul>
-          {state.run && (
-            <div className="mt-3 border-t pt-3">
-              <button
-                className={button}
-                onClick={() => navigateWork({ ...state, run: null, node: null }, identity.role)}
-              >
-                All traces
-              </button>
-              <button
-                className={button}
-                disabled={detail.isFetching}
-                onClick={() => {
-                  void detail.refetch()
-                }}
-              >
-                Refresh selected trace
-              </button>
-              {detail.isFetching && <p role="status">Loading selected trace…</p>}
-              {detail.data?.unavailable && <p role="status">Trace detail is unavailable on this backend.</p>}
-              {(detail.isError || runMismatch || (detail.data && !detail.data.ok && !detail.data.unavailable)) && (
-                <p role="alert">
-                  Selected trace could not be loaded.{' '}
-                  <button
-                    className={button}
-                    onClick={() => {
-                      void detail.refetch()
-                    }}
-                  >
-                    Retry detail
-                  </button>
-                </p>
-              )}
-              {run && (
-                <>
-                  <h3 className="mt-2 break-all font-medium">{run.trace.name ?? run.trace.id}</h3>
-                  <p className="text-sm">Recorded spans and generations. A span is not proof of a subagent.</p>
-                  <ul>
-                    {run.nodes.map((node) => (
-                      <li key={node.id}>
-                        <button
-                          className={`${button} mt-1 max-w-full break-all text-left`}
-                          aria-pressed={state.node === node.id}
-                          onClick={() => navigateWork({ ...state, node: node.id }, identity.role)}
-                        >
-                          {node.name ?? node.id} {node.kind && `· ${node.kind}`}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  {state.node && !selectedNode && <p role="alert">This node is not present in the selected trace.</p>}
-                  <TraceNodeInspector state={state} run={run} role={identity.role} />
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Run cancellation, live subagent execution and linked output evidence require upstream contracts and
-                    are not available in this slice.
+                  Refresh selected trace
+                </button>
+                {detail.isFetching && <p role="status">Loading selected trace…</p>}
+                {detail.data?.unavailable && <p role="status">Trace detail is unavailable on this backend.</p>}
+                {(detail.isError || runMismatch || (detail.data && !detail.data.ok && !detail.data.unavailable)) && (
+                  <p role="alert">
+                    Selected trace could not be loaded.{' '}
+                    <button
+                      className={button}
+                      onClick={() => {
+                        void detail.refetch()
+                      }}
+                    >
+                      Retry detail
+                    </button>
                   </p>
-                </>
-              )}
-            </div>
-          )}
-        </section>
-      </div>
+                )}
+                {run && (
+                  <>
+                    <h3 className="mt-2 break-all font-medium">{run.trace.name ?? run.trace.id}</h3>
+                    <p className="text-sm">Recorded spans and generations. A span is not proof of a subagent.</p>
+                    <ul>
+                      {run.nodes.map((node) => (
+                        <li key={node.id}>
+                          <button
+                            className={`${button} mt-1 max-w-full break-all text-left`}
+                            aria-pressed={state.node === node.id}
+                            onClick={() => navigateWork({ ...state, node: node.id }, identity.role)}
+                          >
+                            {node.name ?? node.id} {node.kind && `· ${node.kind}`}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {state.node && !selectedNode && (
+                      <p role="alert">This node is not present in the selected trace.</p>
+                    )}
+                    <TraceNodeInspector state={state} run={run} role={identity.role} />
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Run cancellation, live subagent execution and linked output evidence require upstream contracts
+                      and are not available in this slice.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+          </details>
+        </div>
+      </details>
     </section>
   )
 }

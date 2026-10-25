@@ -49,8 +49,8 @@ secondary foreground. Decorative `--border` is `#C5CFC1` in light/glass and
 The shared workspace uses an original same-origin botanical wallpaper, with bounded sage/blue/ivory light.
 The WebP asset is an encoding-only optimization of generated background artwork, not a UI mockup.
 Lighten blending prevents image channels falling below the authored contrast floor. Header and map
-framing transmit that field through 38% ivory and sage glass; primary panels
-use 48% white glass, with 60% reading-card fills and 72% neutral-control fills. The independent material
+framing transmit that field through 32% ivory and sage glass; primary panels
+use 41% white glass, with 51% reading-card fills and 61% neutral-control fills. The independent material
 preference applies to light and the legacy glass alias. Dark uses 72–88% deep
 surfaces. Text never inherits container opacity. `--glass-muted` is `#111111` in
 light and `#E1EBDC` in dark. Contrast tests composite every material over the
@@ -72,6 +72,39 @@ The Agent entry lives in existing chrome and expands the mounted conversation
 in place. It reserves no idle column or bottom bar and is not a floating bubble.
 Running and approval cues come from the real conversation state. These are
 bounded shell/Explore changes, not evidence of an all-route redesign.
+
+### Approved visual baseline
+
+The owner approved the desktop theme on 2026-10-25.
+
+Source: [`9478612`](https://github.com/Knuckles-Team/agent-webui/commit/9478612117a32ec497a71c9ab6fff451804c0486).
+Keep this palette, wallpaper and material hierarchy while adapting real product content and context.
+This approval does not accept synthetic research vocabulary, all-route parity or unfinished accessibility checks.
+
+| Material | Light value |
+|---|---|
+| Header | `rgb(241 246 231 / 38%)`, 16px blur, 125% saturation |
+| Secondary map | `rgb(218 234 220 / 38%)`, 16px blur, 120% saturation |
+| Primary panels | `rgb(248 250 243 / 48%)`, 16px blur, 115% saturation |
+| Nested reading cards | `rgb(255 255 250 / 60%)`, no extra blur |
+| Neutral controls and active highlights | `rgb(255 255 252 / 72%)`, no extra blur |
+| Text and secondary labels | `#111111` |
+| Luminous edge | `rgb(255 255 255 / 76%)` |
+| Contrast floor | `#45685B`, with lighten background blending |
+| Frame and card radii | 24px panels, 16px cards, 14px controls |
+
+The wallpaper is `src/assets/arbora-canopy-wallpaper.webp`: 1672×941 pixels and 290892 bytes.
+Its SHA-256 is `df3bfb3775c406c2eacdd8e1fc5c4daf7e86af69b8fcf74d8e9a79153f56544a`.
+The owner then requested about 15% less opacity, relative to the approved fills.
+Current light fills are 32%, 32%, 41%, 51% and 61% for header, map, panels, cards and neutral controls.
+The token audit pins that calculation, the unchanged palette and the asset digest.
+Dark, opaque and accessibility fallbacks remain unchanged. Semantic action colors retain their readable foreground pairs.
+Other theme changes require a new explicit visual review.
+The hosted run retains real desktop/mobile screenshots and a short transition recording.
+
+Capture: [preview run](https://github.com/Knuckles-Team/agent-webui/actions/runs/40157438929).
+
+This fixture uses synthetic records; it does not represent a connected research project or live provider.
 
 ## Typography
 

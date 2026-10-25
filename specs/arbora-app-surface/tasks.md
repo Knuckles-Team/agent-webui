@@ -362,3 +362,7 @@ with base 954a227. Browser qualification remains incomplete.
 Keep the Work/Operate, baseline comparison and native interaction obligations above open.
 Preserve the qualified source child without promoting its broader ancestor.
 Metadata guard tests are not evidence that the remaining redesign is accepted.
+
+### Request handling without a mode (2026-10-25)
+
+R005.4.1 local source work: remove obsolete request-mode controls and state; add mounted transport regressions; run scoped Chat suites. Full quality gates and served inference acceptance remain separate.

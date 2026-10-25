@@ -39,23 +39,23 @@ function FrameControls({
         createPortal(
           <button
             className="workspace-map-toggle"
-            aria-label={showMap ? 'Hide map' : 'Show map'}
+            aria-label={showMap ? 'Hide workspace navigation' : 'Browse workspace'}
             aria-expanded={showMap}
             aria-controls="workspace-map"
             onClick={toggleMap}
           >
-            Map
+            Browse
           </button>,
           slots.toggle,
         )}
       {slots.focus &&
         createPortal(
           <div className="workspace-frame-actions">
-            <button aria-label="Focus map" onClick={focusMap}>
-              Focus map
+            <button className="sr-only focus:not-sr-only" aria-label="Skip to navigation" onClick={focusMap}>
+              Skip to navigation
             </button>
-            <button aria-label="Focus current task" onClick={focusTask}>
-              Focus task
+            <button className="sr-only focus:not-sr-only" aria-label="Skip to content" onClick={focusTask}>
+              Skip to content
             </button>
           </div>,
           slots.focus,

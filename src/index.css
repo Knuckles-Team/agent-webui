@@ -101,15 +101,15 @@
   --material-shadow: 0 2px 8px rgb(31 42 36 / 6%), inset 0 1px 0 rgb(255 255 255 / 80%);
   --atmosphere-sage: #b5c5ab;
   --atmosphere-light: #faf3de;
-  --shell-alpha: 38%;
+  --shell-alpha: 32%;
   --glass-field-floor: #45685b;
   --glass-field-light: #fff9df;
   --glass-field-blue: #87aaba;
-  --glass-chrome: rgb(241 246 231 / 38%);
-  --glass-secondary: rgb(218 234 220 / 38%);
-  --glass-primary: rgb(248 250 243 / 48%);
-  --glass-reading: rgb(255 255 250 / 60%);
-  --glass-control: rgb(255 255 252 / 72%);
+  --glass-chrome: rgb(241 246 231 / 32%);
+  --glass-secondary: rgb(218 234 220 / 32%);
+  --glass-primary: rgb(248 250 243 / 41%);
+  --glass-reading: rgb(255 255 250 / 51%);
+  --glass-control: rgb(255 255 252 / 61%);
   --glass-edge: rgb(255 255 255 / 76%);
   --glass-line: rgb(55 82 68 / 24%);
   --glass-muted: #111111;
@@ -196,7 +196,7 @@
 
 .glass {
   /* Compatibility theme alias. The independent transparency preference owns material. */
-  --shell-alpha: 38%;
+  --shell-alpha: 32%;
 }
 
 /* ── Dashboard Widget Cards ───────────────────────────────────────── */

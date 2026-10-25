@@ -7,6 +7,7 @@
  * already relies on (`theme-colors.ts`) rather than a second implementation.
  */
 import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -149,7 +150,7 @@ it.each(['light', 'dark'] as const)('keeps %s glass text readable over the bound
 
 it('keeps glass materials separate from semantic tokens and container opacity', () => {
   const glass = readThemeBlock(CSS_SOURCE, '.glass')
-  expect(glass['--shell-alpha']).toBe('38%')
+  expect(glass['--shell-alpha']).toBe('32%')
   expect(glass['--card']).toBeUndefined()
   expect(glass['--background']).toBeUndefined()
   expect(CSS_SOURCE).not.toContain('.glass body')
@@ -209,4 +210,41 @@ it.each(['light', 'dark'] as const)('keeps %s semantic fill text readable at res
     }
   }
   expect(contrastRatio(tokens['--muted-foreground'], tokens['--muted'])).toBeGreaterThanOrEqual(4.5)
+})
+
+// spec: WEBUI-DESIGN-R002.1.1
+it('pins the approved palette and requested fifteen-percent glass refinement', () => {
+  const approved = {
+    '--foreground': '#111111',
+    '--glass-muted': '#111111',
+    '--glass-chrome': 'rgb(241 246 231 / 38%)',
+    '--glass-secondary': 'rgb(218 234 220 / 38%)',
+    '--glass-primary': 'rgb(248 250 243 / 48%)',
+    '--glass-reading': 'rgb(255 255 250 / 60%)',
+    '--glass-control': 'rgb(255 255 252 / 72%)',
+    '--glass-edge': 'rgb(255 255 255 / 76%)',
+    '--glass-field-floor': '#45685b',
+  }
+  const refined = new Set([
+    '--glass-chrome',
+    '--glass-secondary',
+    '--glass-primary',
+    '--glass-reading',
+    '--glass-control',
+  ])
+  for (const [token, value] of Object.entries(approved)) {
+    const current = refined.has(token)
+      ? value.replace(/(\d+)%/, (_, alpha: string) => `${Math.round(Number(alpha) * 0.85)}%`)
+      : value
+    expect(LIGHT[token]).toBe(current)
+  }
+  const wallpaper = readFileSync(resolve(import.meta.dirname, '../assets/arbora-canopy-wallpaper.webp'))
+  expect(createHash('sha256').update(wallpaper).digest('hex')).toBe(
+    'df3bfb3775c406c2eacdd8e1fc5c4daf7e86af69b8fcf74d8e9a79153f56544a',
+  )
+  const frame = readFileSync(resolve(import.meta.dirname, '../components/workspace/WorkspaceFrame.css'), 'utf-8')
+  const explore = readFileSync(resolve(import.meta.dirname, '../components/workspace/ExploreWorkspace.css'), 'utf-8')
+  expect(frame).toContain('backdrop-filter: blur(16px) saturate(125%)')
+  expect(frame).toContain('backdrop-filter: blur(16px) saturate(120%)')
+  expect(explore).toContain('backdrop-filter: blur(16px) saturate(115%)')
 })

@@ -170,6 +170,7 @@ beforeEach(() => {
 
 describe('Chat conversation identity', () => {
   it('uses the first persisted conversation ID on first and subsequent sends', async () => {
+    window.localStorage.setItem('agent-mode', 'code')
     const { user } = renderWithProviders(<Chat pageContext={pageContext} />)
     const input = await screen.findByRole('textbox', { name: /message input/i })
     await user.type(input, 'hello{Enter}')
@@ -181,11 +182,14 @@ describe('Chat conversation identity', () => {
     ) as { id: string }[]
     expect(entries).toHaveLength(1)
     expect(sentBodies[0].id).toBe(entries[0].id)
+    expect(sentBodies[0]).not.toHaveProperty('mode')
+    expect(screen.queryByRole('combobox', { name: 'Agent mode' })).not.toBeInTheDocument()
     await user.type(input, 'again{Enter}')
     await waitFor(() => {
       expect(sentBodies).toHaveLength(2)
     })
     expect(sentBodies[1].id).toBe(sentBodies[0].id)
+    expect(sentBodies[1]).not.toHaveProperty('mode')
   })
 
   it('uses selected conversation and never merges another conversation history', async () => {
@@ -860,4 +864,20 @@ it('does not steal fresh task-entry focus for a native secondary assistant', asy
   await userEvent.setup().click(screen.getByRole('button', { name: 'Expand chat' }))
   await userEvent.setup().click(screen.getByRole('button', { name: 'Focus message input' }))
   expect(screen.getByRole('textbox', { name: /message input/i })).toHaveFocus()
+})
+
+// spec: WEBUI-APPS-R049.2.1, WEBUI-APPS-R005.4
+it('explains the first task and fills an example draft without sending or overwriting input', async () => {
+  const { user } = renderWithProviders(<Chat pageContext={pageContext} />)
+  const input = await screen.findByRole('textbox', { name: /message input/i })
+  expect(screen.getByRole('heading', { name: 'Give your agent a task' })).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Plan from notes' }))
+  expect(input).toHaveValue('Turn these notes into a three-step plan:\n\n')
+  expect(input).toHaveFocus()
+  expect(sentBodies).toHaveLength(0)
+  expect(screen.getByRole('button', { name: 'Summarize text' })).toBeDisabled()
+  fireEvent.change(input, { target: { value: '' } })
+  await user.click(screen.getByRole('button', { name: 'Summarize text' }))
+  expect(input).toHaveValue('Summarize the text below and list its key points:\n\n')
+  expect(sentBodies).toHaveLength(0)
 })

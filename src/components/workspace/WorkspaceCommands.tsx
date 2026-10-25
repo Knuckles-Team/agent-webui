@@ -71,9 +71,9 @@ export function WorkspaceCommandsProvider({
   }, [])
   const entries = useMemo(() => {
     if (!enabled) return []
-    const roots = ['work', 'explore', 'operate'].map((id) => ({
+    const roots = (['work', 'explore', 'operate'] as const).map((id) => ({
       id,
-      label: id[0].toUpperCase() + id.slice(1),
+      label: { work: 'Chat & tasks', explore: 'Knowledge', operate: 'Tools & connections' }[id],
       href: `/workspace/${id}`,
     }))
     const loaded = [...sources.values()]

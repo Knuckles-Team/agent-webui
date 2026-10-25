@@ -510,3 +510,47 @@
   border-bottom: 1px solid var(--glass-line);
   font-size: 0.75rem;
 }
+
+@media (max-width: 40rem) {
+  .explore-lens-header {
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+  }
+  .explore-lens-header h1 {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    flex-shrink: 0;
+    font-size: 1rem;
+  }
+  .explore-lens-header nav {
+    flex: 1;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .explore-lens-header nav a {
+    flex-shrink: 0;
+    padding-inline: 0.375rem;
+    font-size: 0.75rem;
+  }
+}
+
+/* Advanced data tools are an in-place disclosure, not another permanent nav band. */
+.explore-lens-header > details {
+  min-width: 0;
+  max-width: 100%;
+}
+.explore-lens-header > details[open] {
+  flex-basis: 100%;
+}
+.explore-lens-header:has(> details[open]) {
+  flex-wrap: wrap;
+}
+.explore-lens-header > details > summary {
+  min-height: 44px;
+  padding-inline: 0.5rem;
+  font-size: 0.8125rem;
+}

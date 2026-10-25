@@ -1,16 +1,9 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { SidebarTrigger } from '@/components/ui/sidebar'
+import { WorkspaceAppearance } from '@/components/workspace/WorkspaceAppearance'
 import { useAppAvailability } from '@/lib/apps/catalog'
-import {
-  isDynamicPath,
-  roleAtLeast,
-  PUBLIC_ROUTES,
-  ROUTES,
-  SECTIONS,
-  type Role,
-  type RouteDef,
-} from '@/lib/nav-registry'
+import { isDynamicPath, roleAtLeast, ROUTES, SECTIONS, type Role, type RouteDef } from '@/lib/nav-registry'
 import { describeWorkspaceDestination, navigateWorkspace, useWorkspaceLocation } from '@/lib/workspace-navigation'
 
 /** Compact, progressively enhanced branch navigator. Existing route bodies stay mounted normally. */
@@ -96,6 +89,7 @@ export function WorkspaceNavigation({ route, currentRole }: { route: RouteDef; c
           </span>
         </nav>
         <div id="workspace-assistant-entry-slot" />
+        <WorkspaceAppearance />
         <details ref={disclosure} className="group">
           <summary
             ref={summary}
@@ -185,18 +179,6 @@ export function WorkspaceNavigation({ route, currentRole }: { route: RouteDef; c
                 )
               })}
             </div>
-            <a
-              href="/privacy"
-              className="mt-2 inline-flex min-h-11 items-center rounded px-2 text-sm hover:bg-accent"
-              onClick={(event) => {
-                navigate(
-                  event,
-                  PUBLIC_ROUTES.find((entry) => entry.id === 'public.privacy')!,
-                )
-              }}
-            >
-              Privacy settings
-            </a>
             <p className="mt-3 text-xs text-muted-foreground">
               Object and approval details open from their selected records. Availability and permission checks still
               apply.

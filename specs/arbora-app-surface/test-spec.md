@@ -649,3 +649,18 @@ options, mode and live stop controls must preserve focus and the mounted Chat.
 Selected evidence and query remain unchanged through all presentation changes.
 Real browser geometry, readable glass pixels and native motion are separate
 acceptance evidence from mounted source fixtures.
+
+### Conversation-first clarification checks (2026-10-25)
+
+- Work/root exposes the existing composer without disclosure and keeps one Chat
+  instance. Navigating away/back preserves a draft; owner retirement clears it.
+- Task/trace deep links expose the existing inspector; no conversation association
+  is inferred from co-location. New and resumed conversations remain reachable.
+- Short primary navigation names retain existing URLs and role admission.
+- Knowledge distinguishes not searched, no matches and unavailable service.
+- Narrow layout and keyboard retain all composer, approval and inspection controls.
+  Fixture results are separate from installed-provider and first-user acceptance.
+
+### Request handling without a mode (2026-10-25)
+
+R005.4.1: Chat.conversation-identity tests mount with stale agent-mode storage and send ordinary text with no mode field. Slash-command tests assert no /mode help or local selection; SWE tests preserve its separate runtime toggle. These are source checks, not served inference proof.

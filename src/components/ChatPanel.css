@@ -172,11 +172,6 @@
   max-width: 100%;
   flex-wrap: wrap;
 }
-.workspace-assistant [aria-label='Agent mode'] {
-  white-space: normal;
-  overflow-wrap: anywhere;
-  max-width: 100%;
-}
 .workspace-assistant[data-primary='false'] .chat-composer-options-toggle {
   display: inline-flex;
 }
@@ -254,5 +249,51 @@
     background: Canvas;
     color: ButtonText;
     border-color: ButtonText;
+  }
+}
+
+/* Bound the task by the viewport when its companion is expanded. At normal
+   desktop text, 14rem remains unchanged; enlarged text must not trap the wheel. */
+.workspace-chat-layout:not([data-primary='true']):not([data-conversation-first='true']):has(
+    .workspace-assistant[data-expanded='true']:not([hidden])
+  ) {
+  --assistant-task-min: min(14rem, max(200px, 45dvh));
+  grid-template-rows: minmax(var(--assistant-task-min), 1fr) auto;
+}
+.workspace-chat-layout:not([data-primary='true']):not([data-conversation-first='true']):has(
+    .workspace-assistant[data-expanded='true']:not([hidden])
+  )
+  > .workspace-context-content {
+  min-height: var(--assistant-task-min);
+}
+
+/* Conversation-first Work keeps task inspection mounted below the same Chat.
+   These are layout-only rules; the approved glass materials are unchanged. */
+.workspace-chat-layout[data-conversation-first='true'] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.workspace-chat-layout[data-conversation-first='true'] > .workspace-assistant {
+  order: -1;
+  flex: 0 0 auto;
+  height: clamp(26rem, 65dvh, 48rem);
+}
+.workspace-chat-layout[data-conversation-first='true'] > .workspace-context-content {
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: visible;
+}
+@container workspace-chat (max-width: 45rem) {
+  .workspace-chat-layout[data-conversation-first='true'] .chat-composer-options-toggle {
+    display: inline-flex;
+  }
+  .workspace-chat-layout[data-conversation-first='true'] .chat-composer-options {
+    display: none;
+    order: 3;
+    flex-basis: 100%;
+  }
+  .workspace-chat-layout[data-conversation-first='true'] .chat-composer-options[data-expanded='true'] {
+    display: flex;
   }
 }

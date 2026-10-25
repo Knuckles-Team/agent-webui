@@ -46,6 +46,15 @@ export function parseWorkState(location: string): WorkState {
     ...(url.searchParams.has('lens') ? { lens: url.searchParams.get('lens') } : {}),
   })
 }
+/** Only the ordinary conversation landing foregrounds Chat, never an inspection/editor deep link. */
+export function isWorkConversationLanding(location: string): boolean {
+  try {
+    const state = parseWorkState(location)
+    return !state.task && !state.run && !state.node && (!state.lens || state.lens === 'investigation')
+  } catch {
+    return false
+  }
+}
 export function workHref(state: WorkState): string {
   const parsed = WorkStateSchema.parse(state)
   const url = new URL(WORK_PATH, 'https://workspace.invalid')
