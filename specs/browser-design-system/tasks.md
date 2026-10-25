@@ -237,3 +237,6 @@ Metadata guard tests preserve this distinction; they are not feature-acceptance 
 - [x] Add scoped mapping, static lifecycle and manual override coverage.
 - [ ] Qualify exact-head rendered navigation, draft retention and unchanged default glass in hosted browser CI before merge.
 - [ ] Keep evidence-bound activity and broader R010 performance acceptance open; page selection alone supplies neither.
+
+- [x] WEBUI-DESIGN-R005.3.1: Implement route-derived selection and manual overrides; exact-head hosted qualification remains required.
+- [ ] WEBUI-DESIGN-R005.3.2: Connect current Arbora evidence before adding activity or topology; qualify all rejection cases.

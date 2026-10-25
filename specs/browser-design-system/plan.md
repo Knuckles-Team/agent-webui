@@ -363,3 +363,7 @@ remain persisted manual overrides. Route selection is decorative context, not
 activity, graph topology, conversation identity, or weather evidence. Preserve
 renderer budgets, lifecycle cleanup and the stable task/chat subtree. Broader
 evidence-bound activity acceptance remains open.
+
+R005.3 now rolls up two distinct obligations without changing its original text.
+R005.3.1 covers route selection and manual overrides; R005.3.2 retains evidence-bound
+activity and topology. The latter remains planned with no fake implementation markers.

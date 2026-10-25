@@ -375,3 +375,7 @@ Cover canonical route mapping, unknown-context neutral fallback, persisted manua
 override and unchanged default zero-work photo. Verify Off remains static and route changes clean up effects. Exercise the actual workspace navigation and retained draft
 with Follow workspace enabled in the existing browser suite. Keep the accepted
 default pixel golden and reduced-motion coverage. No live-event acceptance claim.
+
+R005.3.1 owns the route/manual tests above. R005.3.2 retains the parent event and
+topology journeys, including stale, duplicate, unrelated and out-of-order rejection.
+That evidence seam is not implemented or covered by the route selection tests.
