@@ -64,7 +64,7 @@ function AtlasRouteGrid({ routes, loading = false }: { routes: RouteDef[]; loadi
   if (loading) {
     return (
       <p className="text-muted-foreground text-sm" aria-hidden="true">
-        Loading available Atlas tools…
+        Loading available Understory tools…
       </p>
     )
   }
@@ -100,14 +100,14 @@ export function AtlasWorkspace() {
           <Compass className="size-5 text-primary" aria-hidden="true" />
           <Badge variant="secondary">Knowledge workspace</Badge>
         </div>
-        <h1 className="text-2xl font-semibold">Atlas</h1>
+        <h1 className="text-2xl font-semibold">Understory</h1>
         <p className="max-w-3xl text-muted-foreground">
           One place to explore connected objects, documents, tables, and graph data. Start with a guided view, or open
           the expert tools when you need a focused surface.
         </p>
         {loading && (
           <p className="text-muted-foreground text-sm" role="status" aria-live="polite">
-            Loading available Atlas tools…
+            Loading available Understory tools…
           </p>
         )}
       </header>
@@ -124,14 +124,14 @@ export function AtlasWorkspace() {
             These starting points keep the first step simple. You can always return here for another kind of answer.
           </p>
         </div>
-        <nav aria-label="Guided Atlas starting points">
+        <nav aria-label="Guided Understory starting points">
           <AtlasRouteGrid routes={guidedRoutes} loading={loading} />
         </nav>
         <a
           href="#atlas-workbench"
           className="text-primary inline-flex items-center gap-1 text-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          Open the unified Atlas workbench
+          Open the unified Understory workbench
           <ArrowRight className="size-3.5" aria-hidden="true" />
         </a>
       </section>
@@ -143,7 +143,7 @@ export function AtlasWorkspace() {
           <span className="text-muted-foreground text-sm font-normal">Focused controls for advanced exploration</span>
         </summary>
         <div className="border-t p-4">
-          <nav aria-label="Atlas expert tools">
+          <nav aria-label="Understory expert tools">
             <AtlasRouteGrid routes={expertRoutes} loading={loading} />
           </nav>
           <p className="text-muted-foreground mt-3 flex items-center gap-1 text-xs">

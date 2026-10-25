@@ -1918,7 +1918,7 @@
       "landed_in": [],
       "verified_by": [
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
-        "src/lib/__tests__/nav-registry.test.ts:192"
+        "src/lib/__tests__/nav-registry.test.ts:193"
       ]
     },
     {

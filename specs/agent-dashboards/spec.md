@@ -1,15 +1,15 @@
-# WEBUI-DASH — Agent-built dashboards
+# WEBUI-DASH — Overstory Studio
 
 **Owner:** `agent-webui`. Every requirement ID is defined in [requirements.md](requirements.md). The generator records state in [status.json](status.json).
 
-Component: Dashboards
+Component: Overstory Studio
 Depends-on: [WEBUI-APPS](../arbora-app-surface/spec.md), [WEBUI-API](../arbora-api-consumer/spec.md)
 References: [ARBORA-OPS-R861](https://github.com/Knuckles-Team/arbora/blob/main/specs/hosted-api-operations/spec.md)
 Code: ../../src/lib/dashboards/model.ts ../../src/lib/dashboards/tools.ts ../../src/components/dashboards/DashboardsView.tsx
 
 ## Outcome
 
-A person builds business-intelligence dashboards in the browser. The chat agent builds and edits the same dashboards with the person. The agent acts through WebMCP tools that the Dashboards page exposes. A dashboard is a declarative, versioned document. Arbora saves it, and epistemic-graph stores it as a catalog asset.
+A person builds business-intelligence dashboards in the browser. The chat agent builds and edits the same dashboards with the person. The agent acts through WebMCP tools that the Overstory Studio page exposes. A dashboard is a declarative, versioned document. Arbora saves it, and epistemic-graph stores it as a catalog asset.
 
 ## Why a new spec
 
@@ -28,10 +28,10 @@ Search: `git grep -n -i "dashboard" -- specs` finds no WebUI row for user-built 
 | WEBUI-DASH-R001 | A dashboard is a declarative document with schema_version, id, title, revision, params and a grid of panels. Every edit raises the revision by 1. A 12-column grid bounds each panel. | — |
 | WEBUI-DASH-R002 | A panel is a query plus one visualization. The browser renders table, line, bar and KPI panels from a row set. Each panel shows loading, empty, error and unavailable states. | — |
 | WEBUI-DASH-R003 | The panel kinds pie, map and graph render from a row set. The map reads latitude and longitude columns. The graph reads source and target columns. | — |
-| WEBUI-DASH-R004 | A panel query of kind uql runs through the same governed graph query route as Atlas. The browser never contacts a data source directly. Unsafe query text is refused before sending. | WEBUI-API-R008.2 |
+| WEBUI-DASH-R004 | A panel query of kind uql runs through the same governed graph query route as Understory. The browser never contacts a data source directly. Unsafe query text is refused before sending. | WEBUI-API-R008.2 |
 | WEBUI-DASH-R005 | Panel query kinds nl, fleet-call and eg-op run through arbora served operations. Those are eg.query.NlQuery, fleet.call and named eg.query operations. Each kind validates its arguments. | WEBUI-API-R008.2 |
 | WEBUI-DASH-R006 | A user creates a dashboard, adds, edits, moves and removes panels, and renames the dashboard in the UI. Every control works with the keyboard alone. | — |
-| WEBUI-DASH-R007 | The Dashboards page registers seven WebMCP tools. The tools are create, add_panel, update_panel, remove_panel, set_layout, list_data_sources and preview_query. Each tool validates input and output against a strict schema. Results stay under 1,500 bytes. | WEBUI-APPS-R040 |
+| WEBUI-DASH-R007 | The Overstory Studio page registers seven WebMCP tools. The tools are create, add_panel, update_panel, remove_panel, set_layout, list_data_sources and preview_query. Each tool validates input and output against a strict schema. Results stay under 1,500 bytes. | WEBUI-APPS-R040 |
 | WEBUI-DASH-R008 | Each agent edit appears in an activity log tagged agent. A user undoes and redoes any edit, agent or user, with the keyboard. | — |
 | WEBUI-DASH-R009 | An agent call that removes a panel waits for explicit user approval in the page. Denial, timeout or cancellation leaves the dashboard unchanged. | — |
 | WEBUI-DASH-R010 | The browser saves, loads, lists, drops and shares dashboards through the arbora dashboard operations (ARBORA-OPS-R861). EG stores each dashboard as the catalog asset of EG-TYPED-PACKS-R108, with an owner. A stale revision yields a conflict, never an overwrite. | WEBUI-API-R001, ARBORA-OPS-R861, EG-TYPED-PACKS-R108 |
