@@ -355,7 +355,9 @@
       "landed_in": [
         "04c4742838cb"
       ],
-      "verified_by": [],
+      "verified_by": [
+        "e2e/canopy-glass.browser.ts:711"
+      ],
       "rollup_of": [
         "WEBUI-DESIGN-R005.3.1",
         "WEBUI-DESIGN-R005.3.2"

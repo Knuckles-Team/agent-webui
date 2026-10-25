@@ -708,7 +708,7 @@ test('default wallpaper preserves accepted glass backdrop pixels', async ({ page
   })
 })
 
-// spec: WEBUI-DESIGN-R005.3.1
+// spec: WEBUI-DESIGN-R005.3, WEBUI-DESIGN-R005.3.1
 test('Follow workspace resolves real page context without enabling motion and manual scenes override it', async ({
   page,
 }, info) => {
