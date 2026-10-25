@@ -81,7 +81,7 @@ then use the shared platform map to move between components:
 |---|---|---|
 | Overstory | Browser operator workspace and Understory knowledge views | [Docs](https://knuckles-team.github.io/agent-webui/) |
 | Tuig | Terminal and headless client; central A2A/REST and experimental headless local ACP; full session parity remains unqualified | [Docs](https://knuckles-team.github.io/agent-terminal-ui/) |
-| Axil Desk | Desktop cockpit for chat, graph, fleet, health, and operator workflows | [Docs](https://knuckles-team.github.io/geniusbot/) |
+| Axil | Desktop cockpit for chat, graph, fleet, health, and operator workflows | [Docs](https://knuckles-team.github.io/geniusbot/) |
 | Arbora messaging | Chat and voice entrypoints hosted by Arbora | [Docs](https://knuckles-team.github.io/arbora/) |
 | Arbora | Public MCP, REST, A2A, identity, policy, and runtime composition | [Docs](https://knuckles-team.github.io/arbora/) |
 | Meristem | In-run harness that applies supplied plans | [Docs](https://knuckles-team.github.io/agent-utilities/) |
@@ -94,7 +94,7 @@ then use the shared platform map to move between components:
 
 [Explore the live architecture](https://knuckles-team.github.io/.github/architecture/#webui)
 
-People also enter through Tuig and Axil Desk or Arbora-hosted
+People also enter through Tuig and Axil or Arbora-hosted
 messaging. Tuig retains central A2A/REST and experimental headless local ACP;
 full session parity remains unqualified. External applications connect over MCP,
 REST, or A2A. The browser talks only to its same-origin FastAPI host. Arbora injects gateway routes and
