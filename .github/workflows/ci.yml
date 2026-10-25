@@ -63,7 +63,8 @@ jobs:
     # Hosted Chromium avoids the cloud editor's isolated loopback namespace.
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Allow measured dependency-download overhead without reducing browser coverage.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:

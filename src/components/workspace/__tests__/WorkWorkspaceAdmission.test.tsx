@@ -132,6 +132,36 @@ describe('Work admission and authoritative task availability', () => {
     expect(workApi.getTask).toHaveBeenCalledTimes(2)
     await expect(held.execute({}, { signal: new AbortController().signal })).rejects.toThrow('stale')
   })
+  it('retires held cancellation review while an authoritative refresh is pending', async () => {
+    const { client } = setup()
+    await screen.findByRole('button', { name: 'Cancel task…' })
+    const held = state.tools.get('agent-webui.work.cancel-task.review')!
+    await act(async () => {
+      await held.execute({}, { signal: new AbortController().signal })
+    })
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    let resolve!: (value: { id: string; status: { state: string } }) => void
+    vi.mocked(workApi.getTask).mockReturnValueOnce(
+      new Promise((yes) => {
+        resolve = yes
+      }),
+    )
+    let refreshed!: Promise<void>
+    await act(async () => {
+      refreshed = client.invalidateQueries({ queryKey: ['work-task'] })
+    })
+    await screen.findByText('Loading task…')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cancel task…' })).toBeDisabled()
+    await expect(held.execute({}, { signal: new AbortController().signal })).rejects.toThrow('stale')
+    await act(async () => {
+      resolve({ id: 'task-a', status: { state: 'completed' } })
+      await refreshed
+    })
+    await screen.findByText('Status: completed')
+    expect(screen.getByRole('button', { name: 'Cancel task…' })).toBeDisabled()
+    expect(workApi.cancelTask).not.toHaveBeenCalled()
+  })
   it('withdraws cancellation after a failed authoritative task refresh despite cached data', async () => {
     const { client } = setup()
     await screen.findByRole('button', { name: 'Cancel task…' })

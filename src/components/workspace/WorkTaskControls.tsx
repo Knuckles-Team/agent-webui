@@ -33,7 +33,10 @@ function OwnedTaskControls({
   cancellation,
   isAttendedGesture = (event) => event.nativeEvent.isTrusted,
 }: Props) {
-  const generation = useMemo(() => ({ taskId, taskState, context }), [taskId, taskState, context])
+  const generation = useMemo(
+    () => ({ taskId, taskState, context, refreshing }),
+    [taskId, taskState, context, refreshing],
+  )
   const live = useRef<typeof generation | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const focusTarget = useRef<HTMLElement>(null)
@@ -56,12 +59,12 @@ function OwnedTaskControls({
       live.current = null
     }
   }, [generation])
-  const canCancel = cancellable.has(taskState ?? '')
+  const canCancel = !refreshing && cancellable.has(taskState ?? '')
   const requestReview = useCallback(() => {
     if (live.current !== generation) throw new Error('Task context is stale')
     if (!canCancel) throw new Error('This task state does not support cancellation')
     if (cancellation.isPending(taskId)) throw new Error('A cancellation request is already pending')
-    if (currentReview.current) throw new Error('A task review is already open')
+    if (currentReview.current?.generation === generation) throw new Error('A task review is already open')
     const next = { generation, token: Symbol('task-review') }
     currentReview.current = next
     setError(null)
@@ -143,10 +146,10 @@ function OwnedTaskControls({
         running={running}
         message={message}
         error={error}
-        reviewing={review !== null}
+        reviewing={review?.generation === generation}
       />
       <Dialog
-        open={review !== null}
+        open={review?.generation === generation}
         onOpenChange={(open) => {
           if (!open) close()
         }}
