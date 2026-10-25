@@ -3,6 +3,7 @@
 // Partial parent evidence only; retained acceptance children keep both parent rollups open.
 // Rendered synthetic app evidence only, not native WebMCP or live provider acceptance.
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { writeFile } from 'node:fs/promises'
 import { baseURL, responses } from './fixtures/documentation-screenshots.mjs'
 
 test.use({ hasTouch: true })
@@ -70,16 +71,53 @@ async function reachComposerByWheel(page: Page, input: Locator) {
         element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2))
       )
     })
+  const samples: unknown[] = []
+  const sample = () =>
+    input.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const wheelHit = document.elementFromPoint(innerWidth * 0.7, innerHeight - 24)
+      const owners = []
+      for (let node = wheelHit; node; node = node.parentElement) {
+        const style = getComputedStyle(node)
+        owners.push({
+          tag: node.tagName,
+          className: node.className,
+          overflowY: style.overflowY,
+          position: style.position,
+          scrollTop: node.scrollTop,
+          scrollHeight: node.scrollHeight,
+          clientHeight: node.clientHeight,
+        })
+      }
+      return {
+        owners,
+        inputTop: box.top,
+        inputBottom: box.bottom,
+        wheelHit: wheelHit?.className,
+        scrollAncestors: Array.from(
+          document.querySelectorAll(
+            '.workspace-viewport, .workspace-task-surface, .workspace-context-content, .workspace-assistant-content',
+          ),
+        ).map((node) => ({
+          className: node.className,
+          scrollTop: node.scrollTop,
+          scrollHeight: node.scrollHeight,
+          clientHeight: node.clientHeight,
+        })),
+      }
+    })
   // Ordinary scrolling must work too: programmatic reveal can scroll overflow:hidden.
   for (let attempt = 0; attempt < 12 && !(await visible()); attempt += 1) {
     const size = page.viewportSize()!
     const direction = await input.evaluate((element) => (element.getBoundingClientRect().top < 0 ? -1 : 1))
     await page.mouse.move(size.width * 0.7, size.height - 24)
+    samples.push({ attempt, phase: 'before', state: await sample() })
     await page.mouse.wheel(0, (direction * size.height) / 2)
     await page.waitForTimeout(50)
+    samples.push({ attempt, phase: 'after', state: await sample() })
   }
   const reached = await visible()
-  if (!reached) {
+  {
     const geometry = await input.evaluate((element) => {
       function describe(node: Element) {
         const style = getComputedStyle(node)
@@ -100,6 +138,7 @@ async function reachComposerByWheel(page: Page, input: Locator) {
           maxHeight: style.maxHeight,
           gridTemplateRows: style.gridTemplateRows,
           fontSize: style.fontSize,
+          position: style.position,
         }
       }
       const box = element.getBoundingClientRect()
@@ -119,8 +158,12 @@ async function reachComposerByWheel(page: Page, input: Locator) {
         ),
       }
     })
+    const path = test
+      .info()
+      .outputPath(`native-composer-wheel-${geometry.viewport.width}x${geometry.viewport.height}.json`)
+    await writeFile(path, JSON.stringify({ ...geometry, reached, samples }, null, 2))
     await test.info().attach('native-composer-wheel-geometry', {
-      body: JSON.stringify(geometry, null, 2),
+      path,
       contentType: 'application/json',
     })
   }
