@@ -9,7 +9,7 @@ export const viewports = [
 ]
 export const scenes = [
   { name: 'work', path: '/workspace/work', ready: 'Chat & tasks' },
-  { name: 'explore', path: '/workspace/explore?q=project&entity=doc%3Aresearch', ready: '2 matching objects' },
+  { name: 'explore', path: '/workspace/explore?q=project&entity=doc%3Aresearch', ready: '2 matching records' },
   { name: 'operate', path: '/workspace/operate?server=catalog&item=search', ready: 'Backend readiness: ready' },
 ]
 export const captures = scenes.flatMap((scene) =>

@@ -2072,7 +2072,6 @@ Available commands:
                   void stopSweSession()
                 },
               )}
-
             </div>
             <PromptInputTools
               id="chat-composer-options"
