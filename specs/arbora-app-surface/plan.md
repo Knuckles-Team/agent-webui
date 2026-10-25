@@ -954,7 +954,7 @@ mobile/device, all-route migration and installed-provider acceptance.
 
 Critical compact-state controls remain outside optional message tools: the
 existing SWE mode, live session and Stop controls. Request-mode selection is
-removed under R005.4.1. Pending
+deleted under R005.4.1. Pending
 approval renderers mark their actual review state. The shell exposes
 Review required approval, which only expands and focuses that same UI.
 No approval decision, execution path or provider is added. Clearing the existing

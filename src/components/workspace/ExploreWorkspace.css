@@ -11,9 +11,9 @@
   border-radius: 1rem;
 }
 .explore-lens-header h1 {
-  font-size: 1.375rem;
+  font-size: 1.25rem;
   font-weight: 500;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.015em;
 }
 .explore-lens-header nav {
   gap: 0.25rem;
@@ -28,7 +28,7 @@
   background: var(--glass-control);
   color: var(--foreground);
   border-color: var(--glass-edge);
-  box-shadow: inset 0 1px 0 var(--glass-edge);
+  box-shadow: none;
 }
 .explore-workspace {
   --workspace-gap: 1rem;
@@ -55,29 +55,29 @@
   min-height: var(--control-height);
   min-width: 2.25rem;
   padding: 0.5rem 0.875rem;
-  border: 1px solid var(--glass-edge);
+  border: 1px solid transparent;
   border-radius: 0.875rem;
-  background: var(--glass-control);
-  color: var(--foreground);
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  box-shadow:
-    0 2px 5px rgb(42 65 50 / 3%),
-    inset 0 1px 0 var(--glass-edge);
+  background: var(--button-neutral);
+  color: var(--button-neutral-foreground);
+  font-size: var(--workspace-control-size);
+  font-weight: 400;
+  line-height: var(--workspace-control-leading);
+  box-shadow: none;
   transition: background-color var(--motion-context) var(--motion-ease);
 }
 .explore-control:hover {
-  background: var(--secondary);
+  background: var(--button-neutral-hover);
 }
 .explore-control[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--accent) 92%, transparent);
-  color: var(--accent-foreground);
-  box-shadow: inset 0 -2px 0 var(--primary);
+  background: var(--button-neutral-active);
+  color: var(--button-neutral-foreground);
+  font-weight: 500;
+  box-shadow: none;
 }
 .explore-search button[type='submit'] {
-  background: color-mix(in srgb, var(--primary) 92%, transparent);
+  background: var(--button-primary);
   color: var(--primary-foreground);
-  border-color: var(--primary);
+  border-color: transparent;
 }
 .explore-collection,
 .explore-inspector {
@@ -210,9 +210,8 @@
 .explore-record[aria-current] {
   color: var(--foreground);
   border-color: var(--glass-edge);
-  box-shadow:
-    inset 3px 0 var(--primary),
-    0 5px 16px rgb(34 58 46 / 8%);
+  background: var(--glass-control);
+  box-shadow: none;
 }
 .explore-record-icon {
   display: grid;
@@ -272,10 +271,10 @@
   line-height: 1rem;
 }
 .explore-inspector h2 {
-  font-size: 1.375rem;
+  font-size: 1.25rem;
   font-weight: 500;
   line-height: 1.4;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.015em;
   margin-top: 0.75rem;
 }
 .explore-close {

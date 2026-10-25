@@ -126,6 +126,15 @@ test.describe('Liquid Glass reference preview', () => {
     await expect(page.getByText('Loading…', { exact: true })).toHaveCount(0)
     await expect(page.getByRole('textbox', { name: 'Message input' })).toBeInViewport()
     await page.screenshot({ path: info.outputPath('liquid-glass-chat-desktop-preview.png'), animations: 'disabled' })
+    const attachment = page.getByRole('button', { name: 'Attach image files', exact: true })
+    await expect(attachment).toHaveCSS('background-color', 'rgba(184, 207, 185, 0.64)')
+    await expect(attachment).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
+    await attachment.focus()
+    await expect(attachment).toHaveCSS('outline-width', '2px')
+    await page.getByRole('textbox', { name: 'Message input' }).fill('Help me plan the next project step')
+    await page.getByRole('heading', { name: 'Chat & tasks', exact: true }).click()
+    await page.screenshot({ path: info.outputPath('liquid-glass-chat-controls-preview.png'), animations: 'disabled' })
+    await page.getByRole('textbox', { name: 'Message input' }).fill('')
     await contexts.getByRole('link', { name: 'Knowledge', exact: true }).click()
     await expect(page.getByRole('region', { name: 'Record details' }).getByRole('heading', { level: 2 })).toHaveText(
       names[0],
@@ -154,6 +163,14 @@ test.describe('Liquid Glass reference preview', () => {
       contentType: 'application/json',
     })
     for (const panel of panels) expect(panel.blur).not.toBe('none')
+    const selections = await page
+      .locator(
+        '.workspace-map-node[aria-current], .explore-record[aria-current], .explore-control[aria-pressed="true"]',
+      )
+      .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).boxShadow))
+    expect(selections.length).toBeGreaterThan(0)
+    expect(selections.every((shadow) => shadow === 'none')).toBe(true)
+    await expect(contexts.getByRole('link', { name: 'Knowledge', exact: true })).toHaveCSS('font-size', '14px')
     await expect(page.locator('#workspace-assistant')).toBeHidden()
     const details = page.getByRole('region', { name: 'Record details' })
     await details.getByRole('button', { name: 'Related records', exact: true }).click()
