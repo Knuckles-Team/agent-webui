@@ -175,7 +175,7 @@
       ],
       "verified_by": [
         "e2e/workspace-density.spec.ts:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:164",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:170",
         "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:1"
       ],
       "rollup_of": [
@@ -276,6 +276,7 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "12b5f5624953",
+        "73051bf582bd",
         "93401c34a695",
         "ac86f2de9817",
         "ec837ceabe6b"
@@ -296,8 +297,8 @@
         "12b5f5624953",
         "19b439519a22",
         "47885260902d",
-        "93401c34a695",
-        "ac86f2de9817"
+        "73051bf582bd",
+        "93401c34a695"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
@@ -311,6 +312,7 @@
       "title": "Meaningful interruptible motion",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "73051bf582bd",
         "ac86f2de9817"
       ],
       "verified_by": [

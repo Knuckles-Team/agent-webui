@@ -491,11 +491,12 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "4d0f9693e45d",
+        "73051bf582bd",
         "d18ec8c78341"
       ],
       "verified_by": [
         "e2e/native-chat.browser.ts:1",
-        "src/__tests__/Chat.conversation-identity.test.tsx:697",
+        "src/__tests__/Chat.conversation-identity.test.tsx:706",
         "src/components/__tests__/ChatApprovalPresence.test.tsx:1",
         "src/components/__tests__/ChatPanel.test.tsx:1"
       ]
@@ -2049,7 +2050,7 @@
         "e2e/workspace-catalog.browser.ts:17",
         "e2e/workspace-task-lifecycle.spec.ts:400",
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:164",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:170",
         "src/components/views/__tests__/ArboraReadinessView.test.tsx:1"
       ]
     },
@@ -2062,14 +2063,14 @@
         "213863471869",
         "4d0f9693e45d",
         "6592af62bedb",
-        "80061c0d6501"
+        "73051bf582bd"
       ],
       "verified_by": [
         "e2e/native-chat.browser.ts:1",
         "e2e/workspace-task-lifecycle.spec.ts:1",
         "e2e/workspace-task-lifecycle.spec.ts:132",
         "e2e/workspace-task-lifecycle.spec.ts:267",
-        "src/__tests__/Chat.conversation-identity.test.tsx:697"
+        "src/__tests__/Chat.conversation-identity.test.tsx:706"
       ]
     },
     {
@@ -2214,6 +2215,7 @@
       "title": "Shared shell and Explore presentation slice",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "73051bf582bd",
         "93401c34a695",
         "ac86f2de9817"
       ],

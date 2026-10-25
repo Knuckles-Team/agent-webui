@@ -134,6 +134,10 @@ beforeEach(() => {
       const custom = fetchImpl(path)
       if (custom) return custom
 
+      if (path.startsWith('/api/chats/')) {
+        return Promise.resolve(jsonResponse({ messages: [] }))
+      }
+
       if (path.startsWith('/api/configure')) {
         return Promise.resolve(
           jsonResponse({
@@ -203,6 +207,7 @@ describe('Chat conversation identity', () => {
 
 describe('in-flight conversation isolation', () => {
   it.each(['conversation', 'caller'] as const)('does not persist old messages while switching %s', async (kind) => {
+    const historyError = vi.spyOn(console, 'error')
     pendingSend = true
     window.history.replaceState({}, '', '/chat?conversation=first')
     window.localStorage.setItem(
@@ -242,6 +247,7 @@ describe('in-flight conversation isolation', () => {
       ) ?? '',
     ).not.toContain('private first turn')
     expect(screen.queryByText('private first turn')).not.toBeInTheDocument()
+    expect(historyError).not.toHaveBeenCalledWith('Failed to fetch messages for conversation', expect.anything())
   })
 })
 
@@ -298,7 +304,10 @@ it('isolates the same subject when the observed tenant changes', async () => {
   )
   const view = render(app())
   expect(await screen.findByText('Tenant A reply')).toBeInTheDocument()
-  await userEvent.setup().type(screen.getByRole('textbox', { name: /message input/i }), 'private tenant A draft')
+  const input = screen.getByRole('textbox', { name: /message input/i })
+  // The fixture needs a populated draft, not per-character keyboard behavior.
+  fireEvent.change(input, { target: { value: 'private tenant A draft' } })
+  expect(input).toHaveValue('private tenant A draft')
   caller.tenant = 'tenant-b'
   view.rerender(app())
   expect(screen.queryByText('Tenant A reply')).not.toBeInTheDocument()
@@ -750,11 +759,15 @@ it('retires the real native dock draft on owner change and session loss', async 
   const view = render(app())
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: 'Expand chat' }))
-  await user.type(await screen.findByRole('textbox', { name: /message input/i }), 'Private owner draft')
+  const input = await screen.findByRole('textbox', { name: /message input/i })
+  fireEvent.change(input, { target: { value: 'Private owner draft' } })
+  expect(input).toHaveValue('Private owner draft')
   caller.tenant = 'new-tenant'
   view.rerender(app())
   expect(screen.getByRole('textbox', { name: /message input/i })).toHaveValue('')
-  await user.type(screen.getByRole('textbox', { name: /message input/i }), 'Private new-owner draft')
+  const nextInput = screen.getByRole('textbox', { name: /message input/i })
+  fireEvent.change(nextInput, { target: { value: 'Private new-owner draft' } })
+  expect(nextInput).toHaveValue('Private new-owner draft')
   caller.needsSignIn = true
   view.rerender(app())
   expect(screen.queryByRole('textbox', { name: /message input/i })).not.toBeInTheDocument()
