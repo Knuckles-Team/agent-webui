@@ -661,6 +661,8 @@ R049.1.15 reuses the existing workflow serializers and mounts the extracted
 editor within WorkWorkflowLens. Source fixtures cover typed URL identity, draft retention, validation, capability state and unchanged conversation/trace selections.
 They retain these states while inspecting a different task.
 They cover keyboard addition, selection, editing, connections and node removal.
+Model ReactFlow selection notifications when callback identity changes.
+Adding or editing a node must retain its inspector selection. Genuine canvas deselection must still clear it.
 They also check admin refusal, admission replacement, late reads and malformed canvases. Save and Run remain disabled against the current unavailable host;
 no mock effect success counts as persistence or execution evidence.
 
@@ -679,3 +681,8 @@ Exercise native links and keyboard controls without making navigation permission
 an execution capability. Add a browser journey at 320px and low height with keyboard,
 touch and real Back/Forward. Local component tests do not qualify browser geometry,
 served producer completeness or broad source ancestors.
+
+Legacy lensless Operate deep links must retain their loaded Services map selection.
+Match only an admitted loaded destination; do not rewrite history or infer missing records.
+Explicit Health and Usage selections remain distinct. Preserve retained usage parameters.
+Catalog browser assertions must check typed state rather than obsolete query-string ordering.

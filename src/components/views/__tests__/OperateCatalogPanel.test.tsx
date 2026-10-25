@@ -255,7 +255,7 @@ it('uses loaded catalog commands for semantic selection and retires handles on r
     await selected.execute({ commandId: entry.commandId }, context)
   })
   expect(screen.getByRole('region', { name: 'Selected catalog definition' })).toHaveTextContent('tool:records')
-  expect(window.location.search).toBe('?connector=srv%3Arecords&definition=tool%3Arecords')
+  expect(window.location.search).toBe('?connector=srv%3Arecords&definition=tool%3Arecords&lens=services')
   await expect(selected.execute({ commandId: entry.commandId }, context)).rejects.toThrow('stale')
   const held = tools.get('agent-webui.workspace.commands')!
   refused = true

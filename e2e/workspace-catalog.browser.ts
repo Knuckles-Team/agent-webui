@@ -116,5 +116,11 @@ test('catalog definitions share deep links, keyboard search and native history a
   await catalog.getByRole('button', { name: 'Refresh connector catalog' }).click()
   await expect(catalog.getByRole('alert')).toHaveText('This definition is not in the current connector catalog.')
   await expect(detail).toHaveCount(0)
-  await expect(page).toHaveURL(/connector=srv%3Arecords&definition=tool%3ALookup$/)
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === '/workspace/operate' &&
+      url.searchParams.get('connector') === 'srv:records' &&
+      url.searchParams.get('definition') === 'tool:Lookup' &&
+      url.searchParams.get('lens') === 'services',
+  )
 })

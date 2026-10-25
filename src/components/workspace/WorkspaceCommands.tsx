@@ -61,6 +61,17 @@ function navigate(href: string, role: Role) {
   else if (path === '/workspace/explore') navigateExploreLens(parseExploreLensState(href), role, EXPLORE_LENSES)
   else navigateOperate(parseOperateState(href), role)
 }
+function currentCommand(href: string, role: Role, entries: readonly WorkspaceCommand[]) {
+  const current = canonical(href, role)
+  if (entries.some((entry) => entry.href === current)) return current
+  if (new URL(current, 'https://workspace.invalid').pathname !== '/workspace/operate') return current
+  const state = parseOperateState(current)
+  if (state.lens || (!state.server && !state.connector)) return current
+  // Legacy deep links still render Services. Project only a loaded command,
+  // without rewriting native history or conflating explicit Health/Usage lenses.
+  const services = operateHref({ ...state, lens: 'services' })
+  return entries.some((entry) => entry.href === services) ? services : current
+}
 export function WorkspaceCommandsProvider({
   owner,
   role,
@@ -160,7 +171,7 @@ export function useWorkspaceCommandNavigation() {
   )
   let current: string | null = null
   try {
-    if (context) current = canonical(location, context.role)
+    if (context) current = currentCommand(location, context.role, context.entries)
   } catch {
     // Unknown destinations stay with the native surface; never expose raw query text.
   }

@@ -24,7 +24,7 @@ describe('ResponsiveLimitation', () => {
   it('blocks an unsupported route on mobile and links to the registered alternative', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390, writable: true })
     render(
-      <ResponsiveLimitation route={route('control-plane.workflows')}>
+      <ResponsiveLimitation route={route('knowledge.sparql')}>
         <div data-testid="desktop-route">desktop route body</div>
       </ResponsiveLimitation>,
     )
@@ -33,14 +33,14 @@ describe('ResponsiveLimitation', () => {
       expect(screen.getByRole('heading', { name: /needs a larger screen/i })).toBeInTheDocument()
     })
     expect(screen.queryByTestId('desktop-route')).not.toBeInTheDocument()
-    const alternative = findMobileAlternative(route('control-plane.workflows'))
+    const alternative = findMobileAlternative(route('knowledge.sparql'))
     expect(screen.getByRole('link', { name: `Open ${alternative?.label}` })).toHaveAttribute('href', alternative?.path)
   })
 
   it('keeps the route body on a desktop viewport', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280, writable: true })
     render(
-      <ResponsiveLimitation route={route('control-plane.workflows')}>
+      <ResponsiveLimitation route={route('knowledge.sparql')}>
         <div data-testid="desktop-route">desktop route body</div>
       </ResponsiveLimitation>,
     )
@@ -48,6 +48,20 @@ describe('ResponsiveLimitation', () => {
     await waitFor(() => {
       expect(screen.getByTestId('desktop-route')).toBeInTheDocument()
     })
+    expect(screen.queryByRole('heading', { name: /needs a larger screen/i })).not.toBeInTheDocument()
+  })
+
+  // spec: WEBUI-APPS-R049.1.15
+  it('does not block the adapted workflow compatibility entry on mobile', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390, writable: true })
+    const workflows = route('control-plane.workflows')
+    expect(workflows.mobile).toBe('adapted')
+    render(
+      <ResponsiveLimitation route={workflows}>
+        <div data-testid="workflow-entry">native workflow preview entry</div>
+      </ResponsiveLimitation>,
+    )
+    expect(screen.getByTestId('workflow-entry')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /needs a larger screen/i })).not.toBeInTheDocument()
   })
 })

@@ -1,5 +1,12 @@
-import { useState, type DragEvent } from 'react'
-import { Background, Controls, ReactFlow, ReactFlowProvider, useReactFlow } from '@xyflow/react'
+import { useCallback, useState, type DragEvent } from 'react'
+import {
+  Background,
+  Controls,
+  ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
+  type OnSelectionChangeParams,
+} from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -148,6 +155,13 @@ function WorkflowDraft({ editor }: { editor: WorkflowEditorController }) {
 }
 function WorkflowCanvas({ editor }: { editor: WorkflowEditorController }) {
   const { screenToFlowPosition } = useReactFlow()
+  const { setSelectedId } = editor
+  const onSelectionChange = useCallback(
+    ({ nodes }: OnSelectionChangeParams<WorkflowNode>) => {
+      setSelectedId(nodes[0]?.id ?? null)
+    },
+    [setSelectedId],
+  )
   function drop(event: DragEvent) {
     event.preventDefault()
     try {
@@ -177,9 +191,7 @@ function WorkflowCanvas({ editor }: { editor: WorkflowEditorController }) {
         onPaneClick={() => {
           editor.setSelectedId(null)
         }}
-        onSelectionChange={({ nodes }) => {
-          editor.setSelectedId(nodes[0]?.id ?? null)
-        }}
+        onSelectionChange={onSelectionChange}
         fitView
         proOptions={{ hideAttribution: true }}
       >

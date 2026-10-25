@@ -7,17 +7,53 @@ import { ApiError } from '@/lib/api-validation'
 import { parseWorkState, navigateWork, workHref } from '@/lib/work-workspace'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
 import type { Role } from '@/lib/nav-registry'
-import type { SavedWorkflow } from '@/lib/workflow'
+import type { SavedWorkflow, WorkflowNode } from '@/lib/workflow'
+import type { OnSelectionChangeParams } from '@xyflow/react'
 import { WorkWorkflowLens } from '../WorkWorkflowLens'
 
-vi.mock('@xyflow/react', async (original) => ({
-  ...(await original<object>()),
-  ReactFlow: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  ReactFlowProvider: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-  Background: () => null,
-  Controls: () => null,
-  useReactFlow: () => ({ screenToFlowPosition: (position: unknown) => position }),
-}))
+vi.mock('@xyflow/react', async (original) => {
+  const { useEffect } = await import('react')
+  return {
+    ...(await original<object>()),
+    ReactFlow: function SelectionFlow({
+      children,
+      nodes,
+      onSelectionChange,
+    }: {
+      children?: React.ReactNode
+      nodes: WorkflowNode[]
+      onSelectionChange: (selection: OnSelectionChangeParams<WorkflowNode>) => void
+    }) {
+      // ReactFlow notifies when callback identity changes, not only after clicks.
+      useEffect(() => {
+        onSelectionChange({ nodes: [], edges: [] })
+      }, [onSelectionChange])
+      return (
+        <div>
+          {children}
+          <button
+            onClick={() => {
+              onSelectionChange({ nodes: nodes.slice(0, 1), edges: [] })
+            }}
+          >
+            Select first canvas node
+          </button>
+          <button
+            onClick={() => {
+              onSelectionChange({ nodes: [], edges: [] })
+            }}
+          >
+            Clear canvas selection
+          </button>
+        </div>
+      )
+    },
+    ReactFlowProvider: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+    Background: () => null,
+    Controls: () => null,
+    useReactFlow: () => ({ screenToFlowPosition: (position: unknown) => position }),
+  }
+})
 vi.mock('@/lib/api', () => ({
   api: {
     listWorkflowCapabilities: vi.fn(),
@@ -126,6 +162,19 @@ describe('Contextual Work workflows', () => {
     screen.getByRole('button', { name: 'delete node' }).focus()
     await user.keyboard(' ')
     expect(screen.queryByRole('option', { name: '1. Keyboard step' })).not.toBeInTheDocument()
+  })
+  it('still follows real canvas selection and deselection after local inspector edits', async () => {
+    window.history.replaceState({}, '', '/workspace/work?lens=workflows')
+    render(<Harness />)
+    await screen.findByRole('button', { name: 'Add Planner' })
+    fireEvent.click(screen.getByRole('button', { name: 'Add Step' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Node label' }), { target: { value: 'First step' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add Team' }))
+    expect(screen.getByRole('textbox', { name: 'Node label' })).toHaveValue('Team')
+    fireEvent.click(screen.getByRole('button', { name: 'Select first canvas node' }))
+    expect(screen.getByRole('textbox', { name: 'Node label' })).toHaveValue('First step')
+    fireEvent.click(screen.getByRole('button', { name: 'Clear canvas selection' }))
+    expect(screen.queryByRole('textbox', { name: 'Node label' })).not.toBeInTheDocument()
   })
   it('does not fetch workflow data for a non-admin deep link', () => {
     window.history.replaceState({}, '', '/workspace/work?lens=workflows&workflow=private')
