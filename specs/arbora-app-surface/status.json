@@ -2306,7 +2306,8 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "38c8f13794ee",
-        "68ad43e0f7a9"
+        "68ad43e0f7a9",
+        "dc30239b2938"
       ],
       "verified_by": [
         "src/__tests__/Chat.conversation-identity.test.tsx:1",

@@ -224,6 +224,7 @@
       "landed_in": [
         "38c8f13794ee",
         "4d0f9693e45d",
+        "dc30239b2938",
         "f91c2a3a3446"
       ],
       "verified_by": [
@@ -265,7 +266,8 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "1cac40d60bc3",
-        "38c8f13794ee"
+        "38c8f13794ee",
+        "dc30239b2938"
       ],
       "verified_by": [
         "e2e/documentation-screenshots.browser.ts:1",

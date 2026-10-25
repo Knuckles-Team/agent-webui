@@ -1066,9 +1066,9 @@ acceptance open under R047/R049.1.2 and WEBUI-DESIGN-R004.1.2/R004.2.2.
 Producer inspection found only client bindings for `/api/observability/*` in the
 current WebUI source, not matching WebUI host route implementations. The inspected
 Arbora `usage.read` operation declares only a tenant-scoped totals snapshot and
-`usage:read` scope. It is not an analytics/session replacement. Served analytics
-availability must therefore be demonstrated independently; this UI correctly
-shows unavailable responses instead of treating fixtures as producer delivery.
+`usage:read` scope. It is not an analytics/session replacement. Check served analytics
+availability independently. This UI shows unavailable responses; fixtures do not
+prove producer delivery.
 
 ### 2026-10-25: Native feature-lens integration
 
@@ -1128,8 +1128,8 @@ Combine R049.1.14/.15/.16 with the R049.2.1 conversation-first shell. Preserve
 native graph selection retirement, workflow drafts and usage context while
 retaining the clearer Chat, Knowledge and Tools presentation. Keep all native
 browser journeys in the required Canopy selection. The 320px fresh secondary
-entry must retain the exact zero-scroll assertion; source checks do not establish
-browser geometry acceptance or provider completeness.
+entry retains the exact zero-scroll assertion. Source checks do not prove browser
+geometry acceptance or provider completeness.
 
 ### Request handling without a mode (2026-10-25)
 
