@@ -77,25 +77,31 @@ it('mounts Work by default, replaces only the entry, and retains query/hash/hist
   window.history.replaceState({ retained: true }, '', '/?conversation=existing#context')
   const length = window.history.length
   render(<App />)
-  expect(await screen.findByRole('heading', { name: 'Work' })).toBeVisible()
-  expect(screen.getByRole('heading', { name: 'Work' }).closest('.workspace-route-content')).toHaveAttribute(
-    'data-workspace-route',
-    'workspace.work-proof',
-  )
+  const heading = await screen.findByRole('heading', { name: 'Work' })
+  expect(heading).toBeVisible()
+  expect(heading.closest('.workspace-route-content')).toHaveAttribute('data-workspace-route', 'workspace.work-proof')
   expect(window.location.pathname + window.location.search + window.location.hash).toBe(
     '/workspace/work?conversation=existing#context',
   )
   expect(window.history.length).toBe(length)
   expect(window.history.state).toEqual({ retained: true })
   expect(screen.queryByText('Legacy overview')).not.toBeInTheDocument()
+})
+it('restores the replaced Work entry through native Back and Forward', async () => {
+  window.history.replaceState({ retained: true }, '', '/?conversation=existing#context')
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: 'Work' })).toBeVisible()
   visit('/overview')
   expect(await screen.findByText('Legacy overview')).toBeVisible()
   act(() => {
     window.history.back()
   })
   await waitFor(() => {
-    expect(window.location.pathname).toBe('/workspace/work')
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+      '/workspace/work?conversation=existing#context',
+    )
   })
+  expect(window.history.state).toEqual({ retained: true })
   expect(await screen.findByRole('heading', { name: 'Work' })).toBeVisible()
   act(() => {
     window.history.forward()

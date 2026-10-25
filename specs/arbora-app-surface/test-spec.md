@@ -620,6 +620,17 @@ The existing canonical Chat suites retain attachment, tool, usage, SWE, history
 and admission coverage. No native WebMCP, all-leaf semantic navigation or live
 provider completion is inferred from these source tests.
 
+### Lifecycle fixture isolation
+
+Keep native draft-retirement fixtures focused on completed input state.
+Assert each private draft exists before changing the tenant or denying the session.
+Retain the separate real typing, focus, submission and transport tests.
+Conversation-detail fixtures must return the existing messages envelope, not a bare list.
+Owner-transition checks must reject history-loading errors as well as cross-owner persistence.
+Keep cold workspace entry invariants separate from the native Back/Forward journey.
+Both cases mount the real lazy Work route; history traversal also preserves query, hash and entry state.
+Do not extend timeout budgets or turn synchronous identity-withdrawal assertions into eventual checks.
+
 ## Retained acceptance verification
 
 WEBUI-APPS-R049.2.2 retains every original baseline/redesign comparison and native interaction criterion from R049.2.
