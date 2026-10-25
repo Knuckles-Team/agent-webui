@@ -78,19 +78,37 @@ jobs:
         with:
           node-version: '22'
       - name: Install locked frontend dependencies
+        id: browser_dependencies
         run: pnpm install --frozen-lockfile
       - name: Install Chromium and system dependencies
+        id: browser_engine
         run: pnpm exec playwright install --with-deps chromium
       - name: Workspace identity, native readability and cancellation
+        id: workspace_identity
+        if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
         run: pnpm exec playwright test --config e2e/workspace-identity.config.ts
+      - name: Preserve workspace identity and native task access evidence
+        if: ${{ always() && (steps.workspace_identity.outcome == 'success' || steps.workspace_identity.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workspace-identity-browser
+          path: test-results/workspace-identity*/
+          retention-days: 14
+          if-no-files-found: error
       - name: Catalog destination history and responsive navigation
+        id: workspace_catalog
+        if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
         run: pnpm exec playwright test --config e2e/workspace-branches.config.ts workspace-catalog
       - name: Canopy Glass retained evidence and effects
+        id: canopy_native
+        if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
         run: pnpm exec playwright test --config e2e/canopy-glass.config.ts
       - name: Native 200 percent zoom and keyboard reachability
+        id: native_zoom
+        if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
         run: pnpm exec playwright test --config e2e/workspace-zoom.config.ts --output=test-results/canopy-glass/zoom
       - name: Preserve Canopy Glass browser evidence
-        if: always()
+        if: ${{ always() && (steps.canopy_native.outcome == 'success' || steps.canopy_native.outcome == 'failure') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: canopy-glass-browser
@@ -98,13 +116,19 @@ jobs:
           retention-days: 14
           if-no-files-found: error
       - name: Documentation screenshot contract
+        id: documentation_contract
+        if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
         run: pnpm screenshots:test
       - name: Refresh synthetic documentation screenshots
+        id: documentation_capture
+        if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
         run: pnpm screenshots:refresh
       - name: Flat execution graph keyboard and responsive fixtures
+        id: execution_graph
+        if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
         run: pnpm exec playwright test --config e2e/workspace-layout.config.ts execution-graph.browser.ts --output test-results/workspace-execution-graph
       - name: Preserve flat execution graph browser evidence
-        if: always()
+        if: ${{ always() && (steps.execution_graph.outcome == 'success' || steps.execution_graph.outcome == 'failure') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: workspace-execution-graph
@@ -112,7 +136,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
       - name: Preserve documentation screenshots and provenance
-        if: always()
+        if: ${{ always() && (steps.documentation_capture.outcome == 'success' || steps.documentation_capture.outcome == 'failure') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: documentation-screenshots
@@ -120,7 +144,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
       - name: Preserve synthetic catalog browser evidence
-        if: always()
+        if: ${{ always() && (steps.workspace_catalog.outcome == 'success' || steps.workspace_catalog.outcome == 'failure') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: workspace-catalog-browser
@@ -359,14 +383,25 @@ jobs:
   gates:
     name: gates
     if: always()
-    needs: [hooks, tests]
+    needs: [hooks, tests, workspace-browser]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require hooks and tests to have passed
+      - name: Require hooks, tests and applicable browser qualification
         env:
           HOOKS: ${{ needs.hooks.result }}
           TESTS: ${{ needs.tests.result }}
+          BROWSER: ${{ needs.workspace-browser.result }}
+          EVENT: ${{ github.event_name }}
         run: |
-          echo "hooks=$HOOKS tests=$TESTS"
-          [ "$HOOKS" = success ] && [ "$TESTS" = success ]
+          set -euo pipefail
+          echo "hooks=$HOOKS tests=$TESTS browser=$BROWSER event=$EVENT"
+          [ "$HOOKS" = success ]
+          [ "$TESTS" = success ]
+          if [ "$EVENT" = pull_request ] || [ "$EVENT" = workflow_dispatch ]; then
+            [ "$BROWSER" = success ]
+          elif [ "$EVENT" = push ]; then
+            [ "$BROWSER" = skipped ]
+          else
+            exit 1
+          fi

@@ -99,10 +99,9 @@ describe('new workspace composition', () => {
     const instance = assistant.getAttribute('data-instance')
     view.rerender(surface(work))
     const workEvidence = await screen.findByText('Work evidence')
-    expect(workEvidence.closest('.grid')).toHaveClass(
-      'overflow-auto',
-      'grid-rows-[minmax(14rem,1fr)_minmax(16rem,1fr)]',
-    )
+    expect(workEvidence.closest('.workspace-context-content')).toBeInTheDocument()
+    expect(assistant.parentElement).toHaveClass('workspace-chat-layout')
+    expect(assistant.closest('.workspace-chat-boundary')).toBeInTheDocument()
     expect(screen.getByText('Conversation')).toBe(assistant)
     expect(assistant).toHaveAttribute('data-instance', instance)
     expect(screen.getByRole('navigation', { name: 'Primary workspace contexts' }).closest('header')).toHaveClass(

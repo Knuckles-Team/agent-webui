@@ -37,6 +37,7 @@ test('response task remains pointer-reachable after transcript scroll and low-he
   }, response)
   await page.setViewportSize({ width: 740, height: 320 })
   await page.goto('/workspace/work?conversation=%2Flayout')
+  await page.getByRole('button', { name: 'Expand chat', exact: true }).click()
   const link = page.getByRole('link', { name: 'Inspect response task' })
   for (const viewport of [
     { width: 740, height: 320 },

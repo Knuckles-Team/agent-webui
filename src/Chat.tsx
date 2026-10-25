@@ -721,6 +721,8 @@ function approvalToolPartFromAnnotation(ann: AppAnnotation, messageId: string): 
  */
 interface ChatProps {
   pageContext: PageContextEnvelope
+  /** Secondary native docks must not steal fresh task-entry focus. */
+  focusOnMount?: boolean
 }
 
 /** Arrow-key/Enter/Tab/Escape navigation while the slash-command autocomplete popover
@@ -789,6 +791,14 @@ function submitAccessibleName(status: string): string {
     submitted: 'Sending message',
   }
   return names[status] ?? 'Send message'
+}
+
+/** Compact dock feedback derives only from the current canonical chat state. */
+function compactChatStatus(status: string, messageCount: number): string {
+  if (status === 'submitted') return 'Waiting for reply…'
+  if (status === 'streaming') return 'Reply in progress. Expand to review.'
+  if (status === 'error') return 'Reply failed. Expand for details.'
+  return messageCount > 0 ? `${messageCount} messages. Expand to review.` : 'Ready for your message.'
 }
 
 function updateEnabledTools(enabled: string[], toolId: string, checked: boolean): string[] {
@@ -1089,8 +1099,14 @@ function renderModelSelect(
  * Orchestrates the chat lifecycle including message history management,
  * streaming response handling, and tool interaction flows.
  */
-const OwnedChat = ({ pageContext, ownerKey, role }: ChatProps & { ownerKey: string; role: Role }) => {
+const OwnedChat = ({
+  pageContext,
+  ownerKey,
+  role,
+  focusOnMount = true,
+}: ChatProps & { ownerKey: string; role: Role }) => {
   const [input, setInput] = useState('')
+  const [composerOptionsOpen, setComposerOptionsOpen] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number>(0)
 
@@ -1151,6 +1167,7 @@ const OwnedChat = ({ pageContext, ownerKey, role }: ChatProps & { ownerKey: stri
 
   const [conversationId, setConversationId] = useConversationIdFromUrl()
   const userKey = ownerKey
+  const focusConversation = useRef({ conversationId, userKey, enabled: focusOnMount })
   // Allocate before the first submit so the optimistic message and wire request
   // use the same persisted conversation, not the AI SDK's unrelated default ID.
   const requestConversationId = useMemo(
@@ -1446,7 +1463,15 @@ const OwnedChat = ({ pageContext, ownerKey, role }: ChatProps & { ownerKey: stri
         void fetchMessages()
       }
     }
-    textareaRef.current?.focus()
+    // Suppress initial secondary-dock autofocus, including StrictMode replay.
+    // Only a real conversation change enables the established selection focus.
+    const focus = focusConversation.current
+    if (focus.conversationId !== conversationId || focus.userKey !== userKey) {
+      focus.conversationId = conversationId
+      focus.userKey = userKey
+      focus.enabled = true
+    }
+    if (focus.enabled) textareaRef.current?.focus()
     return () => {
       cancelled = true
     }
@@ -1860,8 +1885,17 @@ Available commands:
   }
 
   return (
-    <div className="flex min-h-0 flex-col h-full overflow-auto" data-testid="chat-flow">
-      <Conversation className="min-h-24 flex-1 shrink-0">
+    <div className="chat-flow flex min-h-0 flex-col h-full overflow-auto" data-testid="chat-flow">
+      <p role="status" className="chat-compact-status hidden shrink-0 px-2 pt-1 text-xs text-muted-foreground">
+        {sweMode
+          ? sweBusy
+            ? 'Developer workspace command in progress.'
+            : sweSessionId
+              ? 'Developer workspace session active.'
+              : 'Developer workspace mode enabled.'
+          : compactChatStatus(status, messages.length)}
+      </p>
+      <Conversation className="chat-transcript min-h-24 flex-1 shrink-0">
         <ConversationContent>
           {messages.map((message: UIMessage) => (
             <div key={message.id}>
@@ -1983,7 +2017,7 @@ Available commands:
         <ConversationScrollButton aria-label="Scroll to latest message" />
       </Conversation>
 
-      <div className="relative shrink-0 p-3" data-testid="chat-composer">
+      <div className="chat-composer relative shrink-0 p-3" data-testid="chat-composer">
         {renderSuggestionsList(suggestions, activeSuggestionIndex, (suggestion) => {
           setInput(suggestion)
           setSuggestions([])
@@ -2005,8 +2039,60 @@ Available commands:
             value={input}
           />
           {renderAttachmentPreview(attachments, removeAttachment)}
-          <PromptInputToolbar>
-            <PromptInputTools className="flex-wrap">
+          <PromptInputToolbar className="flex-wrap gap-1">
+            <PromptInputButton
+              variant="outline"
+              className="chat-composer-options-toggle hidden"
+              aria-label="Message options"
+              aria-expanded={composerOptionsOpen}
+              aria-controls="chat-composer-options"
+              onClick={() => {
+                setComposerOptionsOpen((open) => !open)
+              }}
+            >
+              <Settings2Icon className="size-4" />
+              <span>Options</span>
+            </PromptInputButton>
+            <div className="chat-execution-controls flex items-center gap-1 flex-wrap">
+              {sweMode && <span className="text-xs font-medium">Developer workspace mode</span>}
+              {renderSweModeButton(sweMode, handleToggleSweMode)}
+              {renderSweControls(
+                sweMode,
+                sweSessionId,
+                sweBackend,
+                () => {
+                  void loadSweProvenance()
+                },
+                () => {
+                  void stopSweSession()
+                },
+              )}
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground hidden sm:inline" aria-hidden>
+                  Mode:
+                </span>
+                <PromptInputModelSelect
+                  onValueChange={(value) => {
+                    if (isAgentMode(value)) setMode(value)
+                  }}
+                  value={mode}
+                >
+                  <PromptInputModelSelectTrigger className="w-auto min-w-[5.625rem] shrink-0" aria-label="Agent mode">
+                    <PromptInputModelSelectValue />
+                  </PromptInputModelSelectTrigger>
+                  <PromptInputModelSelectContent>
+                    <PromptInputModelSelectItem value="ask">Ask</PromptInputModelSelectItem>
+                    <PromptInputModelSelectItem value="plan">Plan</PromptInputModelSelectItem>
+                    <PromptInputModelSelectItem value="code">Code</PromptInputModelSelectItem>
+                  </PromptInputModelSelectContent>
+                </PromptInputModelSelect>
+              </div>
+            </div>
+            <PromptInputTools
+              id="chat-composer-options"
+              className="chat-composer-options flex-wrap min-w-0"
+              data-expanded={composerOptionsOpen}
+            >
               <input
                 type="file"
                 ref={fileInputRef}
@@ -2037,45 +2123,12 @@ Available commands:
                 }}
               />
               {renderToolsMenu(availableTools, enabledTools, setEnabledTools)}
-              {renderSweModeButton(sweMode, handleToggleSweMode)}
-              {renderSweControls(
-                sweMode,
-                sweSessionId,
-                sweBackend,
-                () => {
-                  void loadSweProvenance()
-                },
-                () => {
-                  void stopSweSession()
-                },
-              )}
               {renderUsageBadge(hasUsage, sessionUsage, estimatedCost)}
               {renderExportMenu(messages, conversationId)}
               {/* Prefer the backend-configured model registry; fall back
                 to the legacy `/api/configure` list when no registry is
                 populated (e.g. single-model / dev mode). */}
               {renderModelSelect(modelRegistry, configQuery.data, model, setModel)}
-
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground hidden sm:inline" aria-hidden>
-                  Mode:
-                </span>
-                <PromptInputModelSelect
-                  onValueChange={(value) => {
-                    if (isAgentMode(value)) setMode(value)
-                  }}
-                  value={mode}
-                >
-                  <PromptInputModelSelectTrigger className="w-[90px]" aria-label="Agent mode">
-                    <PromptInputModelSelectValue />
-                  </PromptInputModelSelectTrigger>
-                  <PromptInputModelSelectContent>
-                    <PromptInputModelSelectItem value="ask">Ask</PromptInputModelSelectItem>
-                    <PromptInputModelSelectItem value="plan">Plan</PromptInputModelSelectItem>
-                    <PromptInputModelSelectItem value="code">Code</PromptInputModelSelectItem>
-                  </PromptInputModelSelectContent>
-                </PromptInputModelSelect>
-              </div>
             </PromptInputTools>
             <PromptInputSubmit
               aria-label={submitAccessibleName(status)}

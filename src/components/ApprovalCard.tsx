@@ -91,6 +91,10 @@ export function ApprovalCard({ toolPart, onApprove, onReject, className, ...prop
   // Render the active review state
   return (
     <div
+      data-chat-approval-pending=""
+      tabIndex={-1}
+      role="group"
+      aria-label="Required approval"
       className={cn('mb-4 w-full rounded-md border border-amber-500/30 bg-amber-500/5 overflow-hidden', className)}
       {...props}
     >

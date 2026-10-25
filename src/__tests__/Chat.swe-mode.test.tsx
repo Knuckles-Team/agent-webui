@@ -105,6 +105,9 @@ describe('Chat SWE mode', () => {
     const toggle = await screen.findByRole('button', { name: /toggle swe mode/i })
     await user.click(toggle)
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(toggle.closest('.chat-composer-options')).toBeNull()
+    expect(screen.getByText('Developer workspace mode')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Agent mode' }).closest('.chat-composer-options')).toBeNull()
   })
 
   it('drives the developer-workspace runtime when a message is sent in SWE mode', async () => {
@@ -131,7 +134,10 @@ describe('Chat SWE mode', () => {
 
     // The session badge and stop control should now be visible.
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /stop swe session/i })).toBeInTheDocument()
+      const stop = screen.getByRole('button', { name: /stop swe session/i })
+      expect(stop).toBeInTheDocument()
+      expect(stop.closest('.chat-composer-options')).toBeNull()
+      expect(screen.getByText('Developer workspace session active.')).toBeInTheDocument()
     })
   })
 

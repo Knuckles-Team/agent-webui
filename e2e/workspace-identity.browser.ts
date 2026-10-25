@@ -206,15 +206,45 @@ async function checkNarrowTask(page: Page, map: Locator, size: { width: number; 
   expect(task!.y).toBeLessThan(290)
   expect(task!.height).toBeGreaterThanOrEqual(340)
   await expectDock(page)
-  await hit(page.getByRole('button', { name: 'Reprobe readiness', exact: true }))
-  await page.locator('.workspace-task-surface .workspace-route-content').evaluate((element) => {
-    element.scrollTop = element.scrollHeight
+  const reprobe = page.getByRole('button', { name: 'Reprobe readiness', exact: true })
+  const initial = await reprobe.evaluate((element) => {
+    const rect = (node: Element) => {
+      const box = node.getBoundingClientRect()
+      return { x: box.x, y: box.y, width: box.width, height: box.height }
+    }
+    const ancestors = []
+    for (let node = element.parentElement; node; node = node.parentElement) {
+      const style = getComputedStyle(node)
+      ancestors.push({
+        className: node.className,
+        rect: rect(node),
+        scrollTop: node.scrollTop,
+        clientHeight: node.clientHeight,
+        scrollHeight: node.scrollHeight,
+        overflow: style.overflow,
+        scrollPadding: style.scrollPadding,
+      })
+    }
+    return { target: rect(element), viewport: { width: innerWidth, height: innerHeight }, ancestors }
   })
-  await hit(page.getByRole('button', { name: 'Refresh capabilities', exact: true }))
+  console.log('native-task-entry-geometry', JSON.stringify(initial))
+  await test.info().attach('native-task-entry-geometry.json', {
+    body: JSON.stringify(initial, null, 2),
+    contentType: 'application/json',
+  })
+  // The in-flow assistant shares the task area. Reach actions using actual Tab
+  // navigation, not a programmatic scroll that can reveal overflow:hidden content.
+  await tabTo(page, reprobe)
+  await expect(reprobe).toBeFocused()
+  await hit(reprobe)
+  const refresh = page.getByRole('button', { name: 'Refresh capabilities', exact: true })
+  await tabTo(page, refresh)
+  await expect(refresh).toBeFocused()
+  await hit(refresh)
   await expectDock(page)
   await tabTo(page, page.getByRole('textbox', { name: 'Filter fleet children' }))
   await hit(page.getByRole('textbox', { name: 'Filter fleet children' }))
-  await checkDrawer(page)
+  await checkNativeAssistant(page)
   await checkCompactFocus(page)
 }
 
@@ -237,19 +267,22 @@ async function closeNarrowMap(page: Page, map: Locator, size: { width: number; h
 }
 
 async function expectDock(page: Page) {
-  const viewport = await page.locator('.workspace-viewport').boundingBox()
-  const launcher = await page.locator('#chat-panel-toggle').boundingBox()
-  expect(viewport!.y + viewport!.height).toBeLessThanOrEqual(launcher!.y - launcher!.height / 2)
+  await expect(page.locator('#chat-panel-toggle')).toHaveCount(0)
+  const panel = page.getByRole('region', { name: 'Workspace assistant' })
+  expect(await panel.evaluate((element) => getComputedStyle(element).position)).toBe('static')
+  expect(await page.locator('.workspace-viewport').evaluate((element) => element.getBoundingClientRect().height)).toBe(
+    740,
+  )
 }
-async function checkDrawer(page: Page) {
-  const viewport = page.locator('.workspace-viewport')
-  const launcher = page.getByRole('button', { name: 'Open chat', exact: true })
-  await tabTo(page, launcher)
+async function checkNativeAssistant(page: Page) {
+  const expand = page.getByRole('button', { name: 'Expand chat', exact: true })
+  await tabTo(page, expand)
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('button', { name: 'Close chat', exact: true })).toBeFocused()
-  await expect.poll(() => viewport.evaluate((element) => element.getBoundingClientRect().height)).toBe(740)
-  await page.keyboard.press('Enter')
-  await expect(launcher).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Restore chat size', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(expand).toBeFocused()
+  await page.getByRole('button', { name: 'Focus message input' }).click()
+  await expect(page.getByRole('textbox', { name: 'Message input' })).toBeFocused()
   await expectDock(page)
 }
 async function checkPrimaryWork(page: Page) {
@@ -259,7 +292,7 @@ async function checkPrimaryWork(page: Page) {
     .getByRole('navigation', { name: 'Primary workspace contexts' })
     .getByRole('link', { name: 'work', exact: true })
     .click()
-  await expect(page.locator('#chat-panel-toggle')).toBeDisabled()
+  await expect(page.locator('#chat-panel-toggle')).toHaveCount(0)
   await expect
     .poll(() => page.locator('.workspace-viewport').evaluate((element) => element.getBoundingClientRect().height))
     .toBe(740)

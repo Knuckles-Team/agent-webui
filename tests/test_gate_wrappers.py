@@ -92,9 +92,11 @@ class DesignAcceptanceLedgerTests(unittest.TestCase):
             ('R002.1', 'R002.1.2'),
             ('R004', 'R004.1'),
             ('R004.1', 'R004.1.2'),
+            ('R004', 'R004.2'),
+            ('R004.2', 'R004.2.2'),
         ):
             self.assertIn(prefix + child, rows[prefix + parent]['rollup_of'])
-        for number in ('R002.1.2', 'R004.1.2'):
+        for number in ('R002.1.2', 'R004.1.2', 'R004.2.2'):
             with self.subTest(number=number):
                 row = rows[prefix + number]
                 self.assertEqual(row['delivery_state'], 'SPECIFIED')
@@ -125,3 +127,10 @@ class DesignAcceptanceLedgerTests(unittest.TestCase):
                     self.assertEqual(row['delivery_state'], 'VERIFIED')
                     self.assertTrue(row['landed_in'])
                     self.assertTrue(row['verified_by'])
+
+    def test_native_chat_keeps_broader_authority_acceptance_open(self):
+        rows = self.rows('arbora-app-surface')
+        prefix = 'WEBUI-' + 'APPS-'
+        for number in ('R047', 'R048', 'R049.1.2', 'R050'):
+            with self.subTest(number=number):
+                self.assertEqual(rows[prefix + number]['delivery_state'], 'SPECIFIED')

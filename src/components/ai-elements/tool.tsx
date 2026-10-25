@@ -72,7 +72,11 @@ export const ToolHeader = ({ className, type, state, ...props }: ToolHeaderProps
   const toolIcon = getToolIcon(toolId, 'size-4 text-muted-foreground')
 
   return (
-    <CollapsibleTrigger className={cn('flex w-full items-center justify-between gap-4 p-3', className)} {...props}>
+    <CollapsibleTrigger
+      className={cn('flex w-full items-center justify-between gap-4 p-3', className)}
+      data-chat-approval-pending={state === 'approval-requested' ? '' : undefined}
+      {...props}
+    >
       <div className="flex items-center gap-2">
         {toolIcon}
         <span className="font-medium text-sm">{toolId}</span>

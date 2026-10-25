@@ -338,6 +338,22 @@ promote a broad row from scoped tests or historical documentation screenshots.
   low-height and ultrawide pixel review. A shared palette or the first Explore
   list/detail journey does not complete the three-context redesign.
 
+## Native workspace assistant continuation
+
+- [x] WEBUI-APPS-R005.4/R049.1.3: Replace the floating launcher/drawer with a visible native assistant using the same mounted Chat and canonical state.
+- [ ] WEBUI-APPS-R049.2: Preserve dominant task width, expanded header and an accessible dock/composer across narrow and short layouts.
+- [x] WEBUI-APPS-R049.1.3: Check unsent draft, live context, canonical streaming and owner retirement through source tests of the actual Chat seam. Add native dock focus and retained-shell regression tests.
+- [ ] WEBUI-APPS-R049.1.2/R047/R048/R050: Complete native browser co-navigation and installed-provider acceptance separately; a layout change cannot close these rows.
+
+Bounded source evidence: 409 tests across 40 component/Chat/WebMCP files passed
+with two workers. The default worker pool exhausted available process memory;
+that interrupted run is not validation. Hosted native dock, touch/keyboard,
+short/narrow, appearance and pixel qualification remain pending. The dock adds
+no provider, scheduler, data endpoint or semantic-tool authority.
+
+Typecheck, scoped typed lint and the production build passed. Local whole-repository
+lint exceeded memory. Hosted typecheck and full lint passed on c8bd060, composed
+with base 954a227. Browser qualification remains incomplete.
 
 ## Retained redesign ledger correction — 2026-10-24
 

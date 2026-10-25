@@ -11,9 +11,7 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-const viewports = [320, 375, 768, 1440].flatMap((width) =>
-  ['light', 'dark'].map((theme) => ({ width, theme })),
-)
+const viewports = [320, 375, 768, 1440].flatMap((width) => ['light', 'dark'].map((theme) => ({ width, theme })))
 
 for (const { width, theme } of viewports) {
   // spec: WEBUI-DESIGN-R003, WEBUI-DESIGN-R004
@@ -39,41 +37,42 @@ for (const { width, theme } of viewports) {
     await expect(page.getByRole('checkbox', { name: 'Use cache' })).toHaveAccessibleDescription(
       'Reuse previous results.',
     )
-    const open = page.getByRole('button', { name: 'Open chat' })
+    const input = page.getByRole('textbox', { name: 'Message' })
+    await input.fill('Retained accessibility draft')
     for (let cycle = 0; cycle < 3; cycle += 1) {
-      await open.focus()
+      const expand = page.getByRole('button', { name: 'Expand chat' })
+      await expand.focus()
       await page.keyboard.press('Enter')
-      await expect(open).toHaveAttribute('aria-expanded', 'true')
-      await expect(page.getByRole('button', { name: 'Close chat' })).toBeFocused()
-      await page.keyboard.press('Shift+Tab')
-      await expect(page.getByRole('button', { name: 'Maximize' })).toBeFocused()
-      await page.keyboard.press('Enter')
-      await expect(page.getByRole('button', { name: 'Minimize' })).toBeFocused()
+      await expect(page.getByRole('button', { name: 'Restore chat size' })).toBeFocused()
       await page.keyboard.press('Escape')
-      await expect(open).toBeFocused()
-      await expect(open).toHaveAttribute('aria-expanded', 'false')
+      await expect(expand).toBeFocused()
+      await expect(input).toHaveValue('Retained accessibility draft')
     }
-    await open.press('Enter')
-    await page.getByRole('button', { name: 'Close chat' }).press('Enter')
-    await expect(open).toBeFocused()
+    await page.getByRole('button', { name: 'Focus message input' }).press('Enter')
+    await expect(input).toBeFocused()
+    await page.getByRole('button', { name: 'Expand chat' }).click()
     await page.getByRole('button', { name: 'Switch view' }).click()
-    await expect(open).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Expand chat' })).toHaveCount(0)
+    const primary = await page.getByRole('region', { name: 'Workspace assistant' }).boundingBox()
+    const layout = await page.locator('.workspace-chat-layout').boundingBox()
+    expect(primary!.width).toBeCloseTo(layout!.width, 0)
+    await expect(input).toHaveValue('Retained accessibility draft')
     await page.getByRole('button', { name: 'Switch view' }).click()
-    await expect(open).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Restore chat size' })).toBeEnabled()
+    await expect(page.locator('#chat-panel-toggle')).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: test.info().outputPath(`workspace-${width}-${theme}.png`), animations: 'disabled' })
   })
 }
 
-test('reduced motion removes drawer transitions and decorative animation', async ({ page }) => {
+test('native assistant has no overlay transition or decorative activity', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/')
-  const open = page.getByRole('button', { name: 'Open chat' })
-  expect(await open.evaluate((element) => getComputedStyle(element).transitionProperty)).toBe('none')
-  expect(await open.locator('span').evaluate((element) => getComputedStyle(element).animationName)).toBe('none')
-  await open.press('Enter')
-  const panel = page.getByRole('complementary', { name: 'Agent Chat' })
-  expect(await panel.evaluate((element) => getComputedStyle(element).transitionProperty)).toBe('none')
+  const panel = page.getByRole('region', { name: 'Workspace assistant' })
+  expect(await panel.evaluate((element) => getComputedStyle(element).position)).toBe('static')
+  expect(await panel.evaluate((element) => getComputedStyle(element).animationName)).toBe('none')
+  await page.getByRole('button', { name: 'Expand chat' }).press('Enter')
   await page.keyboard.press('Escape')
-  await expect(open).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Expand chat' })).toBeFocused()
+  await expect(panel).toBeVisible()
 })

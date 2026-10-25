@@ -49,14 +49,20 @@ spacing utilities remain the source of density; keep primary actions visible at
 - Associate schema help and validation errors with their input through
   `aria-describedby`; keep `aria-invalid` aligned with validation state. Boolean
   controls have a separate accessible label so help text is not part of the name.
-- The chat drawer is a complementary region, not a modal dialog. Opening focuses
-  Close chat; closing by its button or Escape restores the launcher. The closed
-  drawer is inert, and the hidden launcher is disabled. Switching to primary chat
-  must preserve navigation focus and the existing Chat instance.
+- The assistant is a visible named region in workspace flow, never a floating
+  launcher, backdrop or modal drawer. Write focuses the existing composer;
+  Expand/Restore changes only the dock size. An unhandled Escape within an
+  expanded assistant restores its size without hiding the assistant. Keep focus
+  on a surviving control. Move focus to the persistent composer if restore or
+  resize hides the focused transcript or option control.
+  Nested controls retain their own Escape behavior. Navigation and resizing
+  preserve the existing Chat instance, draft and selected conversation. Fresh
+  secondary-dock entry does not autofocus or scroll to the composer. Write and
+  explicit conversation selection retain their existing focus behavior.
 - Modal interactions use the existing Dialog primitive and its focus trap. Do
   not apply modal semantics or trap focus in a nonmodal complementary region.
 - Every action has a keyboard and click alternative. Chat header controls use
-  40px targets; filter actions use 32px targets. Keep visible focus styles.
+  44px targets; filter actions use 32px targets. Keep visible focus styles.
 - Reduced motion removes drawer transitions and decorative ping/pulse animation
   while preserving text, controls and state changes.
 

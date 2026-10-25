@@ -10,7 +10,7 @@
  * sole source of truth for what pages exist. Three routes get bespoke handling here
  * because they need something the generic zero-prop `RouteDef.element` contract can't
  * express: Dashboard (always mounted, toggled visible) and Chat (a persistent
- * prop-driven singleton, full-page on `/chat` and a drawer everywhere else — its session
+ * prop-driven singleton, full-page on `/chat` and an in-flow dock everywhere else — its session
  * list is read from the one store in `lib/chat-store.ts`) and Object detail (needs a
  * `:id` route param). Every other route is mounted generically from its `RouteDef`.
  *
@@ -298,7 +298,10 @@ function RouteContentSurface({
   // Compatibility entries never mount their retired standalone body, including while identity loads.
   if (route.redirects && !routeAccessDenied)
     return (
-      <div className="workspace-route-content flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-3 sm:p-5">
+      <div
+        className="workspace-route-content flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-3 sm:p-5"
+        data-workspace-route={route.id}
+      >
         {renderRouteHeading(route)}
         <RouteLoadingFallback />
       </div>
@@ -311,7 +314,10 @@ function RouteContentSurface({
   )
 
   return (
-    <div className="workspace-route-content flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-3 sm:p-5">
+    <div
+      className="workspace-route-content flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-3 sm:p-5"
+      data-workspace-route={route.id}
+    >
       <div className="mx-auto w-full">{body}</div>
     </div>
   )
@@ -319,12 +325,6 @@ function RouteContentSurface({
 
 function isWorkspaceProof(route: RouteDef): boolean {
   return ['workspace.entry', 'workspace.work-proof', 'workspace.explore-proof', 'workspace.operate'].includes(route.id)
-}
-
-function workspaceBodyClass(route: RouteDef): string {
-  if (route.id === 'workspace.work-proof')
-    return 'workspace-body grid min-h-0 flex-1 overflow-auto grid-rows-[minmax(14rem,1fr)_minmax(16rem,1fr)] lg:grid-cols-2 lg:grid-rows-[minmax(16rem,1fr)]'
-  return isWorkspaceProof(route) ? 'workspace-body workspace-body-flow' : 'contents'
 }
 
 interface PrivateAppSurfaceProps extends Omit<RouteContentSurfaceProps, 'route'> {
@@ -366,17 +366,22 @@ export function PrivateAppSurface({
             <WorkspaceWebMcpControl collapsible={!isWorkspaceProof(route)} />
           </div>
 
-          {/* Legacy dashboard remains mounted only outside the redesigned workspace contexts */}
-          {!isWorkspaceProof(route) && <DashboardSurface isDashboard={routeContentProps.isDashboard} />}
           <WorkspaceFrame enabled={isWorkspaceProof(route)}>
-            <div className={workspaceBodyClass(route)}>
-              <RouteContentSurface route={route} {...routeContentProps} />
-              {/* One stable assistant instance across workspace contexts. */}
-              <ChatPanel
-                currentView={currentView}
-                purpose={routeContentProps.isChat ? route.blurb : undefined}
-                isPrimary={routeContentProps.isChat || route.id === 'workspace.work-proof'}
-              />
+            <div className="workspace-body workspace-chat-boundary">
+              <div className="workspace-chat-layout" data-primary={routeContentProps.isChat}>
+                <div className="workspace-context-content" hidden={routeContentProps.isChat}>
+                  {/* Legacy dashboard remains mounted only outside migrated contexts. */}
+                  {!isWorkspaceProof(route) && <DashboardSurface isDashboard={routeContentProps.isDashboard} />}
+                  <RouteContentSurface route={route} {...routeContentProps} />
+                </div>
+                {/* One stable assistant instance across all private contexts. */}
+                <ChatPanel
+                  currentView={currentView}
+                  contextLabel={route.label}
+                  purpose={routeContentProps.isChat ? route.blurb : undefined}
+                  isPrimary={routeContentProps.isChat}
+                />
+              </div>
             </div>
           </WorkspaceFrame>
         </WorkspaceViewport>

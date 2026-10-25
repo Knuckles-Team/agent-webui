@@ -5,7 +5,7 @@ import { baseURL } from './fixtures/documentation-screenshots.mjs'
 // Isolated from authenticated e2e config: no storage state, live URL or login setup.
 export default defineConfig({
   testDir: '.',
-  testMatch: 'canopy-glass.browser.ts',
+  testMatch: ['canopy-glass.browser.ts', 'native-chat.browser.ts'],
   outputDir: '../test-results/canopy-glass',
   workers: 1,
   retries: 0,

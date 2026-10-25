@@ -136,3 +136,13 @@ nested execution navigation, separate hierarchy/dependency edges and stable deep
 links as remaining acceptance work. Public detail expansion also requires qualification. Targeted
 active-child messaging and completed-child continuation require distinct
 backend capabilities. Neither action is supplied by ordinary node selection.
+
+
+### Native workspace assistant
+
+The assistant stays alongside Work, Explore and Operate and retained private
+routes, using one conversation and composer. The bounded dock gives the main
+task most available desktop width. Narrow layouts keep a compact composer and status visible; Expand reveals the transcript and Options reveals the existing message controls. Write focuses
+the composer; Expand and Restore adjust its space without opening an overlay or
+changing the conversation. Current page and selected evidence context use the
+existing shared context channel. Navigation does not grant tool authority.
