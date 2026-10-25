@@ -59,7 +59,7 @@ credentials and gateway delegation on the server side.
 
 | Overstory owns | Other components own |
 |---|---|
-| Browser presentation, local interaction state, accessible route composition, and the FastAPI boundary | Arbora owns public routing, identity, policy, and fleet supervision; Trellis applies supplied plans; Epistemic Graph owns durable knowledge; connector services own external-system effects |
+| Browser presentation, local interaction state, accessible route composition, and the FastAPI boundary | Arbora owns public routing, identity, policy, and fleet supervision; Meristem applies supplied plans; Epistemic Graph owns durable knowledge; connector services own external-system effects |
 
 Current package Version: 2.8.2.
 
@@ -84,7 +84,7 @@ then use the shared platform map to move between components:
 | Axil Desk | Desktop cockpit for chat, graph, fleet, health, and operator workflows | [Docs](https://knuckles-team.github.io/geniusbot/) |
 | Arbora messaging | Chat and voice entrypoints hosted by Arbora | [Docs](https://knuckles-team.github.io/arbora/) |
 | Arbora | Public MCP, REST, A2A, identity, policy, and runtime composition | [Docs](https://knuckles-team.github.io/arbora/) |
-| Trellis | In-run harness that applies supplied plans | [Docs](https://knuckles-team.github.io/agent-utilities/) |
+| Meristem | In-run harness that applies supplied plans | [Docs](https://knuckles-team.github.io/agent-utilities/) |
 | Epistemic Graph | Durable multimodal data, reasoning, provenance, and transactions | [Docs](https://knuckles-team.github.io/epistemic-graph/) |
 | Scion SDK | Typed source adapters, connector serving, and write-back contracts | [Docs](https://knuckles-team.github.io/agent-connector-sdk/) |
 
@@ -98,7 +98,7 @@ People also enter through Tuig and Axil Desk or Arbora-hosted
 messaging. Tuig retains central A2A/REST and experimental headless local ACP;
 full session parity remains unqualified. External applications connect over MCP,
 REST, or A2A. The browser talks only to its same-origin FastAPI host. Arbora injects gateway routes and
-verified request context. Trellis applies supplied plans; Epistemic Graph owns
+verified request context. Meristem applies supplied plans; Epistemic Graph owns
 durable knowledge. Source systems connect through Scion SDK
 directly to Epistemic Graph. Overstory renders typed results
 and local presentation state while each service retains its own authority.
