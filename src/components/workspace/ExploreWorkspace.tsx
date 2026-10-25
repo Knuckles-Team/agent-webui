@@ -185,26 +185,7 @@ export default function ExploreWorkspace({
       className="workspace-surface explore-workspace flex min-h-0 min-w-0 flex-col gap-3"
     >
       {showHeading && <h1 className="text-xl font-semibold">Explore</h1>}
-      <nav aria-label="Evidence scope" className="explore-scope flex flex-wrap items-center gap-2 text-sm">
-        <button
-          className={button}
-          onClick={() => {
-            if (collection.current) collection.current.open = true
-            transition({ entity: null, tool: 'overview' })
-            searchInput.current?.focus()
-          }}
-        >
-          Evidence collection
-        </button>
-        {state.entity && (
-          <>
-            <span aria-hidden="true">/</span>
-            <span className="break-all">{object.data?.title ?? state.entity}</span>
-            <span aria-hidden="true">/</span>
-            <span>{state.tool}</span>
-          </>
-        )}
-      </nav>
+
       {(destinationError ?? navigationError) && <p role="alert">{destinationError ?? navigationError}</p>}
       <div className="workspace-panels explore-panels" data-selected={Boolean(state.entity)}>
         <details ref={collection} open aria-label="Evidence collection" className="explore-collection">
@@ -298,6 +279,26 @@ export default function ExploreWorkspace({
         </details>
         {state.entity && (
           <section aria-label="Selected evidence" className="explore-inspector">
+            <nav aria-label="Evidence scope" className="explore-scope flex flex-wrap items-center gap-2 text-sm">
+              <button
+                className={button}
+                onClick={() => {
+                  if (collection.current) collection.current.open = true
+                  transition({ entity: null, tool: 'overview' })
+                  searchInput.current?.focus()
+                }}
+              >
+                Evidence collection
+              </button>
+              {state.entity && (
+                <>
+                  <span aria-hidden="true">/</span>
+                  <span className="break-all">{object.data?.title ?? state.entity}</span>
+                  <span aria-hidden="true">/</span>
+                  <span>{state.tool}</span>
+                </>
+              )}
+            </nav>
             <div className="explore-inspector-heading">
               <div className="min-w-0">
                 <span className="explore-eyebrow">{object.data?.object_type ?? 'Selected evidence'}</span>
@@ -402,17 +403,47 @@ function EvidenceDetails({
         ))}
       </ol>
     )
+  return <EvidenceOverview object={object} onSelect={onSelect} />
+}
+
+function EvidenceOverview({ object, onSelect }: { object: OntologyObject; onSelect: (id: string) => void }) {
   return (
-    <dl className="explore-properties">
-      {object.properties.length === 0 && <div>No properties are available.</div>}
-      {object.properties.map((property) => (
-        <div key={property.name} className="explore-property" data-property={property.name}>
-          <dt className="text-xs text-muted-foreground">{property.title ?? property.name}</dt>
-          <dd className="break-all text-sm">
-            {typeof property.value === 'string' ? property.value : JSON.stringify(property.value)}
-          </dd>
+    <>
+      <dl className="explore-properties">
+        {object.properties.length === 0 && <div>No properties are available.</div>}
+        {object.properties.map((property) => (
+          <div key={property.name} className="explore-property" data-property={property.name}>
+            <dt className="text-xs text-muted-foreground">{property.title ?? property.name}</dt>
+            <dd className="break-all text-sm">
+              {typeof property.value === 'string' ? property.value : JSON.stringify(property.value)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {(object.links.length > 0 || object.history.length > 0) && (
+        <div className="explore-overview-context">
+          {object.links.length > 0 && (
+            <section aria-label="Related evidence preview">
+              <h3>Related evidence · {object.links.length}</h3>
+              <EvidenceDetails
+                object={{ ...object, links: object.links.slice(0, 4) }}
+                tool="relationships"
+                onSelect={onSelect}
+              />
+            </section>
+          )}
+          {object.history.length > 0 && (
+            <section aria-label="Recent evidence history">
+              <h3>Recent history</h3>
+              <EvidenceDetails
+                object={{ ...object, history: object.history.slice(0, 2) }}
+                tool="history"
+                onSelect={onSelect}
+              />
+            </section>
+          )}
         </div>
-      ))}
-    </dl>
+      )}
+    </>
   )
 }

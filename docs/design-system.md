@@ -1,9 +1,7 @@
 # Browser design system
 
-Arbora shares one set of tokens, primitives and interaction rules across browser surfaces. Each view extends this common system. This page documents
-the current tokens sourced from [`src/index.css`](https://github.com/Knuckles-Team/agent-webui/blob/main/src/index.css)
-and the `src/components/ui/` primitives that consume them, including the
-contrast targets a new surface must meet. The token audit
+Arbora shares one set of tokens, primitives and interaction rules across browser surfaces. Each view extends this common system. This page documents tokens from [`src/index.css`](https://github.com/Knuckles-Team/agent-webui/blob/main/src/index.css) and their contrast targets.
+The `src/components/ui/` primitives consume these tokens. The token audit
 (`src/__tests__/design-tokens.test.ts`) mirrors the documented defaults and checks
 stylesheet values and contrast pairs. Source checks do not replace rendered
 contrast, screenshot or assistive-technology review.
@@ -29,14 +27,14 @@ Color is never the only signal for a state; see [State tokens](#state-tokens-sta
 
 | Role (pairing) | Light / glass | Dark | Contrast target |
 |---|---|---|---|
-| Foreground on Background | `#1F2A24` on `#E9EDE5` | `#F1F5EB` on `#121C17` | 4.5:1 |
-| Card-foreground on Card | `#1F2A24` on `#F7F8F2` | `#F1F5EB` on `#1C2A22` | 4.5:1 |
-| Popover-foreground on Popover | `#1F2A24` on `#FFFFFF` | `#F1F5EB` on `#27372D` | 4.5:1 |
+| Foreground on Background | `#111111` on `#E9EDE5` | `#F1F5EB` on `#121C17` | 4.5:1 |
+| Card-foreground on Card | `#111111` on `#F7F8F2` | `#F1F5EB` on `#1C2A22` | 4.5:1 |
+| Popover-foreground on Popover | `#111111` on `#FFFFFF` | `#F1F5EB` on `#27372D` | 4.5:1 |
 | Primary-foreground on Primary | `#FFFFFF` on `#3E634F` | `#16251A` on `#ADC99F` | 4.5:1 |
-| Secondary-foreground on Secondary | `#46544A` on `#E6EBE1` | `#D0DBCB` on `#16231C` | 4.5:1 |
-| Muted-foreground on Background | `#59665C` on `#E9EDE5` | `#AABAA5` on `#121C17` | 4.5:1 |
-| Muted-foreground on Card | `#59665C` on `#F7F8F2` | `#AABAA5` on `#1C2A22` | 4.5:1 |
-| Accent-foreground on Accent | `#274C36` on `#DDE9D8` | `#E4EEDC` on `#314A35` | 4.5:1 |
+| Secondary-foreground on Secondary | `#111111` on `#E6EBE1` | `#D0DBCB` on `#16231C` | 4.5:1 |
+| Muted-foreground on Background | `#111111` on `#E9EDE5` | `#AABAA5` on `#121C17` | 4.5:1 |
+| Muted-foreground on Card | `#111111` on `#F7F8F2` | `#AABAA5` on `#1C2A22` | 4.5:1 |
+| Accent-foreground on Accent | `#111111` on `#DDE9D8` | `#E4EEDC` on `#314A35` | 4.5:1 |
 | Destructive-foreground on Destructive | `#FFFFFF` on `#963F37` | `#381914` on `#F0B0A6` | 4.5:1 |
 | Destructive text on Background | `#963F37` on `#E9EDE5` | `#F0B0A6` on `#121C17` | 4.5:1 |
 | Input boundary on Card | `#738170` on `#F7F8F2` | `#829680` on `#1C2A22` | 3:1 |
@@ -49,13 +47,14 @@ secondary foreground. Decorative `--border` is `#C5CFC1` in light/glass and
 ### Material and glass
 
 The shared workspace uses a static sage/blue/ivory light field. Header and map
-framing transmit that field through 58% ivory and 54% sage glass; primary panels
-use 65% white glass, with 80% reading-card fills. The independent material
+framing transmit that field through 38% ivory and sage glass; primary panels
+use 48% white glass, with 60% reading-card fills and 92% control fills. The independent material
 preference applies to light and the legacy glass alias. Dark uses 72–88% deep
-surfaces. Text never inherits container opacity. `--glass-muted` is `#2C4034` in
+surfaces. Text never inherits container opacity. `--glass-muted` is `#111111` in
 light and `#E1EBDC` in dark. Contrast tests composite every material over the
 authored field floor and white; real browser pixel review remains necessary.
 
+Light-theme labels use black, with hierarchy expressed by size and weight.
 Only sibling framing panels use backdrop blur. Nested cards and controls use
 alpha fills without more blur. Unsupported blur starts opaque; reduced
 transparency, the in-app opaque choice and forced colors remove effects. Forced

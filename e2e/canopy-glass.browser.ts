@@ -312,9 +312,16 @@ test('Canopy keeps enlarged navigation and final detail actions reachable', asyn
       .poll(() =>
         last.evaluate((element) => {
           const box = element.getBoundingClientRect()
-          return [box.left + 6, box.right - 6].every((x) =>
-            [box.top + 6, box.bottom - 6].every((y) => element.contains(document.elementFromPoint(x, y))),
-          )
+          // Rounded corners are unpainted at enlarged text; each painted edge must remain reachable.
+          const centerX = box.left + box.width / 2
+          const centerY = box.top + box.height / 2
+          return [
+            [centerX, centerY],
+            [box.left + 6, centerY],
+            [box.right - 6, centerY],
+            [centerX, box.top + 6],
+            [centerX, box.bottom - 6],
+          ].every(([x, y]) => element.contains(document.elementFromPoint(x, y)))
         }),
       )
       .toBe(true)

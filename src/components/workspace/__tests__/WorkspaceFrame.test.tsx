@@ -5,6 +5,7 @@ import { WorkspaceHeaderDisclosure } from '../WorkspaceHeaderDisclosure'
 import { WorkspaceMapResize } from '../WorkspaceMapResize'
 import { useWorkspaceMapWidth } from '../useWorkspaceMapWidth'
 import { WorkspaceFrame } from '../WorkspaceFrame'
+import { WorkspaceMap } from '../WorkspaceMap'
 import { WorkspaceCommandsProvider, useWorkspaceCommandNavigation } from '../WorkspaceCommands'
 
 let catalog: ReturnType<typeof useWorkspaceCommandNavigation>
@@ -207,4 +208,13 @@ it('reflows the automatic map default but preserves an explicit expansion and re
   } finally {
     match.mockRestore()
   }
+})
+
+// spec: WEBUI-DESIGN-R002.1.1
+it('does not report a normal filtered collection as an unavailable map selection', () => {
+  const entries = [{ id: 'explore', label: 'Explore', href: '/workspace/explore', kind: 'context' as const }]
+  const view = render(<WorkspaceMap entries={entries} current="/workspace/explore?q=forest" onSelect={vi.fn()} />)
+  expect(screen.queryByText(/selection is not in the loaded map/)).not.toBeInTheDocument()
+  view.rerender(<WorkspaceMap entries={entries} current="/workspace/explore?entity=missing" onSelect={vi.fn()} />)
+  expect(screen.getByText(/selection is not in the loaded map/)).toBeInTheDocument()
 })

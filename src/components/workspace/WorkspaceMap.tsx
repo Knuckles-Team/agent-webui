@@ -73,12 +73,22 @@ function mapView(
   mode: string,
 ) {
   const path = workspaceBranchPath(roots, current)
-  const contextPath = current ? new URL(current, 'https://workspace.invalid').pathname : null
+  const location = current ? new URL(current, 'https://workspace.invalid') : null
+  const contextPath = location?.pathname ?? null
   const root = roots.find((node) => node.command.href === contextPath)
   const selected = path.at(-1)
   const branch = selected?.children.length ? selected : (path.at(-2) ?? root)
   const shown = shownDestinations(entries, branch, search, mode)
-  return { path, root, branch, shown, unknown: !selected && current !== contextPath, map: mode === 'map' && !search }
+  const collection =
+    root && [...(location?.searchParams.keys() ?? [])].every((key) => ['q', 'lens', 'tool'].includes(key))
+  return {
+    path,
+    root,
+    branch,
+    shown,
+    unknown: !selected && !collection && current !== contextPath,
+    map: mode === 'map' && !search,
+  }
 }
 
 export function WorkspaceMap({
@@ -99,7 +109,6 @@ export function WorkspaceMap({
       <div className="workspace-map-context">
         <span className="workspace-frame-eyebrow">Current context</span>
         <strong>{view.root?.command.label ?? 'Workspace'}</strong>
-        <p>Loaded destinations. Your task stays beside the map.</p>
       </div>
       <label className="workspace-map-search">
         Filter loaded destinations
@@ -151,7 +160,11 @@ export function WorkspaceMap({
       {!view.shown.length && (
         <p role="status">{search ? 'No matching loaded destinations.' : 'No further destinations are loaded here.'}</p>
       )}
-      <p className="workspace-map-note">Native task controls remain available when a destination has not loaded.</p>
+      <details className="workspace-map-help">
+        <summary>Map help</summary>
+        <p>Loaded destinations. Your task stays beside the map.</p>
+        <p>Native task controls remain available when a destination has not loaded.</p>
+      </details>
     </>
   )
 }

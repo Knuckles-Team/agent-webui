@@ -48,10 +48,17 @@ for (const capture of captures) {
       ).toBeVisible()
     if (capture.name === 'operate')
       await expect(workspace.getByText('Showing 1 of 1 catalog connectors.', { exact: true })).toBeVisible()
-    if (capture.name === 'work')
-      await page
-        .getByRole('textbox', { name: 'Message input' })
-        .fill('Summarize the research brief and cite the source notes.')
+    if (capture.name === 'work') {
+      // Prepare a real retained draft, then capture the default task-first surface.
+      await page.getByRole('button', { name: 'Expand chat', exact: true }).click()
+      const input = page.getByRole('textbox', { name: 'Message input' })
+      await input.fill('Summarize the research brief and cite the source notes.')
+      await page.getByRole('button', { name: 'Restore chat size', exact: true }).click()
+      await expect(page.locator('#chat-message-input')).toBeHidden()
+      await expect(page.locator('#chat-message-input')).toHaveValue(
+        'Summarize the research brief and cite the source notes.',
+      )
+    }
     await expect(workspace.getByRole('status').filter({ hasText: /Loading|Searching|Probing|Checking/ })).toHaveCount(
       0,
     )

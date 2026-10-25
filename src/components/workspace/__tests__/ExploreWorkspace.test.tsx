@@ -114,6 +114,8 @@ describe('retained Explore investigation', () => {
     expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveValue('sample query')
     expect(window.location.search).toBe('?q=sample+query&entity=a')
     expect(screen.getByLabelText('Conversation evidence')).toHaveTextContent('a')
+    expect(screen.getByRole('region', { name: 'Related evidence preview' })).toHaveTextContent('Evidence B')
+    expect(screen.getByRole('region', { name: 'Recent evidence history' })).toHaveTextContent('set_property title')
     fireEvent.click(screen.getByRole('button', { name: 'relationships' }))
     expect(await screen.findByRole('button', { name: /cited by.*←.*Evidence C/ })).toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: /cites.*Evidence B/ }))

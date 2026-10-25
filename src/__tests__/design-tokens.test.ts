@@ -38,15 +38,15 @@ const DARK = readThemeBlock(CSS_SOURCE, '.dark')
 // either this table or index.css without updating the other fails here.
 const DOCUMENTED_COLOR: Record<string, { light: string; dark: string }> = {
   '--background': { light: '#E9EDE5', dark: '#121C17' },
-  '--foreground': { light: '#1F2A24', dark: '#F1F5EB' },
+  '--foreground': { light: '#111111', dark: '#F1F5EB' },
   '--card': { light: '#F7F8F2', dark: '#1C2A22' },
   '--primary': { light: '#3E634F', dark: '#ADC99F' },
   '--primary-foreground': { light: '#FFFFFF', dark: '#16251A' },
   '--secondary': { light: '#E6EBE1', dark: '#16231C' },
-  '--secondary-foreground': { light: '#46544A', dark: '#D0DBCB' },
-  '--muted-foreground': { light: '#59665C', dark: '#AABAA5' },
+  '--secondary-foreground': { light: '#111111', dark: '#D0DBCB' },
+  '--muted-foreground': { light: '#111111', dark: '#AABAA5' },
   '--accent': { light: '#DDE9D8', dark: '#314A35' },
-  '--accent-foreground': { light: '#274C36', dark: '#E4EEDC' },
+  '--accent-foreground': { light: '#111111', dark: '#E4EEDC' },
   '--destructive': { light: '#963F37', dark: '#F0B0A6' },
   '--destructive-foreground': { light: '#FFFFFF', dark: '#381914' },
   '--ring': { light: '#245F70', dark: '#9ACFE1' },
@@ -135,8 +135,8 @@ it.each(['light', 'dark'] as const)('keeps %s glass text readable over the bound
         .map((value) => value.toString(16).padStart(2, '0'))
         .join('')
     const alpha = values[3] / 100
-    expect(alpha).toBeLessThan(0.9)
-    expect(alpha).toBeGreaterThan(0.5)
+    expect(alpha).toBeLessThan(1)
+    expect(alpha).toBeGreaterThan(0.3)
     // The authored field contains no channel darker than this floor. White is
     // conservative for every luminous spot, including overlapping gradients.
     for (const backdrop of [tokens['--glass-field-floor'], '#ffffff']) {
@@ -149,7 +149,7 @@ it.each(['light', 'dark'] as const)('keeps %s glass text readable over the bound
 
 it('keeps glass materials separate from semantic tokens and container opacity', () => {
   const glass = readThemeBlock(CSS_SOURCE, '.glass')
-  expect(glass['--shell-alpha']).toBe('58%')
+  expect(glass['--shell-alpha']).toBe('38%')
   expect(glass['--card']).toBeUndefined()
   expect(glass['--background']).toBeUndefined()
   expect(CSS_SOURCE).not.toContain('.glass body')

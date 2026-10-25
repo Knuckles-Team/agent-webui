@@ -46,12 +46,18 @@ async function hitTarget(control: Locator, reveal = true) {
     .poll(() =>
       control.evaluate((element) => {
         const box = element.getBoundingClientRect()
-        // Stay inside the painted rounded corners, as the identity journey does.
+        // Rounded corners are unpainted, especially at 200% text. Probe each painted edge instead.
         const xInset = Math.min(8, box.width / 4)
         const yInset = Math.min(8, box.height / 4)
-        return [box.left + xInset, box.right - xInset].every((x) =>
-          [box.top + yInset, box.bottom - yInset].every((y) => element.contains(document.elementFromPoint(x, y))),
-        )
+        const centerX = box.left + box.width / 2
+        const centerY = box.top + box.height / 2
+        return [
+          [centerX, centerY],
+          [box.left + xInset, centerY],
+          [box.right - xInset, centerY],
+          [centerX, box.top + yInset],
+          [centerX, box.bottom - yInset],
+        ].every(([x, y]) => element.contains(document.elementFromPoint(x, y)))
       }),
     )
     .toBe(true)

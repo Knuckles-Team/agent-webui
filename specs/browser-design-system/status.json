@@ -279,7 +279,7 @@
         "73051bf582bd",
         "93401c34a695",
         "ac86f2de9817",
-        "ec837ceabe6b"
+        "d68c9148f42c"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
@@ -304,7 +304,7 @@
         "e2e/canopy-glass.browser.ts:2",
         "e2e/execution-graph.browser.ts:2",
         "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:94",
-        "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:160"
+        "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:161"
       ]
     },
     {
@@ -313,6 +313,7 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "73051bf582bd",
+        "836d8895cd6f",
         "ac86f2de9817"
       ],
       "verified_by": [

@@ -2218,12 +2218,13 @@
       "landed_in": [
         "73051bf582bd",
         "93401c34a695",
-        "ac86f2de9817"
+        "ac86f2de9817",
+        "d68c9148f42c"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:4",
         "src/components/workspace/__tests__/ExploreQueryWorkspace.test.tsx:210",
-        "src/components/workspace/__tests__/ExploreWorkspace.test.tsx:135"
+        "src/components/workspace/__tests__/ExploreWorkspace.test.tsx:137"
       ]
     },
     {
