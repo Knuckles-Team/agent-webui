@@ -41,9 +41,11 @@
   <a href="https://knuckles-team.github.io/agent-webui/status/">Status</a>
 </p>
 
-![The Explore workspace shows a synthetic evidence collection and selected research brief.](docs/assets/screenshots/explore-wide.png)
+![Canopy light Explore workspace with a synthetic research brief and the persistent assistant.](docs/assets/screenshots/explore-wide.png)
 
-Synthetic demo data. See the [workspace gallery and screenshot refresh guide](docs/screenshots.md).
+Canopy light with synthetic demo data and the persistent assistant. Open
+**Appearance** to choose Canopy light or dark and Glass or Opaque framing.
+See the [workspace gallery and screenshot refresh guide](docs/screenshots.md).
 
 ## Overview
 

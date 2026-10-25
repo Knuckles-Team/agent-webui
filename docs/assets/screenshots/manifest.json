@@ -11,12 +11,12 @@
       "theme": "light",
       "fixture": "workspace-docs-v1",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "167797965f7942f6849e44201fbb081f93ed37f1",
+      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "c58acb5d722d24e7aeade0daefb56b72ac168054744848d7466e5ac22451ecdc"
+      "sha256": "55be1cc158bebe0dd344ac6f81ac62a4bf35d35b79326b346810a3668666438f"
     },
     {
       "file": "work-narrow.png",
@@ -28,12 +28,12 @@
       "theme": "light",
       "fixture": "workspace-docs-v1",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "167797965f7942f6849e44201fbb081f93ed37f1",
+      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "a2963c23d67ac5eaef31f53e4ccaffe42539dc9e811ea66b584c31d583671d6e"
+      "sha256": "4b053347698c246980c7ed28559f9e2a848032711fbd48b62e742351fb7d698b"
     },
     {
       "file": "explore-wide.png",
@@ -45,12 +45,12 @@
       "theme": "light",
       "fixture": "workspace-docs-v1",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "167797965f7942f6849e44201fbb081f93ed37f1",
+      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "15d8917cd902ec24508c1888d77bb5b5ae803734fc970a50185aa4de1637f070"
+      "sha256": "9a522f2809872a281aec7a86217504fd0f31f36b24369004e9203c873defbde8"
     },
     {
       "file": "explore-narrow.png",
@@ -62,12 +62,12 @@
       "theme": "light",
       "fixture": "workspace-docs-v1",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "167797965f7942f6849e44201fbb081f93ed37f1",
+      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "9ef791d189cb324a564a097f011a056251f34815f35271d1f1ed902f00fee2d4"
+      "sha256": "d524d305439339ef83e4ca49fe83a8a95398b4caf8596a86d5a50442347fc62a"
     },
     {
       "file": "operate-wide.png",
@@ -79,12 +79,12 @@
       "theme": "light",
       "fixture": "workspace-docs-v1",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "167797965f7942f6849e44201fbb081f93ed37f1",
+      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "4c8ef449e4d0a80d315c23cb7e7d8af97c134906b454aad58f0c758789d08f99"
+      "sha256": "f06e9e47061014b19b094031a9c54637057d93f4728109d493408dcd248d3666"
     },
     {
       "file": "operate-narrow.png",
@@ -96,12 +96,12 @@
       "theme": "light",
       "fixture": "workspace-docs-v1",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "167797965f7942f6849e44201fbb081f93ed37f1",
+      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "94cef8f0655c9fa3735144419a8cd60887e60b6b1d574566c15134806faf063c"
+      "sha256": "797222c4cf9853b9021ba6516e5a65bd67e94cce942a22bf33f5d04e0db39ad7"
     }
   ]
 }

@@ -12,9 +12,11 @@
   </div>
 </section>
 
-![The Explore workspace shows a synthetic evidence collection and selected research brief.](assets/screenshots/explore-wide.png)
+![Canopy light Explore workspace with a synthetic research brief and the persistent assistant.](assets/screenshots/explore-wide.png)
 
-Synthetic demo data. See the [workspace gallery and screenshot refresh guide](screenshots.md).
+Canopy light with synthetic demo data and the persistent assistant. Open
+**Appearance** to choose Canopy light or dark and Glass or Opaque framing.
+See the [workspace gallery and screenshot refresh guide](screenshots.md).
 
 ## One interface, explicit authority
 

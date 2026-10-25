@@ -6,30 +6,52 @@ illustrate the interface, not live service availability or complete feature acce
 
 ## Workspace gallery
 
-These are real browser captures with synthetic demo data, not live accounts.
+These are real browser captures of Canopy light and the persistent assistant,
+with synthetic demo data, not live accounts.
 Each pair shows the initial viewport at 1440 × 900 and 320 × 740 pixels.
-Scrollable panels continue below the visible area. The readiness and completion
-labels describe the fixture, not a live deployment.
+On wide screens, the assistant sits beside the task; on narrow screens, it docks
+below the task. Scrollable task panels continue below the visible area. The
+readiness and completion labels describe the fixture, not a live deployment.
+
+Open **Appearance** in the workspace header to choose **Canopy light** or
+**Canopy dark** under **Theme**, or follow the system preference. **Surfaces**
+selects **Glass framing** or **Opaque framing** independently of the palette.
+Reading surfaces remain solid. See the [design system](design-system.md) for
+the source tokens and accessibility limits.
 
 ### Work
 
 An empty conversation contains an unsent draft, not a completed live chat.
 
-![Wide Work workspace with an empty conversation, synthetic tasks and an unsent draft.](assets/screenshots/work-wide.png)
+![Canopy light Work workspace with synthetic tasks and an unsent draft in the side-by-side assistant.](assets/screenshots/work-wide.png)
 
-![Narrow Work workspace with empty-conversation controls and an unsent draft.](assets/screenshots/work-narrow.png)
+![Narrow Canopy light Work workspace with conversation controls above the docked assistant and unsent draft.](assets/screenshots/work-narrow.png)
 
 ### Explore
 
-![Wide Explore workspace with a synthetic evidence collection and research brief.](assets/screenshots/explore-wide.png)
+![Canopy light Explore workspace with a synthetic evidence collection, research brief and side-by-side assistant.](assets/screenshots/explore-wide.png)
 
-![Narrow Explore workspace with the same synthetic evidence collection.](assets/screenshots/explore-narrow.png)
+![Narrow Canopy light Explore workspace with evidence navigation above the docked assistant.](assets/screenshots/explore-narrow.png)
 
 ### Operate
 
-![Wide Operate workspace with synthetic readiness and catalog data.](assets/screenshots/operate-wide.png)
+![Canopy light Operate workspace with synthetic readiness and catalog data beside the persistent assistant.](assets/screenshots/operate-wide.png)
 
-![Narrow Operate workspace with the same synthetic readiness snapshot.](assets/screenshots/operate-narrow.png)
+![Narrow Canopy light Operate workspace with the readiness panel above the docked assistant.](assets/screenshots/operate-narrow.png)
+
+### Capture provenance
+
+This gallery uses the complete `documentation-screenshots` artifact.
+
+- Source run: [CI 40144867369](https://github.com/Knuckles-Team/agent-webui/actions/runs/40144867369).
+- Rendered source: `d615e1c629fc8bb1fad05cbfd5246b38f984ff42` (clean tree).
+- Browser: Chromium 156.0.8078.4 on Linux.
+
+This source includes Canopy and the native assistant.
+Its frontend, public assets and capture inputs match main revision
+`546a4bc04f58bebcbcf91281ac8a570666c315bb` used for this refresh.
+The [manifest](assets/screenshots/manifest.json) preserves each original source revision and image digest.
+The importer copies the original PNGs without repainting or substituting scenes.
 
 ## Refresh locally
 
