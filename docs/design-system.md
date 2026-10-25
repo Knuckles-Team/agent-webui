@@ -46,15 +46,18 @@ secondary foreground. Decorative `--border` is `#C5CFC1` in light/glass and
 
 ### Material and glass
 
-The shared workspace uses a static sage/blue/ivory light field. Header and map
+The shared workspace uses an original same-origin botanical wallpaper, with bounded sage/blue/ivory light.
+The WebP asset is an encoding-only optimization of generated background artwork, not a UI mockup.
+Lighten blending prevents image channels falling below the authored contrast floor. Header and map
 framing transmit that field through 38% ivory and sage glass; primary panels
-use 48% white glass, with 60% reading-card fills and 92% control fills. The independent material
+use 48% white glass, with 60% reading-card fills and 72% neutral-control fills. The independent material
 preference applies to light and the legacy glass alias. Dark uses 72–88% deep
 surfaces. Text never inherits container opacity. `--glass-muted` is `#111111` in
 light and `#E1EBDC` in dark. Contrast tests composite every material over the
 authored field floor and white; real browser pixel review remains necessary.
 
 Light-theme labels use black, with hierarchy expressed by size and weight.
+Controls stay slightly milkier than their supporting glass, not solid white.
 Only sibling framing panels use backdrop blur. Nested cards and controls use
 alpha fills without more blur. Unsupported blur starts opaque; reduced
 transparency, the in-app opaque choice and forced colors remove effects. Forced

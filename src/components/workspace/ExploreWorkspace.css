@@ -266,8 +266,8 @@
   display: inline-block;
   padding: 0.25rem 0.625rem;
   border-radius: 0.75rem;
-  background: var(--status-warning-surface);
-  color: var(--status-warning);
+  background: color-mix(in srgb, var(--status-warning-surface) 72%, transparent);
+  color: var(--foreground);
   font-size: 0.75rem;
   line-height: 1rem;
 }

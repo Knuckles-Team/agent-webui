@@ -156,6 +156,8 @@ it('keeps glass materials separate from semantic tokens and container opacity', 
   const frame = readFileSync(resolve(import.meta.dirname, '../components/workspace/WorkspaceFrame.css'), 'utf-8')
   const explore = readFileSync(resolve(import.meta.dirname, '../components/workspace/ExploreWorkspace.css'), 'utf-8')
   expect(frame).toContain('background: var(--glass-chrome)')
+  expect(frame).toContain('background-blend-mode: lighten')
+  expect(frame).toContain('arbora-canopy-wallpaper.webp')
   expect(explore).toContain('background: var(--glass-primary)')
   for (const source of [frame, explore]) {
     expect(source).toContain("[data-transparency='opaque']")

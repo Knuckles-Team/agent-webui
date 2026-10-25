@@ -17,20 +17,13 @@
     max(var(--workspace-inset), env(safe-area-inset-right, 0px))
     max(var(--workspace-inset), env(safe-area-inset-bottom, 0px))
     max(var(--workspace-inset), env(safe-area-inset-left, 0px));
-  /* One static light field. Overlapping soft gradients suggest canopy light,
-     not a literal forest or an animated full-screen blur surface. */
-  background:
-    url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%201440%20900%22%3E%3Cdefs%3E%3CradialGradient%20id%3D%22light%22%3E%3Cstop%20stop-color%3D%22%23fffbdc%22%20stop-opacity%3D%22.36%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23f8ffe6%22%20stop-opacity%3D%220%22%2F%3E%3C%2FradialGradient%3E%3C%2Fdefs%3E%3Cellipse%20cx%3D%2270%22%20cy%3D%2270%22%20rx%3D%2295%22%20ry%3D%2226%22%20transform%3D%22rotate%28-35%2070%2070%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%22245%22%20cy%3D%22180%22%20rx%3D%2265%22%20ry%3D%2227%22%20transform%3D%22rotate%28-42%20245%20180%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%22380%22%20cy%3D%2250%22%20rx%3D%22110%22%20ry%3D%2232%22%20transform%3D%22rotate%28-35%20380%2050%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%22555%22%20cy%3D%22110%22%20rx%3D%2285%22%20ry%3D%2234%22%20transform%3D%22rotate%28-37%20555%20110%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%22760%22%20cy%3D%2265%22%20rx%3D%22120%22%20ry%3D%2230%22%20transform%3D%22rotate%28-35%20760%2065%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%221030%22%20cy%3D%22200%22%20rx%3D%2280%22%20ry%3D%2222%22%20transform%3D%22rotate%28-30%201030%20200%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%221260%22%20cy%3D%2265%22%20rx%3D%2295%22%20ry%3D%2228%22%20transform%3D%22rotate%28-45%201260%2065%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%221400%22%20cy%3D%22320%22%20rx%3D%22110%22%20ry%3D%2230%22%20transform%3D%22rotate%28-35%201400%20320%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%22130%22%20cy%3D%22400%22%20rx%3D%2275%22%20ry%3D%2223%22%20transform%3D%22rotate%28-30%20130%20400%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%22360%22%20cy%3D%22530%22%20rx%3D%22120%22%20ry%3D%2233%22%20transform%3D%22rotate%28-35%20360%20530%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%22620%22%20cy%3D%22400%22%20rx%3D%2275%22%20ry%3D%2225%22%20transform%3D%22rotate%28-40%20620%20400%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%22885%22%20cy%3D%22585%22%20rx%3D%22110%22%20ry%3D%2234%22%20transform%3D%22rotate%28-35%20885%20585%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%221130%22%20cy%3D%22450%22%20rx%3D%2290%22%20ry%3D%2224%22%20transform%3D%22rotate%28-30%201130%20450%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%221340%22%20cy%3D%22680%22%20rx%3D%22110%22%20ry%3D%2233%22%20transform%3D%22rotate%28-38%201340%20680%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%22130%22%20cy%3D%22795%22%20rx%3D%22120%22%20ry%3D%2228%22%20transform%3D%22rotate%28-35%20130%20795%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%22490%22%20cy%3D%22790%22%20rx%3D%2290%22%20ry%3D%2223%22%20transform%3D%22rotate%28-40%20490%20790%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%22710%22%20cy%3D%22850%22%20rx%3D%22110%22%20ry%3D%2228%22%20transform%3D%22rotate%28-40%20710%20850%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%221030%22%20cy%3D%22815%22%20rx%3D%22115%22%20ry%3D%2230%22%20transform%3D%22rotate%28-35%201030%20815%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%221220%22%20cy%3D%22880%22%20rx%3D%2265%22%20ry%3D%2224%22%20transform%3D%22rotate%28-42%201220%20880%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3Cellipse%20cx%3D%22800%22%20cy%3D%22280%22%20rx%3D%22120%22%20ry%3D%2225%22%20transform%3D%22rotate%28-35%20800%20280%29%22%20fill%3D%22url%28%23light%29%22%2F%3E%3C%2Fsvg%3E'),
-    radial-gradient(ellipse 12% 34% at 26% -6%, rgb(255 255 235 / 65%), transparent 100%),
-    radial-gradient(ellipse 10% 22% at 76% 92%, rgb(246 250 226 / 68%), transparent 100%),
-    radial-gradient(ellipse 5% 12% at 15% 71%, rgb(239 246 202 / 48%), transparent 100%),
-    radial-gradient(ellipse 7% 9% at 85% 24%, rgb(232 240 199 / 50%), transparent 100%),
-    radial-gradient(ellipse 46% 75% at 48% -18%, var(--glass-field-light), transparent 100%),
-    radial-gradient(ellipse 35% 62% at 106% 77%, var(--glass-field-blue), transparent 100%),
-    radial-gradient(ellipse 38% 55% at 16% 105%, var(--glass-field-blue), transparent 100%),
-    radial-gradient(ellipse 25% 60% at 3% 32%, var(--atmosphere-sage), transparent 100%),
-    radial-gradient(ellipse 28% 40% at 70% 55%, var(--atmosphere-sage), transparent 100%), var(--glass-field-floor);
+  /* Original local botanical wallpaper. Lighten bounds every image channel by
+     the authored field floor, keeping the existing composite contrast proof. */
+  background-color: var(--glass-field-floor);
+  background-image: url('../../assets/arbora-canopy-wallpaper.webp');
+  background-position: center;
   background-size: cover;
+  background-blend-mode: lighten;
   background-attachment: local;
 }
 .workspace-context-rail {
@@ -800,4 +793,88 @@
 :root:not(.dark) .workspace-viewport ::placeholder {
   color: var(--foreground);
   opacity: 1;
+}
+
+/* Mobile uses stable semantic rows: identity/Agent/preferences, contexts, then
+   map/search/focus. Visual size reduces without shrinking usable targets. */
+@media (max-width: 40rem) {
+  .workspace-header-row {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
+    gap: 0.25rem 0.375rem;
+  }
+  .workspace-context-rail #workspace-home {
+    grid-row: 1;
+    grid-column: 1;
+    justify-content: center;
+  }
+  .workspace-assistant-entry {
+    grid-row: 1;
+    grid-column: 2;
+  }
+  .workspace-header-utilities,
+  #workspace-frame-tools-slot,
+  #workspace-map-toggle-slot,
+  .workspace-context-rail .workspace-frame-actions {
+    display: contents;
+  }
+  .workspace-header-utilities .workspace-appearance {
+    grid-row: 1;
+    grid-column: 3;
+  }
+  .workspace-header-utilities > a {
+    grid-row: 1;
+    grid-column: 4;
+    justify-content: center;
+    font-size: 0.75rem;
+  }
+  .workspace-context-navigation {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+  .workspace-context-rail .workspace-map-toggle {
+    grid-row: 3;
+    grid-column: 1;
+    font-size: 0.8125rem;
+  }
+  .workspace-command-entry {
+    grid-row: 3;
+    grid-column: 2;
+  }
+  .workspace-command-trigger {
+    font-size: 0;
+    padding-inline: 0.5rem;
+    gap: 0.375rem;
+  }
+  .workspace-command-trigger::after {
+    content: 'Find';
+    font-size: 0.8125rem;
+  }
+  .workspace-context-rail .workspace-frame-actions button:first-child {
+    grid-row: 3;
+    grid-column: 3;
+  }
+  .workspace-context-rail .workspace-frame-actions button:last-child {
+    grid-row: 3;
+    grid-column: 4;
+  }
+  .workspace-context-rail nav a,
+  .workspace-context-rail .workspace-assistant-entry button {
+    font-size: 0.8125rem;
+  }
+  .workspace-context-rail svg {
+    width: 14px;
+    height: 14px;
+  }
+  .workspace-assistant-entry button {
+    padding-inline: 0.5rem;
+    gap: 0.25rem;
+  }
+  .workspace-brand-logo {
+    width: 28px;
+    height: 28px;
+  }
+  .workspace-task-surface .workspace-route-content {
+    font-size: 0.875rem;
+  }
 }

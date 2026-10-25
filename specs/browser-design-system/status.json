@@ -279,13 +279,13 @@
         "73051bf582bd",
         "93401c34a695",
         "ac86f2de9817",
-        "d68c9148f42c"
+        "ec837ceabe6b"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
         "src/__tests__/design-tokens.test.ts:120",
-        "src/__tests__/design-tokens.test.ts:169",
-        "src/__tests__/design-tokens.test.ts:198",
+        "src/__tests__/design-tokens.test.ts:171",
+        "src/__tests__/design-tokens.test.ts:200",
         "src/components/__tests__/ThemeProvider.test.tsx:158"
       ]
     },
