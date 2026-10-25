@@ -41,10 +41,10 @@
   <a href="https://knuckles-team.github.io/agent-webui/status/">Status</a>
 </p>
 
-![Canopy light Explore workspace with a synthetic research brief and the persistent assistant.](docs/assets/screenshots/explore-wide.png)
+![Chat and tasks in the accepted green glass theme, with an unsent synthetic project draft.](docs/assets/screenshots/work-wide.png)
 
-Canopy light with synthetic demo data and the persistent assistant. Open
-**Appearance** to choose Canopy light or dark and Glass or Opaque framing.
+The conversation-first workspace uses synthetic demo data, not a live account.
+Open **Settings** for theme, surface and privacy choices.
 See the [workspace gallery and screenshot refresh guide](docs/screenshots.md).
 
 ## Overview

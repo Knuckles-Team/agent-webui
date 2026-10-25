@@ -6,52 +6,60 @@ illustrate the interface, not live service availability or complete feature acce
 
 ## Workspace gallery
 
-These are real browser captures of Canopy light and the persistent assistant,
-with synthetic demo data, not live accounts.
+These browser captures show the accepted green glass interface with synthetic fixture data.
+They do not show live accounts or establish provider availability.
 Each pair shows the initial viewport at 1440 × 900 and 320 × 740 pixels.
-On wide screens, the assistant sits beside the task; on narrow screens, it docks
-below the task. Scrollable task panels continue below the visible area. The
-readiness and completion labels describe the fixture, not a live deployment.
+These static captures use reduced motion. They do not demonstrate animation playback or imply that animation is disabled by default.
+Chat is the primary conversation surface. Knowledge and Tools retain an
+expandable contextual assistant. Task panels scroll beyond the initial viewport.
 
-Open **Appearance** in the workspace header to choose **Canopy light** or
-**Canopy dark** under **Theme**, or follow the system preference. **Surfaces**
-selects **Glass framing** or **Opaque framing** independently of the palette.
-Reading surfaces remain solid. See the [design system](design-system.md) for
-the source tokens and accessibility limits.
+Open **Settings** for theme, glass or opaque surfaces, and privacy choices.
+See the [design system](design-system.md) for tokens and accessibility limits.
 
-### Work
+### Chat and tasks
 
-An empty conversation contains an unsent draft, not a completed live chat.
+The composer contains an unsent draft, not a completed live chat. Disabled
+starter actions preserve that draft. Tasks and conversations are below the
+composer; narrow captures show only the initial viewport.
 
-![Canopy light Work workspace with synthetic tasks and an unsent draft in the side-by-side assistant.](assets/screenshots/work-wide.png)
+![Desktop Chat and tasks with a synthetic unsent project draft and green composer controls.](assets/screenshots/work-wide.png)
 
-![Narrow Canopy light Work workspace with conversation controls above the docked assistant and unsent draft.](assets/screenshots/work-narrow.png)
+![320px Chat and tasks with the unsent draft and composer controls visible.](assets/screenshots/work-narrow.png)
 
-### Explore
+### Knowledge
 
-![Canopy light Explore workspace with a synthetic evidence collection, research brief and side-by-side assistant.](assets/screenshots/explore-wide.png)
+These fixtures show two stored project records and a read-only detail panel.
+They do not establish live search or graph-service availability.
 
-![Narrow Canopy light Explore workspace with evidence navigation above the docked assistant.](assets/screenshots/explore-narrow.png)
+![Desktop Knowledge with two synthetic project records and a read-only detail panel.](assets/screenshots/explore-wide.png)
 
-### Operate
+![320px Knowledge with synthetic project search results; detail content continues below the initial viewport.](assets/screenshots/explore-narrow.png)
 
-![Canopy light Operate workspace with synthetic readiness and catalog data beside the persistent assistant.](assets/screenshots/operate-wide.png)
+### Tools
 
-![Narrow Canopy light Operate workspace with the readiness panel above the docked assistant.](assets/screenshots/operate-narrow.png)
+Readiness and catalog values are fixed synthetic responses. Registration does
+not establish a provider connection or permission to act.
+
+![Desktop Tools and connections with synthetic readiness and connector catalog data.](assets/screenshots/operate-wide.png)
+
+![320px Tools and connections with synthetic readiness data in a scrollable task panel.](assets/screenshots/operate-narrow.png)
 
 ### Capture provenance
 
-This gallery uses the complete `documentation-screenshots` artifact.
+This gallery imports the complete `documentation-screenshots` artifact without
+repainting, cropping or substituting scenes.
 
-- Source run: [CI 40144867369](https://github.com/Knuckles-Team/agent-webui/actions/runs/40144867369).
-- Rendered source: `d615e1c629fc8bb1fad05cbfd5246b38f984ff42` (clean tree).
-- Browser: Chromium 156.0.8078.4 on Linux.
+- Source run: [CI 40191270609](https://github.com/Knuckles-Team/agent-webui/actions/runs/40191270609).
+- Artifact: `12597877858`, fixture `workspace-docs-v2`.
+- Rendered Actions merge source: `ecf62ef54df6873b2983b5def438e3e761b98c3d` (clean tree).
+- Main revision: `68a408d02a6215aa0d0e8e94f381ad253e54b2f1`, including the opt-out Subtle wallpaper default.
+- Main and rendered source share the complete Git tree `66a3975bfc5c1ccdfb5a6515af46b6b26b8c7943`.
+- Browser: Chromium 156.0.8078.4 on Linux; UTC and reduced motion.
 
-This source includes Canopy and the native assistant.
-Its frontend, public assets and capture inputs match main revision
-`546a4bc04f58bebcbcf91281ac8a570666c315bb` used for this refresh.
-The [manifest](assets/screenshots/manifest.json) preserves each original source revision and image digest.
-The importer copies the original PNGs without repainting or substituting scenes.
+The [manifest](assets/screenshots/manifest.json) records routes, viewport sizes,
+source revision and SHA-256 digest for all six original PNGs. These are WebUI
+captures, not native Rust TUI screenshots. Native `tuig` gallery qualification
+belongs to its separate capture workflow.
 
 ## Refresh locally
 
@@ -79,7 +87,7 @@ system libraries are missing. The refresh command starts its own loopback Vite
 server on port 5206. Stop any process using that port first. It does not reuse a
 running server, accept a live target, or run the authenticated end-to-end setup.
 
-The set covers Work, Explore and Operate at 1440 × 900 and 320 × 740 CSS pixels.
+The set covers Chat, Knowledge and Tools at 1440 × 900 and 320 × 740 CSS pixels.
 It uses Chromium, the light theme, UTC, fixed synthetic time and reduced motion.
 Each CSS pixel maps to one device pixel. The capture waits for real scene content,
 local fonts and images, then two layout frames. External HTTP requests and

@@ -9,14 +9,14 @@
         "height": 900
       },
       "theme": "light",
-      "fixture": "workspace-docs-v1",
+      "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
+      "sourceRevision": "ecf62ef54df6873b2983b5def438e3e761b98c3d",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "55be1cc158bebe0dd344ac6f81ac62a4bf35d35b79326b346810a3668666438f"
+      "sha256": "0f8647b83589e1bb25a72ca94fae8d7b744c5569a72b3324ca9e1f5601467fb5"
     },
     {
       "file": "work-narrow.png",
@@ -26,48 +26,48 @@
         "height": 740
       },
       "theme": "light",
-      "fixture": "workspace-docs-v1",
+      "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
+      "sourceRevision": "ecf62ef54df6873b2983b5def438e3e761b98c3d",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "4b053347698c246980c7ed28559f9e2a848032711fbd48b62e742351fb7d698b"
+      "sha256": "8185999666da52355dff98a611559661c9296834fc3584cf1663ab26ae12e15b"
     },
     {
       "file": "explore-wide.png",
-      "path": "/workspace/explore?q=research&entity=doc%3Aresearch",
+      "path": "/workspace/explore?q=project&entity=doc%3Aresearch",
       "viewport": {
         "width": 1440,
         "height": 900
       },
       "theme": "light",
-      "fixture": "workspace-docs-v1",
+      "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
+      "sourceRevision": "ecf62ef54df6873b2983b5def438e3e761b98c3d",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "9a522f2809872a281aec7a86217504fd0f31f36b24369004e9203c873defbde8"
+      "sha256": "fdb26b44d06ad42fadeb81a16802df2180074b38a41179f3a8c83d2bdfa3037c"
     },
     {
       "file": "explore-narrow.png",
-      "path": "/workspace/explore?q=research&entity=doc%3Aresearch",
+      "path": "/workspace/explore?q=project&entity=doc%3Aresearch",
       "viewport": {
         "width": 320,
         "height": 740
       },
       "theme": "light",
-      "fixture": "workspace-docs-v1",
+      "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
+      "sourceRevision": "ecf62ef54df6873b2983b5def438e3e761b98c3d",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "d524d305439339ef83e4ca49fe83a8a95398b4caf8596a86d5a50442347fc62a"
+      "sha256": "894642067dd4d76cd38c2c8df945fc52ef128d87655757454807e36327f67f52"
     },
     {
       "file": "operate-wide.png",
@@ -77,14 +77,14 @@
         "height": 900
       },
       "theme": "light",
-      "fixture": "workspace-docs-v1",
+      "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
+      "sourceRevision": "ecf62ef54df6873b2983b5def438e3e761b98c3d",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "f06e9e47061014b19b094031a9c54637057d93f4728109d493408dcd248d3666"
+      "sha256": "b53c2272222c80ab5dd726cb70d39f4e950e42ca33f0e1001ca320e1e6ff32e4"
     },
     {
       "file": "operate-narrow.png",
@@ -94,14 +94,14 @@
         "height": 740
       },
       "theme": "light",
-      "fixture": "workspace-docs-v1",
+      "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
+      "sourceRevision": "ecf62ef54df6873b2983b5def438e3e761b98c3d",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "797222c4cf9853b9021ba6516e5a65bd67e94cce942a22bf33f5d04e0db39ad7"
+      "sha256": "df45a0ac5bb62969c95e5fb3bb6baee5784c16ace14ca9354e02a842ee1ab2e0"
     }
   ]
 }
