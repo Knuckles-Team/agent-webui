@@ -11,6 +11,7 @@
  */
 
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Loader } from '@/components/ai-elements/loader'
 import {
@@ -1874,10 +1875,11 @@ Available commands:
                   ['Plan from notes', 'Turn these notes into a three-step plan:\n\n'],
                   ['Summarize text', 'Summarize the text below and list its key points:\n\n'],
                 ].map(([label, prompt]) => (
-                  <button
+                  <Button
                     key={label}
                     type="button"
-                    className="min-h-11 rounded border px-3 py-2 disabled:opacity-50"
+                    variant="secondary"
+                    className="min-h-11 h-auto px-3 py-2"
                     disabled={Boolean(input.trim())}
                     onClick={() => {
                       setInput(prompt)
@@ -1885,7 +1887,7 @@ Available commands:
                     }}
                   >
                     {label}
-                  </button>
+                  </Button>
                 ))}
               </div>
               <details>

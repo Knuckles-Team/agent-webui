@@ -30,9 +30,9 @@ it('keeps disabled control text on solid semantic surfaces without enabling inpu
   }
 })
 
-it('uses the same paired action colors for chat submission', () => {
+it('uses the shared translucent primary token and paired foreground for chat submission', () => {
   render(<PromptInputSubmit aria-label="Send" />)
   const send = screen.getByRole('button', { name: 'Send' })
-  expect(send).toHaveClass('bg-primary', 'text-primary-foreground')
+  expect(send).toHaveClass('bg-[var(--button-primary)]', 'text-primary-foreground')
   expect(send).not.toHaveClass('bg-pydantic-brand', 'text-white')
 })

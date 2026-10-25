@@ -110,6 +110,12 @@
   --glass-primary: rgb(248 250 243 / 41%);
   --glass-reading: rgb(255 255 250 / 51%);
   --glass-control: rgb(255 255 252 / 61%);
+  --button-neutral: rgb(184 207 185 / 64%);
+  --button-neutral-hover: rgb(173 201 177 / 78%);
+  --button-neutral-active: rgb(159 191 164 / 84%);
+  --button-neutral-foreground: #111111;
+  --button-primary: rgb(62 99 79 / 96%);
+  --button-primary-hover: rgb(54 88 68 / 98%);
   --glass-edge: rgb(255 255 255 / 76%);
   --glass-line: rgb(55 82 68 / 24%);
   --glass-muted: #111111;
@@ -181,6 +187,12 @@
   --glass-primary: rgb(25 44 35 / 80%);
   --glass-reading: rgb(28 47 38 / 88%);
   --glass-control: rgb(35 55 44 / 88%);
+  --button-neutral: rgb(61 86 66 / 88%);
+  --button-neutral-hover: rgb(67 94 72 / 92%);
+  --button-neutral-active: rgb(73 101 78 / 96%);
+  --button-neutral-foreground: #f1f5eb;
+  --button-primary: rgb(173 201 159 / 96%);
+  --button-primary-hover: rgb(184 210 172 / 98%);
   --glass-edge: rgb(213 234 216 / 30%);
   --glass-line: rgb(189 211 190 / 28%);
   --glass-muted: #e1ebdc;
@@ -465,9 +477,58 @@ textarea::placeholder {
 }
 
 @media (pointer: coarse) {
-  [data-slot='button'],
+  .ui-button,
   [data-slot='input'] {
     min-height: 44px;
     min-width: 44px;
+  }
+}
+
+/* Ordinary controls share one translucent green family across client surfaces. */
+.workspace-control[aria-current] {
+  background: var(--button-neutral-active);
+  font-weight: 500;
+}
+
+:root[data-transparency='opaque'] {
+  --button-neutral: #b8cfb9;
+  --button-neutral-hover: #adc9b1;
+  --button-neutral-active: #9fbfa4;
+  --button-primary: var(--primary);
+  --button-primary-hover: var(--primary);
+}
+:root.dark[data-transparency='opaque'] {
+  --button-neutral: #3d5642;
+  --button-neutral-hover: #435e48;
+  --button-neutral-active: #49654e;
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --button-neutral: #b8cfb9;
+    --button-neutral-hover: #adc9b1;
+    --button-neutral-active: #9fbfa4;
+    --button-primary: var(--primary);
+    --button-primary-hover: var(--primary);
+  }
+  :root.dark {
+    --button-neutral: #3d5642;
+    --button-neutral-hover: #435e48;
+    --button-neutral-active: #49654e;
+  }
+}
+@media (forced-colors: active) {
+  .ui-button {
+    background: ButtonFace;
+    color: ButtonText;
+    border: 1px solid ButtonText;
+    box-shadow: none;
+  }
+  .ui-button:disabled {
+    color: GrayText;
+    border-color: GrayText;
+  }
+  .ui-button:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 3px;
   }
 }

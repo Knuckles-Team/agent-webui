@@ -297,3 +297,24 @@
     display: flex;
   }
 }
+
+/* Shared chrome buttons match the native composer primitive, including its focus state. */
+.workspace-assistant-entry button,
+.workspace-assistant-actions button {
+  background: var(--button-neutral);
+  color: var(--button-neutral-foreground);
+  border-color: transparent;
+  box-shadow: none;
+}
+.workspace-assistant-entry button:hover,
+.workspace-assistant-actions button:hover {
+  background: var(--button-neutral-hover);
+}
+@media (forced-colors: active) {
+  .workspace-assistant-entry button,
+  .workspace-assistant-actions button {
+    background: ButtonFace;
+    color: ButtonText;
+    border: 1px solid ButtonText;
+  }
+}

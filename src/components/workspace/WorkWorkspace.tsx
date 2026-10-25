@@ -1,3 +1,4 @@
+import { workspaceButtonClass as button } from '@/components/ui/button'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ApiError } from '@/lib/api-validation'
@@ -32,7 +33,6 @@ import { WorkTaskInspector } from './WorkTaskInspector'
 import { createTaskCancellation } from './task-cancellation'
 import { useWorkspaceAdmission } from './useWorkspaceAdmission'
 import { loadedWorkCommands } from './loaded-workspace-commands'
-const button = 'min-h-11 rounded border px-3 py-2 text-sm'
 const EMPTY: WorkState = { conversation: null, task: null, run: null, node: null }
 function destination(location: string) {
   try {

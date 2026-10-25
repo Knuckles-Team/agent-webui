@@ -1,3 +1,4 @@
+import { workspaceButtonClass as control } from '@/components/ui/button'
 import { useEffect, useMemo, useRef } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
@@ -23,7 +24,6 @@ import {
   type OperateState,
 } from '@/lib/operate-workspace'
 const EMPTY: OperateState = { server: null, item: null, q: '' }
-const control = 'min-h-11 rounded border px-3 py-2 text-sm break-words'
 function readState(location: string) {
   try {
     return { state: parseOperateState(location), invalid: false }

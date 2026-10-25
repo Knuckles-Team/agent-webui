@@ -1,3 +1,4 @@
+import { workspaceButtonClass } from '@/components/ui/button'
 import { useState } from 'react'
 import { WorkspaceCommandBranches } from './WorkspaceCommandBranches'
 import type { WorkspaceCommand } from './WorkspaceCommands'
@@ -20,7 +21,7 @@ export function WorkspaceCommandDestinations({
         {(['list', 'branches'] as const).map((value) => (
           <button
             key={value}
-            className="min-h-11 rounded border px-3 capitalize"
+            className={`${workspaceButtonClass} capitalize`}
             aria-pressed={layout === value}
             onClick={() => {
               setLayout(value)

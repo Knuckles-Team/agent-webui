@@ -1,3 +1,4 @@
+import { workspaceButtonClass } from '@/components/ui/button'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { focusReadinessOnArrival } from '@/lib/operate-compatibility'
@@ -26,7 +27,7 @@ export function OperateReadinessPanel({ generation }: { generation: string }) {
       <p>Inspect the checks reported by this deployment. Absent checks provide no evidence of readiness.</p>
       <button
         type="button"
-        className="min-h-11 rounded border px-3 py-2 text-sm"
+        className={workspaceButtonClass}
         disabled={busy}
         onClick={() => {
           setReprobing(true)
@@ -64,7 +65,7 @@ function ReadinessDiagnosis({ snapshot }: { snapshot: OperateReadiness }) {
           <button
             key={name}
             type="button"
-            className="min-h-11 min-w-0 max-w-full rounded border px-3 py-2 break-words"
+            className={workspaceButtonClass}
             aria-pressed={selected === name}
             onClick={() => {
               setSelected(name)
