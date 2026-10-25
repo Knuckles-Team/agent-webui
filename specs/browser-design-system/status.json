@@ -352,6 +352,7 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [
+        "e2e/canopy-glass.browser.ts:711",
         "src/components/workspace/WorkspaceWallpaper.tsx:1"
       ]
     },

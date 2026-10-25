@@ -7,7 +7,7 @@ type Density = 'compact' | 'comfortable'
 type Motion = 'system' | 'reduce'
 type Transparency = 'glass' | 'opaque'
 export type WallpaperMotion = 'off' | 'subtle' | 'expressive'
-export type WallpaperScene = 'canopy' | 'tree' | 'roots' | 'fluid'
+export type WallpaperScene = 'context' | 'canopy' | 'tree' | 'roots' | 'fluid'
 export type WallpaperWeather = 'clear' | 'rain' | 'snow' | 'thunderstorm' | 'fog' | 'heat' | 'cloudy'
 
 interface ThemeProviderProps {
@@ -101,7 +101,7 @@ export function ThemeProvider({
   )
   const [wallpaperScene, setWallpaperScene] = usePreference<WallpaperScene>(
     'agent-webui.wallpaper-scene',
-    ['canopy', 'tree', 'roots', 'fluid'],
+    ['context', 'canopy', 'tree', 'roots', 'fluid'],
     'canopy',
   )
   const [wallpaperWeather, setWallpaperWeather] = usePreference<WallpaperWeather>(

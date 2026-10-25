@@ -368,3 +368,10 @@ The R005.4 default must retain the accepted backdrop, not only its computed blur
 A 120-by-150 pixel crop starts at (1250, 600) in the approved 1440-by-900 desktop capture from runtime `83d52c8`.
 This text-free inspector region compares exact pixels with motion disabled.
 Active scenes use separate reviewed captures; their moving pixels do not use this static golden.
+
+### Route-derived scene slice (R005.3)
+
+Cover canonical route mapping, unknown-context neutral fallback, persisted manual
+override and unchanged default zero-work photo. Verify Off remains static and route changes clean up effects. Exercise the actual workspace navigation and retained draft
+with Follow workspace enabled in the existing browser suite. Keep the accepted
+default pixel golden and reduced-motion coverage. No live-event acceptance claim.

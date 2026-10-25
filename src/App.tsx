@@ -372,7 +372,7 @@ export function PrivateAppSurface({
             <WorkspaceWebMcpControl collapsible={!isWorkspaceProof(route)} />
           </div>
 
-          <WorkspaceFrame enabled={isWorkspaceProof(route)}>
+          <WorkspaceFrame enabled={isWorkspaceProof(route)} routeId={route.id}>
             <div className="workspace-body workspace-chat-boundary">
               <div
                 className="workspace-chat-layout"

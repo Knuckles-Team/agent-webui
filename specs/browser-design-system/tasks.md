@@ -230,3 +230,10 @@ Metadata guard tests preserve this distinction; they are not feature-acceptance 
 - Scoped deterministic token, colorizer, Settings/provider and consent tests pass.
   Exact-candidate browser gallery and aggregate gates remain outstanding; this
   bounded implementation does not close parent design acceptance.
+
+### Route-derived scene follow-on
+
+- [x] Extend R005.3 through the existing appearance selector and canonical route ID, preserving manual overrides and Off by default.
+- [x] Add scoped mapping, static lifecycle and manual override coverage.
+- [ ] Qualify exact-head rendered navigation, draft retention and unchanged default glass in hosted browser CI before merge.
+- [ ] Keep evidence-bound activity and broader R010 performance acceptance open; page selection alone supplies neither.

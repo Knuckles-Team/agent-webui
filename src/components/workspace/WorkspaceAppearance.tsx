@@ -117,6 +117,7 @@ export function WorkspaceAppearance() {
               appearance.setWallpaperScene(event.target.value as typeof appearance.wallpaperScene)
             }}
           >
+            <option value="context">Follow workspace</option>
             <option value="canopy">Canopy · knowledge</option>
             <option value="tree">Tree · agent harness</option>
             <option value="roots">Roots · source systems</option>
@@ -140,6 +141,9 @@ export function WorkspaceAppearance() {
             <option value="cloudy">Cloudy</option>
           </select>
         </label>
+        <p>
+          Follow workspace: Chat tree, Knowledge canopy, Tools roots, workspace light. Named scenes override context.
+        </p>
         <p>Decorative scenery, not system activity. Manual weather only; no location or live provider is used.</p>
         <p>System motion and transparency reductions take precedence.</p>
         <div className="col-span-2 min-w-0">

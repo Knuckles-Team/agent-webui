@@ -707,3 +707,32 @@ test('default wallpaper preserves accepted glass backdrop pixels', async ({ page
     maxDiffPixels: 0,
   })
 })
+
+// spec: WEBUI-DESIGN-R005.3
+test('Follow workspace resolves real page context without enabling motion and manual scenes override it', async ({
+  page,
+}, info) => {
+  const failures = await prepare(page, 'light')
+  const canvas = page.locator('.workspace-wallpaper')
+  const contexts = page.getByRole('navigation', { name: 'Primary workspace contexts' })
+  await page.locator('.workspace-appearance > summary').click()
+  await page.getByLabel('Wallpaper scene').selectOption('context')
+  await expect(page.getByLabel('Wallpaper motion')).toHaveValue('off')
+  await expect(canvas).toHaveAttribute('data-scene', 'canopy')
+  await page.locator('.workspace-appearance > summary').click()
+  await contexts.getByRole('link', { name: 'Chat', exact: true }).click()
+  await expect(canvas).toHaveAttribute('data-scene', 'tree')
+  const input = page.getByRole('textbox', { name: 'Message input' })
+  await input.fill('Synthetic context scene draft — do not send')
+  await contexts.getByRole('link', { name: 'Tools', exact: true }).click()
+  await expect(canvas).toHaveAttribute('data-scene', 'roots')
+  await page.screenshot({ path: info.outputPath('wallpaper-context-tools.png') })
+  await page.locator('.workspace-appearance > summary').click()
+  await expect(page.getByLabel('Wallpaper motion')).toHaveValue('off')
+  await page.getByLabel('Wallpaper scene').selectOption('fluid')
+  await page.locator('.workspace-appearance > summary').click()
+  await contexts.getByRole('link', { name: 'Chat', exact: true }).click()
+  await expect(canvas).toHaveAttribute('data-scene', 'fluid')
+  await expect(input).toHaveValue('Synthetic context scene draft — do not send')
+  expect(failures).toEqual([])
+})
