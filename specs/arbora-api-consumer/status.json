@@ -238,7 +238,8 @@
       ],
       "verified_by": [
         "agent/agent_webui/__tests__/test_served_operations.py:188",
-        "agent/agent_webui/__tests__/test_served_operations.py:275"
+        "agent/agent_webui/__tests__/test_served_operations.py:275",
+        "tests/test_logfire_host_console.py:12"
       ]
     },
     {
