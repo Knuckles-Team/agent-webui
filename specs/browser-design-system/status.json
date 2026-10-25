@@ -286,10 +286,10 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "12b5f5624953",
+        "24dca66c8a72",
         "38c8f13794ee",
         "456eeca84961",
-        "512d3e28f9d8",
-        "73051bf582bd"
+        "512d3e28f9d8"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
@@ -358,8 +358,10 @@
     {
       "id": "WEBUI-DESIGN-R005.4",
       "title": "Wallpaper effects remain bounded and optional",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "24dca66c8a72"
+      ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:466",
         "src/components/workspace/WorkspaceWallpaper.tsx:1",
