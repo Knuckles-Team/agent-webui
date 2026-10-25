@@ -1,7 +1,7 @@
 // spec: WEBUI-APPS-R045, WEBUI-APPS-R049, WEBUI-APPS-R049.1.2, WEBUI-APPS-R049.1.3
 import { useEffect, useState, type ReactNode } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import App from '@/App'
 import { navigateWorkspace } from '@/lib/workspace-navigation'
 import { isWorkConversationLanding } from '@/lib/work-workspace'
@@ -72,6 +72,11 @@ vi.mock('@/lib/webmcp/provider', () => ({
   WorkspaceWebMcpControl: () => null,
   useWebMcpToolSet: vi.fn(),
 }))
+// Entry/history assertions exercise the real route after its code is available.
+// Cold module transformation is not part of the DOM query's readiness contract.
+beforeAll(async () => {
+  await import('@/components/workspace/WorkWorkspace')
+})
 beforeEach(() => {
   state.mounts = 0
   state.role = 'admin'
