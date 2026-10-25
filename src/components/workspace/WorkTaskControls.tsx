@@ -121,10 +121,11 @@ function OwnedTaskControls({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          className={button}
-          disabled={refreshing || running}
+          className={`${button} aria-disabled:pointer-events-none aria-disabled:bg-muted aria-disabled:text-muted-foreground aria-disabled:border-input`}
+          aria-disabled={refreshing || running}
+          aria-busy={refreshing}
           onClick={() => {
-            if (live.current !== generation) return
+            if (refreshing || cancellation.isPending(taskId) || live.current !== generation) return
             close()
             onRefresh()
           }}
