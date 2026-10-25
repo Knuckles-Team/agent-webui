@@ -17,10 +17,7 @@ export function OperateReadinessPanel({ generation }: { generation: string }) {
   const busy = query.isFetching || reprobing
   const snapshot = query.isError || busy ? undefined : query.data
   return (
-    <section
-      aria-label="Readiness diagnosis"
-      className="min-w-0 space-y-3 rounded border p-3 [overflow-wrap:anywhere]"
-    >
+    <section aria-label="Readiness diagnosis" className="operate-panel min-w-0 space-y-3 [overflow-wrap:anywhere]">
       <h2 ref={focusReadinessOnArrival} tabIndex={-1} className="font-medium">
         Readiness diagnosis
       </h2>
@@ -76,7 +73,7 @@ function ReadinessDiagnosis({ snapshot }: { snapshot: OperateReadiness }) {
         ))}
       </div>
       {selected && (
-        <section aria-label={`Readiness check ${selected}`} className="min-w-0 rounded border p-3">
+        <section aria-label={`Readiness check ${selected}`} className="operate-reading min-w-0 rounded border p-3">
           <h3>{selected}</h3>
           <p>Evidence from snapshot {snapshot.snapshot_id}</p>
           <pre className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">

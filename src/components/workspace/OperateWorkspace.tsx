@@ -1,3 +1,4 @@
+import './OperateWorkspace.css'
 import { workspaceButtonClass as control } from '@/components/ui/button'
 import { useEffect, useMemo, useRef } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
@@ -142,7 +143,10 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
     )
   }
   return (
-    <section aria-label="Operate workspace" className="workspace-surface flex min-w-0 flex-col gap-3">
+    <section
+      aria-label="Operate workspace"
+      className="workspace-surface operate-workspace flex min-w-0 flex-col gap-3"
+    >
       <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
         Tools & connections
       </h1>
@@ -178,7 +182,7 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
                   <label className="flex flex-col gap-1">
                     Filter fleet children
                     <input
-                      className={control}
+                      className="operate-input min-h-11 min-w-0 rounded border px-3 py-2"
                       value={state.q}
                       maxLength={128}
                       onChange={(event) => {
@@ -187,7 +191,7 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
                     />
                   </label>
                   <div className="workspace-panels">
-                    <details open aria-label="Fleet children" className="min-w-0 space-y-2 rounded border p-3">
+                    <details open aria-label="Fleet children" className="operate-panel min-w-0 space-y-2">
                       <summary className="workspace-pane-toggle">
                         <h2 className="inline font-semibold">Fleet</h2>
                       </summary>
@@ -217,7 +221,7 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
                         Refresh fleet
                       </button>
                     </details>
-                    <section aria-label="Connector detail" className="min-w-0 space-y-3 rounded border p-3">
+                    <section aria-label="Connector detail" className="operate-panel min-w-0 space-y-3">
                       <h2 className="break-words font-medium">{state.server ?? 'Choose a fleet child'}</h2>
                       {state.server && !selectedServer && !status.isPending && (
                         <p role="alert">This child is not confirmed in the visible fleet.</p>
@@ -261,7 +265,7 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
                           {selectedItem && (
                             <article
                               aria-label="Capability detail"
-                              className="rounded border p-3 [overflow-wrap:anywhere]"
+                              className="operate-reading rounded border p-3 [overflow-wrap:anywhere]"
                             >
                               <h3 className="font-medium">{selectedItem.name}</h3>
                               <p>

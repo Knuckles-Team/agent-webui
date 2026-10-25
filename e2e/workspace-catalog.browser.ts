@@ -35,6 +35,18 @@ test('catalog definitions share deep links, keyboard search and native history a
   )
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname
+    if (path === '/api/dashboard/readiness')
+      return route.fulfill({
+        json: {
+          schema_version: 'arbora.readiness.v1',
+          snapshot_id: 'synthetic-tools-snapshot',
+          observed_at: '2026-01-15T12:00:00Z',
+          overall: 'ready',
+          checks: { catalog: { state: 'ready' } },
+          required_failures: [],
+          degraded_reasons: [],
+        },
+      })
     if (path === '/api/enhanced/tools')
       return route.fulfill({
         json: {
@@ -71,6 +83,42 @@ test('catalog definitions share deep links, keyboard search and native history a
   await page.goto('/workspace/operate?connector=srv%3Arecords&definition=tool%3ALookup')
   const catalog = page.getByRole('region', { name: 'Connector catalog', exact: true })
   const detail = catalog.getByRole('region', { name: 'Selected catalog definition' })
+  await expect(detail).toContainText('Synthetic Lookup definition')
+  // spec: WEBUI-APPS-R049.2.1 — shared materials do not change catalog state.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const appearance = page.locator('.workspace-appearance summary')
+  await appearance.click()
+  await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('light')
+  await page.getByRole('combobox', { name: 'Surfaces', exact: true }).selectOption('glass')
+  await page.keyboard.press('Escape')
+  await expect(catalog).toHaveCSS('backdrop-filter', 'blur(16px) saturate(1.15)')
+  const inspect = catalog.getByRole('link', { name: 'tool: Summarize' })
+  await expect(inspect).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
+  await expect(inspect).toHaveCSS('background-color', 'rgba(184, 207, 185, 0.64)')
+  await expect(page.getByText('Backend readiness: ready')).toBeVisible()
+  await page.screenshot({ path: info.outputPath('tools-desktop.png') })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: info.outputPath('tools-mobile.png') })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await appearance.click()
+  await page.getByRole('combobox', { name: 'Palette', exact: true }).selectOption({ label: 'Purple' })
+  await page.keyboard.press('Escape')
+  await expect(inspect).not.toHaveCSS('background-color', 'rgba(184, 207, 185, 0.64)')
+  await page.screenshot({ path: info.outputPath('tools-purple.png') })
+  await appearance.click()
+  await page.getByRole('combobox', { name: 'Surfaces', exact: true }).selectOption('opaque')
+  await page.keyboard.press('Escape')
+  await expect(catalog).toHaveCSS('backdrop-filter', 'none')
+  await page.screenshot({ path: info.outputPath('tools-opaque.png') })
+  await page.emulateMedia({ forcedColors: 'active' })
+  await expect(catalog).toHaveCSS('backdrop-filter', 'none')
+  await expect(catalog).toHaveCSS('box-shadow', 'none')
+  await page.emulateMedia({ forcedColors: 'none' })
+  await appearance.click()
+  await page.getByRole('combobox', { name: 'Palette', exact: true }).selectOption({ label: 'Green' })
+  await page.getByRole('combobox', { name: 'Surfaces', exact: true }).selectOption('glass')
+  await page.keyboard.press('Escape')
   await expect(detail).toContainText('Synthetic Lookup definition')
   await catalog.getByRole('link', { name: 'tool: Summarize' }).focus()
   await page.keyboard.press('Enter')

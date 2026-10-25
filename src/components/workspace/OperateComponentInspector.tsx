@@ -1,3 +1,4 @@
+import { workspaceButtonClass } from '@/components/ui/button'
 import type { ReactNode, RefObject } from 'react'
 import { navigateOperate, operateHref, type OperateState } from '@/lib/operate-workspace'
 import type { Role } from '@/lib/nav-registry'
@@ -44,7 +45,7 @@ export function OperateComponentInspector({
       {component && (
         <section
           aria-label="Selected catalog definition"
-          className="min-w-0 rounded border p-3 [overflow-wrap:anywhere]"
+          className="operate-reading min-w-0 rounded border p-3 [overflow-wrap:anywhere]"
         >
           <h5>{component.name}</h5>
           <p>{component.description || 'No description supplied.'}</p>
@@ -94,7 +95,7 @@ export function CatalogNavigationLink({
   return (
     <a
       href={href}
-      className="inline-flex min-h-11 max-w-full items-center rounded border px-3 break-words"
+      className={workspaceButtonClass}
       aria-expanded={expanded}
       aria-current={current ? 'location' : undefined}
       onClick={(event) => {
