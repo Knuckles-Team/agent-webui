@@ -5,6 +5,11 @@
 import { expect, test, type Page, type Locator } from '@playwright/test'
 import { baseURL, fixedTime, responses } from './fixtures/documentation-screenshots.mjs'
 
+// Video is worker-scoped. Record only the dedicated preview command, not the full suite.
+test.use({
+  video: process.env.LIQUID_GLASS_PREVIEW === '1' ? { mode: 'on', size: { width: 1440, height: 900 } } : 'off',
+})
+
 const names = [
   'Canopy moisture gradients',
   'Fungal network connectivity',
@@ -103,7 +108,6 @@ async function expandedHeader(page: Page) {
 }
 
 test.describe('Liquid Glass reference preview', () => {
-  test.use({ video: { mode: 'on', size: { width: 1440, height: 900 } } })
   test('real selected evidence, mobile and in-place Agent preview', async ({ page }, info) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.emulateMedia({ reducedMotion: 'no-preference' })
