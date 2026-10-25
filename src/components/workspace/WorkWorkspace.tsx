@@ -307,7 +307,7 @@ function AuthorizedWork({
                 {taskData && !task.isError && (
                   <>
                     <h3 className="break-all font-medium">Task {taskData.id}</h3>
-                    <p>Status: {taskData.status?.state ?? 'Not reported'}</p>
+                    {!task.isFetching && <p>Status: {taskData.status?.state ?? 'Not reported'}</p>}
                     <WorkTaskControls
                       taskId={taskData.id}
                       taskState={taskData.status?.state}
@@ -319,7 +319,7 @@ function AuthorizedWork({
                         void tasks.refetch()
                       }}
                     />
-                    <WorkTaskInspector task={taskData} />
+                    {!task.isFetching && <WorkTaskInspector task={taskData} />}
                     {!task.isFetching && (
                       <>
                         <CurrentPlanPanel

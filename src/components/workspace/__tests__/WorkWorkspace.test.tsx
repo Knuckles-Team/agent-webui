@@ -1,5 +1,6 @@
 // spec: WEBUI-APPS-R049.1.3, WEBUI-APPS-R004.4, WEBUI-APPS-R049.1.15
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'
 import { PageContextProvider, usePageContextEnvelope } from '@/lib/page-context'
@@ -213,6 +214,65 @@ describe('retained Work composition', () => {
     await screen.findByText(/Task detail could not be loaded/)
     expect(screen.queryByText('<script>untrusted output</script>')).not.toBeInTheDocument()
   })
+  it.each(['success', 'refusal', 'navigation'] as const)(
+    'withdraws selected-task evidence during a deferred refresh: %s',
+    async (outcome) => {
+      const recorded = {
+        id: 'task-a',
+        status: { state: 'working' },
+        contextId: 'old-context',
+        artifacts: [{ artifactId: 'reply-a', parts: [{ kind: 'text', text: 'Old recorded output' }] }],
+      }
+      vi.mocked(workApi.getTask).mockResolvedValueOnce(recorded)
+      window.history.replaceState({}, '', '/workspace/work?conversation=conversation-a&task=task-a')
+      mount()
+      await screen.findByText('Old recorded output')
+      let resolve!: (value: typeof recorded) => void
+      let reject!: (error: Error) => void
+      const pending = new Promise<typeof recorded>((yes, no) => {
+        resolve = yes
+        reject = no
+      })
+      vi.mocked(workApi.getTask).mockReturnValueOnce(pending)
+      const refresh = screen.getByRole('button', { name: 'Refresh task' })
+      refresh.focus()
+      await userEvent.setup().keyboard('{Enter}')
+      await screen.findByText('Loading task…')
+      expect(screen.getByRole('button', { name: 'Refresh task' })).toBe(refresh)
+      expect(refresh).toHaveFocus()
+      expect(screen.queryByText('Old recorded output')).not.toBeInTheDocument()
+      expect(screen.queryByText('old-context')).not.toBeInTheDocument()
+      expect(screen.queryByText('Status: working')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Cancel task…' })).toBeDisabled()
+      expect(parseWorkState(window.location.href).conversation).toBe('conversation-a')
+      if (outcome === 'navigation') {
+        vi.mocked(workApi.getTask).mockResolvedValueOnce({ id: 'task-b', status: { state: 'completed' } })
+        await act(async () => {
+          navigateWork({ conversation: 'conversation-a', task: 'task-b', run: null, node: null }, 'user')
+        })
+        await screen.findByText('Task task-b')
+      }
+      await act(async () => {
+        if (outcome === 'refusal') reject(new ApiError(403, 'Denied'))
+        else resolve({ ...recorded, contextId: 'renewed-context', artifacts: [] })
+      })
+      if (outcome === 'success') {
+        await screen.findByText('renewed-context')
+        expect(screen.getByRole('button', { name: 'Refresh task' })).toBe(refresh)
+        expect(refresh).toHaveFocus()
+        expect(screen.getByText('Status: working')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Cancel task…' })).toBeEnabled()
+      } else if (outcome === 'refusal') {
+        await screen.findByText(/Task detail could not be loaded/)
+        expect(screen.queryByRole('button', { name: 'Cancel task…' })).not.toBeInTheDocument()
+      } else {
+        expect(screen.getByText('Task task-b')).toBeInTheDocument()
+        expect(screen.queryByText('renewed-context')).not.toBeInTheDocument()
+      }
+      expect(screen.queryByText('Old recorded output')).not.toBeInTheDocument()
+      expect(screen.queryByText('old-context')).not.toBeInTheDocument()
+    },
+  )
   it('follows a loaded parent and returns to the trace without losing conversation or task', async () => {
     vi.mocked(workApi.getRun).mockResolvedValueOnce({
       ok: true,
