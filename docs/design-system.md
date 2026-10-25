@@ -1,9 +1,7 @@
 # Browser design system
 
-Arbora shares one set of tokens, primitives and interaction rules across browser surfaces. Each view extends this common system. This page documents
-the current tokens sourced from [`src/index.css`](https://github.com/Knuckles-Team/agent-webui/blob/main/src/index.css)
-and the `src/components/ui/` primitives that consume them, including the
-contrast targets a new surface must meet. The token audit
+Arbora shares one set of tokens, primitives and interaction rules across browser surfaces. Each view extends this common system. This page documents tokens from [`src/index.css`](https://github.com/Knuckles-Team/agent-webui/blob/main/src/index.css) and their contrast targets.
+The `src/components/ui/` primitives consume these tokens. The token audit
 (`src/__tests__/design-tokens.test.ts`) mirrors the documented defaults and checks
 stylesheet values and contrast pairs. Source checks do not replace rendered
 contrast, screenshot or assistive-technology review.
@@ -29,14 +27,14 @@ Color is never the only signal for a state; see [State tokens](#state-tokens-sta
 
 | Role (pairing) | Light / glass | Dark | Contrast target |
 |---|---|---|---|
-| Foreground on Background | `#1F2A24` on `#E9EDE5` | `#F1F5EB` on `#121C17` | 4.5:1 |
-| Card-foreground on Card | `#1F2A24` on `#F7F8F2` | `#F1F5EB` on `#1C2A22` | 4.5:1 |
-| Popover-foreground on Popover | `#1F2A24` on `#FFFFFF` | `#F1F5EB` on `#27372D` | 4.5:1 |
+| Foreground on Background | `#111111` on `#E9EDE5` | `#F1F5EB` on `#121C17` | 4.5:1 |
+| Card-foreground on Card | `#111111` on `#F7F8F2` | `#F1F5EB` on `#1C2A22` | 4.5:1 |
+| Popover-foreground on Popover | `#111111` on `#FFFFFF` | `#F1F5EB` on `#27372D` | 4.5:1 |
 | Primary-foreground on Primary | `#FFFFFF` on `#3E634F` | `#16251A` on `#ADC99F` | 4.5:1 |
-| Secondary-foreground on Secondary | `#46544A` on `#E6EBE1` | `#D0DBCB` on `#16231C` | 4.5:1 |
-| Muted-foreground on Background | `#59665C` on `#E9EDE5` | `#AABAA5` on `#121C17` | 4.5:1 |
-| Muted-foreground on Card | `#59665C` on `#F7F8F2` | `#AABAA5` on `#1C2A22` | 4.5:1 |
-| Accent-foreground on Accent | `#274C36` on `#DDE9D8` | `#E4EEDC` on `#314A35` | 4.5:1 |
+| Secondary-foreground on Secondary | `#111111` on `#E6EBE1` | `#D0DBCB` on `#16231C` | 4.5:1 |
+| Muted-foreground on Background | `#111111` on `#E9EDE5` | `#AABAA5` on `#121C17` | 4.5:1 |
+| Muted-foreground on Card | `#111111` on `#F7F8F2` | `#AABAA5` on `#1C2A22` | 4.5:1 |
+| Accent-foreground on Accent | `#111111` on `#DDE9D8` | `#E4EEDC` on `#314A35` | 4.5:1 |
 | Destructive-foreground on Destructive | `#FFFFFF` on `#963F37` | `#381914` on `#F0B0A6` | 4.5:1 |
 | Destructive text on Background | `#963F37` on `#E9EDE5` | `#F0B0A6` on `#121C17` | 4.5:1 |
 | Input boundary on Card | `#738170` on `#F7F8F2` | `#829680` on `#1C2A22` | 3:1 |
@@ -48,22 +46,65 @@ secondary foreground. Decorative `--border` is `#C5CFC1` in light/glass and
 
 ### Material and glass
 
-The shared workspace uses a static sage/ivory atmosphere, translucent header and
-map chrome, and solid card/reading surfaces. `--shell-alpha` is **92%** in light
-and glass and **90%** in dark. `WorkspaceFrame.css` composites `--card` with that
-alpha for chrome; text is never made transparent through container opacity.
-Measure actual foreground and muted text over the resulting backgrounds,
-including selection and hover. Token pairs alone do not qualify rendered glass.
+The shared workspace uses an original same-origin botanical wallpaper, with bounded sage/blue/ivory light.
+The WebP asset is an encoding-only optimization of generated background artwork, not a UI mockup.
+Lighten blending prevents image channels falling below the authored contrast floor. Header and map
+framing transmit that field through 32% ivory and sage glass; primary panels
+use 41% white glass, with 51% reading-card fills and 61% neutral-control fills. The independent material
+preference applies to light and the legacy glass alias. Dark uses 72–88% deep
+surfaces. Text never inherits container opacity. `--glass-muted` is `#111111` in
+light and `#E1EBDC` in dark. Contrast tests composite every material over the
+authored field floor and white; real browser pixel review remains necessary.
 
-Unsupported blur starts with an opaque surface. Reduced-transparency preference,
-the in-app opaque choice and forced colors remove backdrop blur. Forced colors
-use system surfaces, selection and text. Keep information, controls and focus
-available when effects disappear; do not add nested blur or decorative panels.
-The existing logo and same-origin fonts remain the product identity.
+Light-theme labels use black, with hierarchy expressed by size and weight.
+Controls stay slightly milkier than their supporting glass, not solid white.
+Only sibling framing panels use backdrop blur. Nested cards and controls use
+alpha fills without more blur. Unsupported blur starts opaque; reduced
+transparency, the in-app opaque choice and forced colors remove effects. Forced
+colors use system surfaces and text. All modes retain the same capabilities.
+The existing Arbora artwork and same-origin fonts remain the product identity.
 
-The full-width workspace header keeps labelled Work/Explore/Operate, context, search/commands and main actions visible. It wraps into useful rows. Secondary
-appearance utilities may use a disclosure. A resizable map yields space to the working center. Explore shows detail for selected evidence, not an empty placeholder. These are the bounded shared-shell/Explore changes, not evidence
-that every route has completed the redesign.
+A thin full-width floating header keeps labelled Work/Explore/Operate, context,
+search/commands and main actions visible. It wraps into useful rows rather than
+becoming a capsule. The resizable map yields space to the evidence center.
+Explore shows real selected detail or a collection without a placeholder rail.
+The Agent entry lives in existing chrome and expands the mounted conversation
+in place. It reserves no idle column or bottom bar and is not a floating bubble.
+Running and approval cues come from the real conversation state. These are
+bounded shell/Explore changes, not evidence of an all-route redesign.
+
+### Approved visual baseline
+
+The owner approved the desktop theme on 2026-10-25.
+
+Source: [`9478612`](https://github.com/Knuckles-Team/agent-webui/commit/9478612117a32ec497a71c9ab6fff451804c0486).
+Keep this palette, wallpaper and material hierarchy while adapting real product content and context.
+This approval does not accept synthetic research vocabulary, all-route parity or unfinished accessibility checks.
+
+| Material | Light value |
+|---|---|
+| Header | `rgb(241 246 231 / 38%)`, 16px blur, 125% saturation |
+| Secondary map | `rgb(218 234 220 / 38%)`, 16px blur, 120% saturation |
+| Primary panels | `rgb(248 250 243 / 48%)`, 16px blur, 115% saturation |
+| Nested reading cards | `rgb(255 255 250 / 60%)`, no extra blur |
+| Neutral controls and active highlights | `rgb(255 255 252 / 72%)`, no extra blur |
+| Text and secondary labels | `#111111` |
+| Luminous edge | `rgb(255 255 255 / 76%)` |
+| Contrast floor | `#45685B`, with lighten background blending |
+| Frame and card radii | 24px panels, 16px cards, 14px controls |
+
+The wallpaper is `src/assets/arbora-canopy-wallpaper.webp`: 1672×941 pixels and 290892 bytes.
+Its SHA-256 is `df3bfb3775c406c2eacdd8e1fc5c4daf7e86af69b8fcf74d8e9a79153f56544a`.
+The owner then requested about 15% less opacity, relative to the approved fills.
+Current light fills are 32%, 32%, 41%, 51% and 61% for header, map, panels, cards and neutral controls.
+The token audit pins that calculation, the unchanged palette and the asset digest.
+Dark, opaque and accessibility fallbacks remain unchanged. Semantic action colors retain their readable foreground pairs.
+Other theme changes require a new explicit visual review.
+The hosted run retains real desktop/mobile screenshots and a short transition recording.
+
+Capture: [preview run](https://github.com/Knuckles-Team/agent-webui/actions/runs/40157438929).
+
+This fixture uses synthetic records; it does not represent a connected research project or live provider.
 
 ## Typography
 
@@ -76,7 +117,7 @@ not fetched from a remote font service.
 
 `--radius` is `0.75rem` (12px at the default root size). The `-sm`, `-md`,
 `-lg` and `-xl` corner tokens derive from it, giving 8px, 10px, 12px and 16px
-respectively. Use aligned rows, modest padding and fewer nested containers for
+respectively. Workspace glass panels use 20–24px corners. Use aligned rows, modest padding and fewer nested containers for
 density, not tiny text or fixed-height boxes that clip wrapping content.
 
 | Workspace density token | Compact (default) | Comfortable | Coarse pointer |

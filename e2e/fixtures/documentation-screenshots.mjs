@@ -1,5 +1,5 @@
 // Synthetic, read-only documentation data. Never connect these captures to an account.
-export const fixture = 'workspace-docs-v1'
+export const fixture = 'workspace-docs-v2'
 export const fixedTime = '2026-01-15T12:00:00.000Z'
 export const theme = 'light'
 export const baseURL = 'http://127.0.0.1:5206'
@@ -8,8 +8,8 @@ export const viewports = [
   { name: 'narrow', width: 320, height: 740 },
 ]
 export const scenes = [
-  { name: 'work', path: '/workspace/work', ready: 'Synthetic research trace' },
-  { name: 'explore', path: '/workspace/explore?q=research&entity=doc%3Aresearch', ready: '2 matching objects' },
+  { name: 'work', path: '/workspace/work', ready: 'Chat & tasks' },
+  { name: 'explore', path: '/workspace/explore?q=project&entity=doc%3Aresearch', ready: '2 matching records' },
   { name: 'operate', path: '/workspace/operate?server=catalog&item=search', ready: 'Backend readiness: ready' },
 ]
 export const captures = scenes.flatMap((scene) =>
@@ -33,22 +33,23 @@ export const responses = {
   '/api/configure': { models: [], builtinTools: [] },
   '/api/enhanced/models': { models: [], default_id: '' },
   '/api/chats': [],
+  '/api/chats/': { messages: [] },
   '/api/enhanced/mcp/servers/arbora/tools': { tools: [], total: 0, offset: 0, limit: 200, has_more: false },
   '/api/enhanced/sessions': [{ id: 'synthetic-research', status: { state: 'completed' } }],
-  '/api/graph/traces': { result: [{ id: 'synthetic-trace', name: 'Synthetic research trace', status: 'completed' }] },
+  '/api/graph/traces': { result: [{ id: 'synthetic-trace', name: 'Synthetic project task', status: 'completed' }] },
   '/api/enhanced/ontology/object-set/search': {
     count: 2,
     rows: [
-      { id: 'doc:research', type: 'Document', title: 'Research brief' },
-      { id: 'doc:sources', type: 'Collection', title: 'Source notes' },
+      { id: 'doc:research', type: 'Document', title: 'Project documentation' },
+      { id: 'doc:sources', type: 'Collection', title: 'Setup notes' },
     ],
   },
   '/api/enhanced/ontology/object/doc%3Aresearch': {
     id: 'doc:research',
     object_type: 'Document',
     properties: {
-      title: 'Research brief',
-      summary: 'A synthetic evidence record for documentation.',
+      title: 'Project documentation',
+      summary: 'Synthetic project documentation for this browser preview.',
       status: 'Reviewed',
     },
     links: {},
@@ -89,7 +90,7 @@ export const responses = {
         server: 'catalog',
         name: 'Search',
         kind: 'tool',
-        description: 'Search synthetic evidence records.',
+        description: 'Search synthetic project records.',
       },
     ],
     next_cursor: null,

@@ -216,7 +216,7 @@ export function PrivacyConsentSettings() {
       <h2 className="text-lg font-semibold">Privacy settings</h2>
       <p className="text-sm">Optional analytics: {record?.choice === 'granted' ? 'allowed' : 'not allowed'}.</p>
       <p className="text-sm text-muted-foreground">
-        Dismissing the prompt does not allow analytics. Choices can be changed here at any time.
+        Optional analytics stays off unless you allow it. You can change your choice here at any time.
       </p>
       {config.analytics === null && <p className="text-sm">Analytics is not configured for this deployment.</p>}
       <div className="flex flex-wrap gap-2">

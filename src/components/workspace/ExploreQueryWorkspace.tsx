@@ -6,6 +6,7 @@ import { roleAtLeast, type Role } from '@/lib/nav-registry'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
 import {
   EXPLORE_LENSES,
+  canUseExploreLens,
   exploreLensHref,
   navigateExploreLens,
   parseExploreLensState,
@@ -17,6 +18,14 @@ import { useWebMcpToolSet } from '@/lib/webmcp/provider'
 import { makeTool } from '@/lib/webmcp/tools'
 import EvidenceWorkspace from './ExploreWorkspace'
 import { QueryEditorTools } from './QueryEditorTools'
+import { ExploreGraphLens } from './ExploreGraphLens'
+
+const lensLabels: Record<ExploreLensState['lens'], string> = {
+  evidence: 'Stored records',
+  graph: 'Sampled graph',
+  query: 'Query stored data (SPARQL)',
+  validation: 'Check data schema',
+}
 
 /** New retained composition; no legacy feature-page shell is mounted. */
 export default function ExploreQueryWorkspace() {
@@ -36,16 +45,16 @@ export default function ExploreQueryWorkspace() {
   if (loading) return <p role="status">Checking workspace access…</p>
   if (identity.needsSignIn || !roleAtLeast(identity.role, 'user'))
     return <p role="alert">Explore is not available for the current identity.</p>
-  if (state.lens !== 'evidence' && !roleAtLeast(identity.role, 'maintainer'))
+  if (!canUseExploreLens(identity.role, state.lens))
     return (
       <p role="alert">
-        Query and validation require maintainer access.{' '}
-        <a href={exploreLensHref({ ...state, lens: 'evidence' })}>Return to evidence</a>
+        Advanced data tools require maintainer access.{' '}
+        <a href={exploreLensHref({ ...state, lens: 'evidence' })}>Return to knowledge</a>
       </p>
     )
   return (
     <OwnedExplore
-      key={JSON.stringify([conversationOwnerKey(identity), identity.role, state.entity, state.query])}
+      key={JSON.stringify([conversationOwnerKey(identity), identity.role])}
       state={state}
       role={identity.role}
       revealFocus={() => focusNavigation.current.navigated}
@@ -62,7 +71,7 @@ function OwnedExplore({
   revealFocus: () => boolean
 }) {
   const controller = useQueryValidationLens()
-  const available = roleAtLeast(role, 'maintainer') ? EXPLORE_LENSES : (['evidence'] as const)
+  const available = roleAtLeast(role, 'maintainer') ? EXPLORE_LENSES : (['evidence', 'graph'] as const)
   const heading = useRef<HTMLHeadingElement>(null)
   const active = useRef(true)
   const live = useRef(state)
@@ -75,7 +84,7 @@ function OwnedExplore({
   }, [])
   useLayoutEffect(() => {
     // Evidence owns its selection/search focus, including StrictMode remounts.
-    if (state.lens !== 'evidence') {
+    if (state.lens === 'query' || state.lens === 'validation') {
       controller.setMode(state.lens === 'query' ? 'sparql' : 'shacl')
       heading.current?.focus({ preventScroll: true })
     }
@@ -91,7 +100,7 @@ function OwnedExplore({
         name: 'agent-webui.explore.lens',
         title: 'Select an Explore lens',
         description:
-          'Select evidence, query or validation in the current workspace. Does not edit or execute queries or grant backend permission.',
+          'Select evidence, graph, query or validation in the current workspace. Does not edit or execute queries or grant backend permission.',
         inputSchema: schema,
         outputSchema: schema,
         jsonSchema: z.toJSONSchema(schema),
@@ -123,31 +132,38 @@ function OwnedExplore({
     <section aria-label="Explore workspace lenses" className="workspace-surface min-w-0 space-y-3">
       <div className="explore-lens-header">
         <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
-          Explore
+          Knowledge
         </h1>
-        <nav aria-label="Explore lenses" className="flex flex-wrap gap-2">
-          {available.map((lens) => (
-            <a
-              key={lens}
-              href={exploreLensHref({ ...state, lens })}
-              aria-current={state.lens === lens ? 'page' : undefined}
-              className="inline-flex min-h-11 items-center rounded border px-3 capitalize"
-              onClick={(event) => {
-                if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
-                event.preventDefault()
-                select(lens)
-              }}
-            >
-              {lens}
-            </a>
-          ))}
-        </nav>
+        <details open={state.lens !== 'evidence'} hidden={available.length < 2}>
+          <summary className="workspace-pane-toggle">Advanced</summary>
+          <p className="text-sm text-muted-foreground">
+            Query stored data or check a data schema. These tools do not fact-check agent replies.
+          </p>
+          <nav aria-label="Advanced knowledge tools" className="flex flex-wrap gap-2">
+            {available.map((lens) => (
+              <a
+                key={lens}
+                href={exploreLensHref({ ...state, lens })}
+                aria-current={state.lens === lens ? 'page' : undefined}
+                className="inline-flex min-h-11 items-center rounded border px-3 capitalize"
+                onClick={(event) => {
+                  if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+                  event.preventDefault()
+                  select(lens)
+                }}
+              >
+                {lensLabels[lens]}
+              </a>
+            ))}
+          </nav>
+        </details>
       </div>
       <div hidden={state.lens !== 'evidence'}>
         <EvidenceWorkspace showHeading={false} active={state.lens === 'evidence'} revealFocus={revealFocus} />
       </div>
-      {state.lens !== 'evidence' && <QueryValidationLens controller={displayed} />}
-      {state.lens !== 'evidence' && (
+      {state.lens === 'graph' && <ExploreGraphLens state={state} role={role} active />}
+      {(state.lens === 'query' || state.lens === 'validation') && <QueryValidationLens controller={displayed} />}
+      {(state.lens === 'query' || state.lens === 'validation') && (
         <QueryEditorTools
           controller={displayed}
           lens={state.lens}
@@ -155,7 +171,7 @@ function OwnedExplore({
           restoreFocus={() => heading.current?.focus({ preventScroll: true })}
         />
       )}
-      {state.lens !== 'evidence' && (
+      {(state.lens === 'query' || state.lens === 'validation') && (
         <p className="text-xs text-muted-foreground">
           Queries use the existing provider. Entity selection does not scope execution. Provider errors and permissions
           remain authoritative.

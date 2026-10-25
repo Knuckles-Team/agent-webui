@@ -40,18 +40,30 @@ for (const capture of captures) {
     }, theme)
     await page.setViewportSize(capture.viewport)
     await page.goto(capture.path)
-    const workspace = page.getByRole('region', { name: new RegExp(`^${capture.name} workspace$`, 'i') })
-    await expect(workspace.getByText(capture.ready, { exact: true })).toBeVisible()
+    const workspace =
+      capture.name === 'work'
+        ? page.locator('#workspace-assistant')
+        : page.getByRole('region', {
+            name: capture.name === 'explore' ? 'Knowledge workspace' : 'Operate workspace',
+            exact: true,
+          })
+    if (capture.name === 'work')
+      await expect(workspace.getByRole('heading', { name: capture.ready, exact: true })).toBeVisible()
+    else await expect(workspace.getByText(capture.ready, { exact: true })).toBeVisible()
     if (capture.name === 'explore')
       await expect(
-        workspace.getByText('A synthetic evidence record for documentation.', { exact: true }),
+        workspace.getByText('Synthetic project documentation for this browser preview.', { exact: true }),
       ).toBeVisible()
     if (capture.name === 'operate')
       await expect(workspace.getByText('Showing 1 of 1 catalog connectors.', { exact: true })).toBeVisible()
-    if (capture.name === 'work')
-      await page
-        .getByRole('textbox', { name: 'Message input' })
-        .fill('Summarize the research brief and cite the source notes.')
+    if (capture.name === 'work') {
+      // The default product is the real conversation surface, not a hidden companion.
+      const input = page.getByRole('textbox', { name: 'Message input' })
+      await expect(input).toBeVisible()
+      await input.fill('Help me turn my project notes into a clear next-step plan.')
+      await expect(input).toBeInViewport()
+      await expect(page.getByRole('button', { name: 'Expand chat', exact: true })).toHaveCount(0)
+    }
     await expect(workspace.getByRole('status').filter({ hasText: /Loading|Searching|Probing|Checking/ })).toHaveCount(
       0,
     )

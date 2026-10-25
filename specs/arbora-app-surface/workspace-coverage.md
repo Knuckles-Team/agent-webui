@@ -89,6 +89,19 @@ Each destination retains its role/capability restriction, compatible URL and dee
 
 Rows above establish owner families, not acceptance for every operation. The implementation census must list each control/form and join it to its precise existing requirement and backend disposition. Unclassified leaf actions block R045. A declared upstream service operation is checked only against the composed deployment, never from documentation alone.
 
+### Core jobs and evidence disposition (2026-10-25 source review)
+
+These entries extend the existing census, not a new capability registry. They do
+not establish installed-provider acceptance or close R045/R049/R050.
+
+| User job and primary control | Exact operation / current disposition | Minimum role | Evidence class and next proof |
+|---|---|---|---|
+| Give an agent work: visible Chat composer. | Existing chat adapter calls `agents.run`; response text is yielded after the completed turn, not a live step feed. | Reader for `/chat`; user for Chat & tasks. | Source adapter and rendered fixtures; configured provider and actual result still need served proof. |
+| Review a returned task: View task details when a real reference exists. | `agents.tasks.list/get`; plan/dependency reads require the selected task's explicit run binding. Independent traces do not establish a conversation association. | User. | Source plus rendered fixtures; complete producer-bound journey remains open. |
+| Find stored knowledge: Search knowledge / Record details. | `ontologySearch` and object-detail adapters; checked-in default ontology search/detail handlers explicitly report unavailable. | User. | Source refusal; synthetic records are presentation fixtures, not successful installed search. |
+| Check tools and services: Tools & connections. | Fleet status, capability catalog, enhanced tools and readiness reads. Registration does not prove connectivity, authentication or execution permission. | Reader for context; individual controls retain their roles. | Source plus fixtures; check actual composed services independently. |
+| Reuse instructions: Saved instructions. | Existing prompt editor; editing does not run or bind a prompt to a task. Workflow Save/Run handlers remain unavailable. | Admin. | Source local/editor behavior; no workflow execution claim. |
+
 ## WebMCP baseline and gap closure
 
 Existing five core tools are page context, navigate, Atlas get-state/set-filters/select in `src/lib/webmcp/`. Seven dashboard tools are create/add_panel/update_panel/remove_panel/set_layout/list_data_sources/preview_query in `src/lib/dashboards/tools.ts`. Markets conditionally exposes get-view/search-listings/open-listing/set-scanner-filters/set-chart in `src/apps/markets/webmcp.ts`. This is not complete action coverage. Preserve stable IDs, the existing 64-tool catalog ceiling, schema/result bounds and mounted-context lifecycle. Lazy contextual discovery must keep arbitrary-depth leaves reachable without registering an unbounded catalog.

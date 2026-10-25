@@ -58,6 +58,7 @@ Data flow: goals, sessions and fleets operations → link builder → panel filt
 Attach point: first child row locates the current goals and sessions views and replaces them.
 Reused: the typed client of `WEBUI-API-R009`. Fleet execution stays with `AU-CONTROL` rows.
 Decision: relate by returned identifiers. Rejected alternative: infer links by name matching in the browser.
+
 ## Graph edits through the engine (WEBUI-APPS-R030)
 
 The graph overlay save (`GraphCanvas.tsx:605`) calls `handleUpdateNode` (`GraphView.tsx:792`). It calls the new `sendGraphEdit` export in `src/lib/graph-edit.ts`, then `gatewayPost` (`gateway.ts:129`). The authenticated Arbora invoke pipeline serves `eg.graph.AddNode`, `eg.graph.ApplyMutation` and `eg.graph.RemoveNode`. The fixture engine commits the durable mutation. The client updates local state from the verdict and authoritative readback.
@@ -87,13 +88,13 @@ The existing `src/lib/arbora-api/invoke.ts:56` sends generated operations to `/a
 
 ### Explicit wire and view mapping
 
-| Planned helper/view | Arbora producer | EG producer | Required mapping |
-|---|---|---|---|
-| listMemoryFiles | memory.files.list; R024.4.1/.2/.6 | R085.1/.2/.4 | Generated metadata-only page, optional kind, limit 1–100, opaque cursor; stable authorized snapshot, no hidden counts or hashes |
-| readMemoryFile | memory.files.read; R024.4.1/.2/.6 | R085.1/.2/.4/.5 | Document identity and optional exact revision; only authorized snapshot bytes, digest, sync state and conflict references |
-| saveMemoryFile | memory.files.save; R024.4.1/.3/.5/.6 | R085.1/.3–.5/.7 | Generated submit/resolve only; exact precondition, UTF-8 bytes and digest; explicit absent-head creation; same identity/body retry |
-| conflict and refusal views | R024.4.3/.5 | R085.3/.5/.7 | Authorized conflict_retained versus head-free refused; do not convert retained conflict to a generic failure |
-| sync label | R024.4.4 | R085.6/.8 | Render in_sync, graph_ahead, file_ahead, conflict or unavailable exactly from served evidence |
+| Planned helper/view        | Arbora producer                      | EG producer     | Required mapping                                                                                                                   |
+| -------------------------- | ------------------------------------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| listMemoryFiles            | memory.files.list; R024.4.1/.2/.6    | R085.1/.2/.4    | Generated metadata-only page, optional kind, limit 1–100, opaque cursor; stable authorized snapshot, no hidden counts or hashes    |
+| readMemoryFile             | memory.files.read; R024.4.1/.2/.6    | R085.1/.2/.4/.5 | Document identity and optional exact revision; only authorized snapshot bytes, digest, sync state and conflict references          |
+| saveMemoryFile             | memory.files.save; R024.4.1/.3/.5/.6 | R085.1/.3–.5/.7 | Generated submit/resolve only; exact precondition, UTF-8 bytes and digest; explicit absent-head creation; same identity/body retry |
+| conflict and refusal views | R024.4.3/.5                          | R085.3/.5/.7    | Authorized conflict_retained versus head-free refused; do not convert retained conflict to a generic failure                       |
+| sync label                 | R024.4.4                             | R085.6/.8       | Render in_sync, graph_ahead, file_ahead, conflict or unavailable exactly from served evidence                                      |
 
 These operation names are proposed producer IDs, not registration claims. Do not alias generic memory.read/write to them or maintain another authoritative browser store. Use generated bounded schemas: 1 MiB content, 256-byte document IDs and 1024-byte logical paths, preserving stricter serving limits. Logical paths are labels, never browser-controlled filesystem authority.
 
@@ -135,6 +136,7 @@ citations, including arXiv papers, are inspiration only, never protocol
 contracts, owner authority, implementation evidence or acceptance receipts.
 
 <!-- spec-definition-patch:consumer-definitions-20261012 -->
+
 ## Consolidated consumer contracts
 
 These clauses preserve the existing shell and producer responsibilities. They add only the reviewed missing browser consumers.
@@ -387,20 +389,20 @@ From a real served code query, inspect source-linked steps and load the artifact
 
 ### Input reconciliation
 
-| Input | Consumer clauses | Scope |
-|---|---|---|
-| AU:103 | `WEBUI-APPS-R004.7.1`–`.6` | Evolution evidence |
-| WEBUI:3 | `WEBUI-APPS-R006.4.1`–`.6` | Unified harness sessions |
-| WEBUI:4 | `WEBUI-APPS-R004.8.1`–`.6` | Indexed usage analysis |
-| WEBUI:5 | `WEBUI-APPS-R030.8.1`–`.6` | Live graph convergence |
-| WEBUI:6 | `WEBUI-APPS-R001.1.1`–`.6` | Retrieval quality comparison |
-| WEBUI:7 | `WEBUI-APPS-R001.2.1`–`.6` | Bounded large-data charts |
-| WEBUI:8 | `WEBUI-APPS-R001.3.1`–`.6` | Column vector controls |
-| WEBUI:9 | `WEBUI-APPS-R001.4.1`–`.6` | Remote editor compatibility |
+| Input    | Consumer clauses           | Scope                             |
+| -------- | -------------------------- | --------------------------------- |
+| AU:103   | `WEBUI-APPS-R004.7.1`–`.6` | Evolution evidence                |
+| WEBUI:3  | `WEBUI-APPS-R006.4.1`–`.6` | Unified harness sessions          |
+| WEBUI:4  | `WEBUI-APPS-R004.8.1`–`.6` | Indexed usage analysis            |
+| WEBUI:5  | `WEBUI-APPS-R030.8.1`–`.6` | Live graph convergence            |
+| WEBUI:6  | `WEBUI-APPS-R001.1.1`–`.6` | Retrieval quality comparison      |
+| WEBUI:7  | `WEBUI-APPS-R001.2.1`–`.6` | Bounded large-data charts         |
+| WEBUI:8  | `WEBUI-APPS-R001.3.1`–`.6` | Column vector controls            |
+| WEBUI:9  | `WEBUI-APPS-R001.4.1`–`.6` | Remote editor compatibility       |
 | WEBUI:10 | `WEBUI-APPS-R001.5.1`–`.6` | Meeting transcripts and summaries |
-| WEBUI:11 | `WEBUI-APPS-R001.6.1`–`.6` | Bookmark knowledge views |
-| AU:107 | `WEBUI-APPS-R001.7.1`–`.6` | Sandboxed design artifacts |
-| AU:115 | `WEBUI-APPS-R001.8.1`–`.6` | Interactive code explanations |
+| WEBUI:11 | `WEBUI-APPS-R001.6.1`–`.6` | Bookmark knowledge views          |
+| AU:107   | `WEBUI-APPS-R001.7.1`–`.6` | Sandboxed design artifacts        |
+| AU:115   | `WEBUI-APPS-R001.8.1`–`.6` | Interactive code explanations     |
 
 The cited owner anchors establish existing responsibilities, not missing operation registrations. The exact newly published producer extensions must be reconciled before definition closure and runtime acceptance. Covered model/task-class metrics, SDK bookmark ingestion, single-shot dictation and the existing editor/frame remain intact.
 <!-- /spec-definition-patch -->
@@ -522,6 +524,7 @@ refuse dispatch before changing navigation state. Keep validation and role check
 in the existing page tools and shared navigation dispatcher. This is a partial
 R048 source repair; native-browser qualification and the remaining authority and
 cancellation matrix stay open.
+
 ### Connector tile composition amendment
 
 The Operate connector panel adds partial presentation for WEBUI-APPS-R005.3 under the
@@ -559,7 +562,6 @@ Native browser scheduling, served authority and complete R048 acceptance remain 
 ### R048 native replacement routing
 
 Chromium 156 experimental WebMCP resolved a retained native Tool reference to a new same-name registration. Each native registration now has a unique routing name; the application registry retains the semantic tool ID. This prevents stale native references from selecting replacement callbacks. The rendered route, Back/Forward, deep-link and restoration matrix uses native discovery with synthetic backend responses. Authenticated served authority acceptance remains open; R048 is not complete.
-
 
 ### Connector catalog registration presentation
 
@@ -883,8 +885,8 @@ remains unavailable, with no legacy fallback or fabricated graph.
 
 The bounded adapter validates the envelope, exact run/task identities, unique
 plan-step keys, explicit predecessor-to-dependent edges and evidence. The layout only places declared nodes; it does not schedule tasks or infer lineage.
-The inline diagram has an equivalent keyboard-accessible dependency list and
-wraps or scrolls within the existing Work panel at narrow widths. Labels remain
+The inline diagram has an equivalent keyboard-accessible dependency list.
+It wraps or scrolls within the existing Work panel at narrow widths. Labels remain
 plain text. Refresh, selection and identity changes retire the previous read;
 denied or malformed responses cannot reveal cached protected graph data.
 
@@ -927,7 +929,6 @@ material, expanded-header, motion and fallback behavior. This is a staged theme 
 R045–R050 retain every broader obligation. Qualify remaining graph, editor, run,
 administration and authentication surfaces through their existing owners.
 
-
 ## Native workspace assistant amendment — 2026-10-24
 
 Extend WEBUI-APPS-R005.4, R049.1.3 and R049.2 within the existing shared shell.
@@ -953,7 +954,8 @@ R045–R050 and WEBUI-DESIGN-R004.1/R004.2 retain full co-navigation, native Web
 mobile/device, all-route migration and installed-provider acceptance.
 
 Critical compact-state controls remain outside optional message tools: the
-existing Agent mode selector, SWE mode, live session and Stop controls. Pending
+existing SWE mode, live session and Stop controls. Request-mode selection is
+deleted under R005.4.1. Pending
 approval renderers mark their actual review state. The shell exposes
 Review required approval, which only expands and focuses that same UI.
 No approval decision, execution path or provider is added. Clearing the existing
@@ -978,7 +980,6 @@ Qualify the diagram and step details at wide, narrow, low-height and enlarged-te
 sizes. Never weaken the viewport ratio or replace the equivalent dependency list
 to accommodate the new header. Read admission, lifecycle honesty and graph
 semantics remain unchanged.
-
 
 ### Hosted native assistant qualification
 
@@ -1009,3 +1010,127 @@ Explicit retained-acceptance children now preserve those obligations in canonica
 Parent requirement text and qualified child evidence remain unchanged.
 Regenerate every spec status and audit ancestor states after source and receipt commits.
 The metadata regression must not create feature-acceptance bindings for retained work.
+
+### 2026-10-25: Native Explore sampled graph lens
+
+Extend R049.1.2 with bounded child R049.1.14. Share GraphView's validated graph
+reads, GraphCanvas and GraphAdapter, not its page/card/tab shell. Preserve the
+existing reader-level graph boundary within Explore's user-level boundary.
+Nodes and edges use the existing typed served facades; stats/type aggregates
+retain their existing honest unavailable and partial states. Do not substitute
+GraphSchema, which is an administrative operation, for any read capability.
+
+Graph selection and type filters are independent of evidence identity. Keep
+query drafts/results within the owner-and-role-scoped Explore lifetime. Clear
+obsolete/denied read data and retire hidden handles. Provide a keyboard list
+for the same sampled adjacency. Do not claim a complete neighborhood.
+Read-only canvas disables every edit entry point. Legacy local draft editing is
+not an engine write and remains unmigrated with Cypher and MAGMA. R030 writes,
+API R008.2 served parity, R046.2.2 full continuity, R047/R048 complete command
+coverage and R049.1.2 migration remain open. Mounted fixtures and metadata
+checks are not actual browser, installed-provider or full-redesign acceptance.
+
+## Contextual Work workflow continuation — 2026-10-25
+
+Extend the existing R049.1.2 migration owner with source child R049.1.15.
+Extract WorkflowEditorView into a contextual editor/controller that reuses the
+existing workflow client and graph-to-spec helpers. Retain the mounted editor
+while Work switches to task inspection. Workflow selection is independent of
+conversation, task and trace selections, and drafts stay out of URLs.
+
+The current host allows administrator workflow reads but does not implement the
+capabilities route. Save and Run explicitly report unavailable. Keep these
+effect controls disabled. Label each edit as an in-memory preview, never a durable save or successful run. Do not add endpoints or infer capability
+from a loaded list. Preserve errors instead of showing a successful empty catalog. Future effect activation still requires the existing authority and
+confirmation protocol and separate provider acceptance under WEBUI-API-R009.
+
+Scope source tests to retained draft/selection/validation, keyboard editing,
+failed or malformed reads, stale replies and admission replacement. Keep served, native-tool, performance and full responsive acceptance open under the original broad owners.
+Source tests do not establish those outcomes.
+
+### Contextual Operate usage — 2026-10-25
+
+R049.1.16 extracts the existing analytics presentation, not its standalone page shell.
+Operate keeps Health/Services context while selecting Usage, a session and its timeline.
+Use the current `/api/observability` bindings and server-derived user admission.
+Tenant totals from `usage.read` do not establish model costs, sessions or traces.
+The existing search, session detail and trace bindings have no tenant-filter argument.
+Do not issue those reads for an explicit foreign tenant or imply filtered results.
+The client has no instrumentation manifest, so a successful summary is not proof
+that every source is captured. No new backend, pricing, permissions or scheduler.
+Missing analytics and indexed harness producers remain explicit residuals under
+R004.8/R006.4 and WEBUI-API-R009/R011. Source and browser fixtures are not delivery
+of those producers. Keep broad navigation, authority, responsive and measured-design
+acceptance open under R047/R049.1.2 and WEBUI-DESIGN-R004.1.2/R004.2.2.
+
+Producer inspection found only client bindings for `/api/observability/*` in the
+current WebUI source, not matching WebUI host route implementations. The inspected
+Arbora `usage.read` operation declares only a tenant-scoped totals snapshot and
+`usage:read` scope. It is not an analytics/session replacement. Check served analytics
+availability independently. This UI shows unavailable responses; fixtures do not
+prove producer delivery.
+
+### 2026-10-25: Native feature-lens integration
+
+Compose source children R049.1.14, R049.1.15 and R049.1.16 on the same admitted
+workspace. Central commands preserve the existing lens policies.
+Explore graph and evidence require user. Query and validation require maintainer.
+Workflow plans require admin, and usage requires user. Keep the reader-level legacy graph route
+for unmigrated editor, Cypher and MAGMA features. Workflow and usage compatibility
+aliases retain their source role before canonical navigation.
+
+Fleet and connector-catalog destinations select Services without discarding
+retained usage filters or session context. Add all three authored synthetic
+browser journeys to the existing required hosted selection and artifact capture.
+Source integration does not establish native-browser or provider acceptance.
+Workflow edits remain in memory with Save/Run unavailable. Analytics keep the existing unavailable bindings.
+Do not derive rich evidence from usage totals or add a producer endpoint. Durable indexes remain with epistemic-graph.
+
+## Liquid Glass reference correction — 2026-10-25
+
+Extend R049.2.1 and R005.4/R049.1.3 in their existing composition. Replace the
+default assistant side column with a contextual Agent entry in existing chrome.
+Reserve no permanent bottom bar or idle column; never use a floating bubble.
+Expand the same Chat instance in place; preserve drafts, owner retirement, real
+status, pending approvals, mode, stop, attachment and message-option access.
+Give the released width to evidence results and selected detail. Render optional
+summary/source metadata only when returned by the existing evidence search.
+No empty inspector, invented status or evidence, extra data access, or new router.
+
+Hosted browser captures and a short disclosure/selection video remain required
+for reference review. Keep broad all-route and installed-provider acceptance open.
+
+### 2026-10-25: Conversation-first product clarity
+
+Extend R005.4, R045, R049.1.3 and R049.2/.1 in place. The accepted Liquid Glass
+materials remain unchanged. Work foregrounds the one mounted Chat with zero
+disclosure clicks. Saved conversations, tasks and independent technical traces
+remain reachable without invented associations. Show Chat, Knowledge and Tools.
+Keep stable route IDs, URLs, permissions and owner retirement.
+Use generic stored-record language rather than screenshot fixture titles.
+Source tests do not close broad redesign or installed-provider acceptance.
+
+The same amendment moves private-workspace privacy controls into the existing
+Settings disclosure for every admitted role. Omit the automatic prompt and header link.
+This must not grant consent, change a stored choice or start analytics.
+Keep the Privacy page and existing allow/disable/revoke controls reachable there.
+An empty conversation explains the core jobs. Text-only examples fill the existing draft.
+They do not submit, execute or change configuration.
+
+This scope includes retained private routes and public or signed-out entry.
+No route mounts an automatic privacy banner. Retained private navigation uses
+the same Settings controls. The public policy page stays reachable. This change
+does not suppress tool, action or browser permission reviews.
+
+### 2026-10-25: Conversation-first native lens integration
+
+Combine R049.1.14/.15/.16 with the R049.2.1 conversation-first shell. Preserve
+native graph selection retirement, workflow drafts and usage context while
+retaining the clearer Chat, Knowledge and Tools presentation. Keep all native
+browser journeys in the required Canopy selection. The 320px fresh secondary
+entry retains the exact zero-scroll assertion. Source checks do not prove browser
+geometry acceptance or provider completeness.
+
+### Request handling without a mode (2026-10-25)
+
+R005.4.1 deletes Chat request-mode UI, storage and payload only. Reuse the existing agents.run host adapter, which already forwards ordinary user text without this field. Do not classify prompts locally or alter authorization, approvals, model selection or developer workspace routing.

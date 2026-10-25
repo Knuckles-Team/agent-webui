@@ -7,6 +7,7 @@
  * already relies on (`theme-colors.ts`) rather than a second implementation.
  */
 import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -38,15 +39,15 @@ const DARK = readThemeBlock(CSS_SOURCE, '.dark')
 // either this table or index.css without updating the other fails here.
 const DOCUMENTED_COLOR: Record<string, { light: string; dark: string }> = {
   '--background': { light: '#E9EDE5', dark: '#121C17' },
-  '--foreground': { light: '#1F2A24', dark: '#F1F5EB' },
+  '--foreground': { light: '#111111', dark: '#F1F5EB' },
   '--card': { light: '#F7F8F2', dark: '#1C2A22' },
   '--primary': { light: '#3E634F', dark: '#ADC99F' },
   '--primary-foreground': { light: '#FFFFFF', dark: '#16251A' },
   '--secondary': { light: '#E6EBE1', dark: '#16231C' },
-  '--secondary-foreground': { light: '#46544A', dark: '#D0DBCB' },
-  '--muted-foreground': { light: '#59665C', dark: '#AABAA5' },
+  '--secondary-foreground': { light: '#111111', dark: '#D0DBCB' },
+  '--muted-foreground': { light: '#111111', dark: '#AABAA5' },
   '--accent': { light: '#DDE9D8', dark: '#314A35' },
-  '--accent-foreground': { light: '#274C36', dark: '#E4EEDC' },
+  '--accent-foreground': { light: '#111111', dark: '#E4EEDC' },
   '--destructive': { light: '#963F37', dark: '#F0B0A6' },
   '--destructive-foreground': { light: '#FFFFFF', dark: '#381914' },
   '--ring': { light: '#245F70', dark: '#9ACFE1' },
@@ -118,35 +119,54 @@ describe.each(['light', 'dark'] as const)('%s theme contrast targets (WEBUI-DESI
 })
 
 // spec: WEBUI-DESIGN-R002.1.1
-it.each(['light', 'dark'] as const)('protects %s shell labels even over black and white backdrops', (theme) => {
+it.each(['light', 'dark'] as const)('keeps %s glass text readable over the bounded authored field', (theme) => {
   const tokens = theme === 'dark' ? DARK : LIGHT
-  const alpha = Number.parseFloat(tokens['--shell-alpha']) / 100
-  expect(alpha).toBeGreaterThanOrEqual(0.9)
-  for (const backdrop of [0, 255]) {
-    const surface = tokens['--card']
-      .slice(1)
-      .match(/../g)!
-      .map((channel) => parseInt(channel, 16))
-    const composite =
+  for (const material of [
+    '--glass-chrome',
+    '--glass-secondary',
+    '--glass-primary',
+    '--glass-reading',
+    '--glass-control',
+  ]) {
+    const values = tokens[material].match(/[\d.]+/g)!.map(Number)
+    const color =
       '#' +
-      surface
-        .map((channel) =>
-          Math.round(channel * alpha + backdrop * (1 - alpha))
-            .toString(16)
-            .padStart(2, '0'),
-        )
+      values
+        .slice(0, 3)
+        .map((value) => value.toString(16).padStart(2, '0'))
         .join('')
-    for (const text of ['--foreground', '--muted-foreground'])
-      expect(contrastRatio(tokens[text], composite)).toBeGreaterThanOrEqual(4.5)
+    const alpha = values[3] / 100
+    expect(alpha).toBeLessThan(1)
+    expect(alpha).toBeGreaterThan(0.3)
+    // The authored field contains no channel darker than this floor. White is
+    // conservative for every luminous spot, including overlapping gradients.
+    for (const backdrop of [tokens['--glass-field-floor'], '#ffffff']) {
+      const composite = compositeHex(color, backdrop, alpha)
+      for (const text of ['--foreground', '--glass-muted'])
+        expect(contrastRatio(tokens[text], composite), `${theme} ${material} ${text}`).toBeGreaterThanOrEqual(4.5)
+    }
   }
 })
 
-it('uses the same solid reading palette for glass instead of alpha text surfaces', () => {
+it('keeps glass materials separate from semantic tokens and container opacity', () => {
   const glass = readThemeBlock(CSS_SOURCE, '.glass')
-  expect(glass['--shell-alpha']).toBe('92%')
+  expect(glass['--shell-alpha']).toBe('32%')
   expect(glass['--card']).toBeUndefined()
   expect(glass['--background']).toBeUndefined()
   expect(CSS_SOURCE).not.toContain('.glass body')
+  const frame = readFileSync(resolve(import.meta.dirname, '../components/workspace/WorkspaceFrame.css'), 'utf-8')
+  const explore = readFileSync(resolve(import.meta.dirname, '../components/workspace/ExploreWorkspace.css'), 'utf-8')
+  expect(frame).toContain('background: var(--glass-chrome)')
+  expect(frame).toContain('background-blend-mode: lighten')
+  expect(frame).toContain('arbora-canopy-wallpaper.webp')
+  expect(explore).toContain('background: var(--glass-primary)')
+  for (const source of [frame, explore]) {
+    expect(source).toContain("[data-transparency='opaque']")
+    expect(source).toContain('(prefers-reduced-transparency: reduce)')
+    expect(source).toContain('(forced-colors: active)')
+    expect(source).toContain('backdrop-filter: none')
+    expect(source).not.toContain('opacity: 0.92')
+  }
 })
 
 // spec: WEBUI-DESIGN-R002.1.1
@@ -190,4 +210,41 @@ it.each(['light', 'dark'] as const)('keeps %s semantic fill text readable at res
     }
   }
   expect(contrastRatio(tokens['--muted-foreground'], tokens['--muted'])).toBeGreaterThanOrEqual(4.5)
+})
+
+// spec: WEBUI-DESIGN-R002.1.1
+it('pins the approved palette and requested fifteen-percent glass refinement', () => {
+  const approved = {
+    '--foreground': '#111111',
+    '--glass-muted': '#111111',
+    '--glass-chrome': 'rgb(241 246 231 / 38%)',
+    '--glass-secondary': 'rgb(218 234 220 / 38%)',
+    '--glass-primary': 'rgb(248 250 243 / 48%)',
+    '--glass-reading': 'rgb(255 255 250 / 60%)',
+    '--glass-control': 'rgb(255 255 252 / 72%)',
+    '--glass-edge': 'rgb(255 255 255 / 76%)',
+    '--glass-field-floor': '#45685b',
+  }
+  const refined = new Set([
+    '--glass-chrome',
+    '--glass-secondary',
+    '--glass-primary',
+    '--glass-reading',
+    '--glass-control',
+  ])
+  for (const [token, value] of Object.entries(approved)) {
+    const current = refined.has(token)
+      ? value.replace(/(\d+)%/, (_, alpha: string) => `${Math.round(Number(alpha) * 0.85)}%`)
+      : value
+    expect(LIGHT[token]).toBe(current)
+  }
+  const wallpaper = readFileSync(resolve(import.meta.dirname, '../assets/arbora-canopy-wallpaper.webp'))
+  expect(createHash('sha256').update(wallpaper).digest('hex')).toBe(
+    'df3bfb3775c406c2eacdd8e1fc5c4daf7e86af69b8fcf74d8e9a79153f56544a',
+  )
+  const frame = readFileSync(resolve(import.meta.dirname, '../components/workspace/WorkspaceFrame.css'), 'utf-8')
+  const explore = readFileSync(resolve(import.meta.dirname, '../components/workspace/ExploreWorkspace.css'), 'utf-8')
+  expect(frame).toContain('backdrop-filter: blur(16px) saturate(125%)')
+  expect(frame).toContain('backdrop-filter: blur(16px) saturate(120%)')
+  expect(explore).toContain('backdrop-filter: blur(16px) saturate(115%)')
 })

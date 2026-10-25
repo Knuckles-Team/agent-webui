@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import { useTheme } from '@/components/theme-provider'
+import { PrivacyConsentSettings } from '@/components/ConsentBanner'
 
-/** Presentation preferences only; system accessibility reductions always win. */
+/** Local settings for every workspace role; accessibility reductions always win. */
 export function WorkspaceAppearance() {
   const appearance = useTheme()
   const details = useRef<HTMLDetailsElement>(null)
@@ -24,7 +25,7 @@ export function WorkspaceAppearance() {
     <details ref={details} className="workspace-appearance">
       <summary ref={summary}>
         <SlidersHorizontal size={16} aria-hidden="true" />
-        Appearance
+        Settings
       </summary>
       <div className="workspace-appearance-options">
         <label>
@@ -76,7 +77,13 @@ export function WorkspaceAppearance() {
             <option value="opaque">Opaque framing</option>
           </select>
         </label>
-        <p>Reading surfaces stay solid. System motion and transparency reductions take precedence.</p>
+        <p>System motion and transparency reductions take precedence.</p>
+        <div className="col-span-2 min-w-0">
+          <PrivacyConsentSettings />
+          <a className="mt-2 inline-flex min-h-11 items-center underline" href="/privacy">
+            Privacy policy and details
+          </a>
+        </div>
       </div>
     </details>
   )

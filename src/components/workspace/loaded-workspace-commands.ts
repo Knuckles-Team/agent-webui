@@ -73,7 +73,9 @@ export function loadedOperateCommands(
     ...servers
       .slice(0, 50)
       .flatMap((server) =>
-        command(`server:${server}`, `Fleet: ${server}`, () => operateHref({ ...state, server, item: null })),
+        command(`server:${server}`, `Fleet: ${server}`, () =>
+          operateHref({ ...state, server, item: null, lens: 'services' }),
+        ),
       ),
     ...items
       .filter(
@@ -83,7 +85,7 @@ export function loadedOperateCommands(
       .slice(0, 50)
       .flatMap((item) =>
         command(`capability:${item.id}`, `Capability: ${item.name} (${item.server})`, () =>
-          operateHref({ ...state, server: item.server, item: item.id }),
+          operateHref({ ...state, server: item.server, item: item.id, lens: 'services' }),
         ),
       ),
   ]
@@ -98,7 +100,12 @@ export function loadedCatalogCommands(
   return servers
     .slice(0, 25)
     .flatMap((server) => {
-      const destination = { ...state, connector: server.server_id, definition: undefined }
+      const destination: OperateState = {
+        ...state,
+        connector: server.server_id,
+        definition: undefined,
+        lens: 'services',
+      }
       return [
         ...command(`connector:${server.server_id}`, `Connector: ${server.name}`, () => operateHref(destination)),
         ...components

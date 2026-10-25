@@ -146,3 +146,39 @@ task most available desktop width. Narrow layouts keep a compact composer and st
 the composer; Expand and Restore adjust its space without opening an overlay or
 changing the conversation. Current page and selected evidence context use the
 existing shared context channel. Navigation does not grant tool authority.
+
+## Workflow plans in Work
+
+Administrators can open **Workflow plans** inside Work while keeping the selected
+conversation, task and trace unchanged. The plan editor uses the existing saved
+workflow catalog. Local name, node, connection and inspector edits remain in
+memory while switching to task inspection and back. Leaving Work or changing the
+signed-in admission discards that preview; drafts are not stored in URLs.
+
+Use the palette buttons to add nodes without dragging. **Inspect node** selects a
+node for editing. **Connect selected node to** lets keyboard users connect nodes. On narrow windows, the palette, canvas and inspector stack in
+normal page flow, with independently scrollable side panels.
+
+This is a local plan preview, not a new orchestration engine. The current workflow
+`Save` and `Run` routes report unavailable, so their controls remain disabled.
+The editor displays capability catalog failures instead of an empty successful catalog. Local capability warnings do not constitute backend
+validation or permission to execute a workflow.
+
+
+## Graph and usage context
+
+Explore includes a read-only **Graph** lens with a sampled node list, adjacency
+links and a plain-text inspector. Graph selections stay separate from evidence
+selections. User access admits Graph and Evidence; Query and Validation still
+require maintainer access. The reader-admitted `/graph` page remains available
+for features that have not moved into Explore, including the legacy editor.
+
+The `/workflows` link opens Workflow plans in Work and still requires admin access.
+The `/usage` link opens Usage in Operate and still requires user access.
+Usage keeps session, timeline and filters while navigating between lenses.
+Selecting a fleet or connector catalog destination opens Services without
+clearing retained usage context.
+
+Analytics require a configured producer. Missing, denied and malformed reads
+remain unavailable rather than displaying invented totals or successful empty data.
+Tenant token totals alone do not establish model costs, sessions or traces.

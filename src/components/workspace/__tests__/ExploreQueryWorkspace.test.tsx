@@ -39,6 +39,10 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function openAdvanced() {
+  const summary = screen.getByText('Advanced')
+  if (!summary.closest('details')!.open) fireEvent.click(summary)
+}
 function surface() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -62,10 +66,11 @@ describe('integrated Explore query lenses', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'SPARQL query' }), {
       target: { value: 'SELECT ?private WHERE {}' },
     })
-    fireEvent.click(screen.getByRole('link', { name: 'validation' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Check data schema' }))
     expect(window.location.search).toBe('?q=retained&lens=validation')
-    fireEvent.click(screen.getByRole('link', { name: 'evidence' }))
-    fireEvent.click(screen.getByRole('link', { name: 'query' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Stored records' }))
+    openAdvanced()
+    fireEvent.click(screen.getByRole('link', { name: 'Query stored data (SPARQL)' }))
     expect(screen.getByRole('textbox', { name: 'SPARQL query' })).toHaveValue('SELECT ?private WHERE {}')
     expect(window.location.href).not.toContain('private')
     expect(api.runSparqlQuery).not.toHaveBeenCalled()
@@ -89,18 +94,20 @@ describe('integrated Explore query lenses', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'SPARQL query' }), {
       target: { value: 'SELECT ?private WHERE {}' },
     })
-    fireEvent.click(screen.getByRole('link', { name: 'evidence' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Stored records' }))
     const evidence = state.tools.get('agent-webui.explore.select')!
-    fireEvent.click(screen.getByRole('link', { name: 'query' }))
+    openAdvanced()
+    fireEvent.click(screen.getByRole('link', { name: 'Query stored data (SPARQL)' }))
     await expect(
       evidence.execute({ entity: null, tool: 'overview' }, { signal: new AbortController().signal }),
     ).rejects.toThrow('stale')
-    fireEvent.click(screen.getByRole('link', { name: 'evidence' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Stored records' }))
     state.role = 'user'
     view.rerender(surface())
     state.role = 'maintainer'
     view.rerender(surface())
-    fireEvent.click(screen.getByRole('link', { name: 'query' }))
+    openAdvanced()
+    fireEvent.click(screen.getByRole('link', { name: 'Query stored data (SPARQL)' }))
     expect(screen.getByRole('textbox', { name: 'SPARQL query' })).not.toHaveValue('SELECT ?private WHERE {}')
   })
   it('preserves native modified links and identity-keyed draft retirement', () => {
@@ -109,7 +116,7 @@ describe('integrated Explore query lenses', () => {
       target: { value: 'SELECT ?secret WHERE {}' },
     })
     const push = vi.spyOn(window.history, 'pushState')
-    fireEvent.click(screen.getByRole('link', { name: 'validation' }), { ctrlKey: true })
+    fireEvent.click(screen.getByRole('link', { name: 'Check data schema' }), { ctrlKey: true })
     expect(push).not.toHaveBeenCalled()
     state.owner = 'owner-b'
     view.rerender(surface())
@@ -194,7 +201,7 @@ describe('attended query editor tools', () => {
   })
   it('uses the existing validation callback only after review', async () => {
     renderWithProviders(surface())
-    fireEvent.click(screen.getByRole('link', { name: 'validation' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Check data schema' }))
     await act(async () => {
       await invoke('edit-query', { text: 'candidate', sourceType: 'text' })
     })
@@ -212,16 +219,17 @@ it('leaves evidence focus with the integrated journey through StrictMode close a
   window.history.replaceState({}, '', '/workspace/explore?q=retained&entity=a')
   renderWithProviders(<StrictMode>{surface()}</StrictMode>)
   expect(await screen.findByRole('heading', { name: 'a' })).not.toHaveFocus()
-  fireEvent.click(screen.getByRole('button', { name: 'Close evidence details' }))
-  expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveFocus()
-  expect(screen.getByRole('textbox', { name: 'Find evidence' })).toHaveValue('retained')
+  fireEvent.click(screen.getByRole('button', { name: 'Close record details' }))
+  expect(screen.getByRole('textbox', { name: 'Search knowledge' })).toHaveFocus()
+  expect(screen.getByRole('textbox', { name: 'Search knowledge' })).toHaveValue('retained')
   act(() => {
     window.history.pushState({}, '', '/workspace/explore?q=retained&entity=a')
     window.dispatchEvent(new Event('history-state-changed'))
   })
   expect(await screen.findByRole('heading', { name: 'a' })).toHaveFocus()
-  fireEvent.click(screen.getByRole('link', { name: 'query' }))
-  expect(screen.getByRole('heading', { name: 'Explore' })).toHaveFocus()
-  fireEvent.click(screen.getByRole('link', { name: 'evidence' }))
+  openAdvanced()
+  fireEvent.click(screen.getByRole('link', { name: 'Query stored data (SPARQL)' }))
+  expect(screen.getByRole('heading', { name: 'Knowledge' })).toHaveFocus()
+  fireEvent.click(screen.getByRole('link', { name: 'Stored records' }))
   expect(screen.getByRole('heading', { name: 'a' })).toHaveFocus()
 })

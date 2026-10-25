@@ -37,7 +37,18 @@ test('response task remains pointer-reachable after transcript scroll and low-he
   }, response)
   await page.setViewportSize({ width: 740, height: 320 })
   await page.goto('/workspace/work?conversation=%2Flayout')
-  await page.getByRole('button', { name: 'Expand chat', exact: true }).click()
+  const panel = page.locator('#workspace-assistant')
+  const transcript = panel.locator('[role="log"]')
+  const expand = page
+    .locator('#workspace-assistant-entry-slot')
+    .getByRole('button', { name: 'Expand chat', exact: true })
+  await expect(panel).toBeHidden()
+  await expect(transcript).toHaveCount(1)
+  await expect(transcript).toBeHidden()
+  await transcript.evaluate((element) => element.setAttribute('data-retention-probe', 'original'))
+  expect(await panel.evaluate((element) => element.getBoundingClientRect().height)).toBe(0)
+  await expect(expand).toHaveAttribute('aria-expanded', 'false')
+  await expand.click()
   const link = page.getByRole('link', { name: 'Inspect response task' })
   for (const viewport of [
     { width: 740, height: 320 },
@@ -81,4 +92,12 @@ test('response task remains pointer-reachable after transcript scroll and low-he
     await page.goBack()
     await expect(page).not.toHaveURL(/task=layout-task/)
   }
+  await page.locator('#chat-message-input').press('Escape')
+  await expect(expand).toBeFocused()
+  await expect(panel).toBeHidden()
+  await expect(transcript).toHaveAttribute('data-retention-probe', 'original')
+  await expand.click()
+  await expect(transcript).toBeVisible()
+  await expect(transcript).toHaveAttribute('data-retention-probe', 'original')
+  await expect(link).toBeVisible()
 })

@@ -25,6 +25,7 @@ class BrowserGateTests(unittest.TestCase):
             for step in steps
             if step.get('id')
             in {
+                'liquid_glass_preview',
                 'workspace_identity',
                 'workspace_catalog',
                 'canopy_native',
@@ -34,7 +35,7 @@ class BrowserGateTests(unittest.TestCase):
                 'execution_graph',
             }
         ]
-        self.assertEqual(len(journeys), 7)
+        self.assertEqual(len(journeys), 8)
         for step in journeys:
             self.assertEqual(
                 step['if'],
@@ -42,6 +43,37 @@ class BrowserGateTests(unittest.TestCase):
                 "&& steps.browser_engine.outcome == 'success' }}",
             )
             self.assertNotIn('continue-on-error', step)
+
+    def test_native_feature_lenses_run_in_the_required_hosted_selection(self):
+        # Source selection only; this assertion is not rendered browser acceptance.
+        steps = self.jobs['workspace-browser']['steps']
+        native = next(step for step in steps if step.get('id') == 'canopy_native')
+        self.assertEqual(
+            native['run'],
+            'pnpm exec playwright test --config e2e/canopy-glass.config.ts '
+            "--grep-invert 'Liquid Glass reference preview'",
+        )
+        preview = next(step for step in steps if step.get('id') == 'liquid_glass_preview')
+        self.assertEqual(
+            preview['run'],
+            'LIQUID_GLASS_PREVIEW=1 pnpm exec playwright test '
+            "--config e2e/canopy-glass.config.ts --grep 'Liquid Glass reference preview' "
+            '--output test-results/liquid-glass-preview',
+        )
+        config = (ROOT / 'e2e/canopy-glass.config.ts').read_text()
+        for suite in (
+            'explore-graph.browser.ts',
+            'work-workflows.browser.ts',
+            'operate-usage.browser.ts',
+        ):
+            self.assertIn(repr(suite), config)
+            self.assertTrue((ROOT / 'e2e' / suite).is_file())
+        artifact = next(
+            step for step in steps
+            if step.get('with', {}).get('name') == 'canopy-glass-browser'
+        )
+        self.assertIn('failure', artifact['if'])
+        self.assertEqual(artifact['with']['path'], 'test-results/canopy-glass/')
 
     def test_aggregate_waits_for_all_required_jobs_even_on_failure(self):
         gate = self.jobs['gates']

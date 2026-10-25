@@ -362,3 +362,57 @@ with base 954a227. Browser qualification remains incomplete.
 Keep the Work/Operate, baseline comparison and native interaction obligations above open.
 Preserve the qualified source child without promoting its broader ancestor.
 Metadata guard tests are not evidence that the remaining redesign is accepted.
+
+### Native Explore sampled graph continuation
+
+- [ ] Qualify R049.1.14's direct read-only graph composition and retained state.
+- [ ] Retain R049.1.2's old-route adaptation, Cypher/MAGMA/editing migration and
+  served/browser full parity. Local GraphView edits are not engine write proof.
+
+Source qualification passed 121 scoped tests, TypeScript and the production build.
+The normal all-files run remains blocked by whole-repository ESLint termination.
+Two bounded attempts received SIGKILL. Actual browser/provider acceptance remains open.
+
+## Contextual Work workflow continuation
+
+- [x] WEBUI-APPS-R049.1.15: Extract and qualify the retained administrator-only workflow plan editor within Work using mounted source fixtures.
+- [ ] WEBUI-APPS-R049.1.2/R047/R048: Complete workflow effect authority, full semantic-tool equivalence and served-provider acceptance separately.
+- [ ] WEBUI-DESIGN-R004.1.2/R004.2.2: Qualify actual narrow/short browser interaction and measured redesign acceptance; source layout rules are not pixel or accessibility evidence.
+
+The backend currently leaves Save/Run unavailable and does not implement the
+capabilities route. Keep in-memory edits explicitly unpersisted. Do not invent
+an effect contract, infer permission from catalog visibility, or claim a public
+release from source-only checks.
+
+Bounded workflow source checks passed: 56 tests, full TypeScript compilation and
+typed lint for changed source files. Whole-repository lint received SIGKILL
+at both 2048 MiB and 1792 MiB heap settings. No whole-lint pass is claimed.
+The other all-files hooks passed; the unavailable complexity executable was
+skipped locally, not measured. Hosted lint and browser qualification remain open.
+
+The expanded workspace/navigation regression passed 244 tests across 26 files.
+Production asset regeneration, strict documentation build and normal staged
+commit hooks passed. The authored browser journey remains unrun locally.
+
+## Contextual Operate usage source — 2026-10-25
+
+- [x] WEBUI-APPS-R049.1.16: Extract analytics primitives and owner-bound controller; compose a native Operate Usage lens with retained typed context and scoped validation.
+- [ ] R004.8/R006.4 and WEBUI-API-R009/R011: Qualify indexed analytics, supported harness discovery, per-session producers and filter-aware drill-down. Missing producers remain unavailable, not synthetic delivery.
+- [ ] R047/R049.1.2 and WEBUI-DESIGN-R004.1.2/R004.2.2: Qualify installed identity, full native-tool parity, browser history, keyboard/touch, 320px, short viewport and measured redesign separately. All original broad acceptance remains.
+
+Source checks pass for the extracted Operate usage panels and typed adapters.
+Local whole-repository ESLint exceeded memory in two bounded attempts; scoped lint passes.
+Native browser scenarios are discoverable, but local Chromium execution remains blocked by the sandbox.
+Hosted browser, full lint and installed-producer evidence remain required. No source fixture closes those gaps.
+
+### Integrated native feature-lens source qualification
+
+Integrated source checks passed 413 tests across 40 files, whole TypeScript checking and changed-source lint.
+The production build and strict documentation build passed. Four hosted-selection contract tests passed.
+The hosted configuration discovers 24 synthetic journeys, including the nine new lens journeys.
+These journeys have not run here. Whole-repository ESLint received SIGKILL in two bounded attempts.
+Scoped source checks cannot close native-browser, real-provider, workflow-effect or full-migration acceptance.
+
+### Request handling without a mode (2026-10-25)
+
+R005.4.1 local source work: delete obsolete request-mode controls and state; add mounted transport regressions; run scoped Chat suites. Full quality gates and served inference acceptance remain separate.

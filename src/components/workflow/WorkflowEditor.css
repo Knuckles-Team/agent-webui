@@ -1,0 +1,27 @@
+.workflow-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  min-width: 0;
+}
+.workflow-editor-side {
+  min-width: 0;
+  height: clamp(12rem, 40dvh, 24rem);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+.workflow-editor-canvas {
+  min-width: 0;
+  height: clamp(16rem, 50dvh, 34rem);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+@media (min-width: 80rem) {
+  .workflow-editor-grid {
+    grid-template-columns: minmax(10rem, 0.7fr) minmax(0, 2fr) minmax(12rem, 0.85fr);
+  }
+  .workflow-editor-side {
+    height: clamp(16rem, 50dvh, 34rem);
+  }
+}

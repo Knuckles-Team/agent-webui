@@ -47,3 +47,35 @@ describe('Explore lens integration state', () => {
     push.mockRestore()
   })
 })
+
+// spec: WEBUI-APPS-R049.1.14
+describe('independent native graph context', () => {
+  it('round trips graph selection alongside evidence history without treating IDs as equivalent', () => {
+    const state = {
+      entity: 'evidence/a',
+      tool: 'history' as const,
+      query: 'retained',
+      lens: 'graph' as const,
+      graphNode: 'node/b',
+      graphType: 'Person',
+    }
+    expect(parseExploreLensState(exploreLensHref(state))).toEqual(state)
+    navigateExploreLens({ ...state, lens: 'evidence' }, 'user', ['evidence'])
+    expect(parseExploreLensState(window.location.href)).toEqual({ ...state, lens: 'evidence' })
+  })
+  it.each([
+    '?lens=graph&graphNode=',
+    '?graphNode=a&graphNode=b',
+    '?graphType=x&graphType=y',
+    '?graphType=Person%20MATCH',
+    '?graphType=1type',
+    '?graphNode=%00',
+  ])('rejects hostile graph state %s', (query) => {
+    expect(() => parseExploreLensState(`/workspace/explore${query}`)).toThrow()
+  })
+  it('does not broaden Explore admission to the legacy graph reader role', () => {
+    const state = { entity: null, tool: 'overview' as const, lens: 'graph' as const }
+    expect(() => navigateExploreLens(state, 'reader', ['graph'])).toThrow('not permitted')
+    expect(() => navigateExploreLens(state, 'user', ['graph'])).not.toThrow()
+  })
+})

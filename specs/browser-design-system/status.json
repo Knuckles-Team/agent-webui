@@ -52,8 +52,8 @@
         "93401c34a695"
       ],
       "verified_by": [
-        "src/__tests__/design-tokens.test.ts:113",
-        "src/__tests__/design-tokens.test.ts:57",
+        "src/__tests__/design-tokens.test.ts:114",
+        "src/__tests__/design-tokens.test.ts:58",
         "src/components/__tests__/ThemeProvider.test.tsx:1"
       ],
       "rollup_of": [
@@ -101,7 +101,7 @@
         "a4c402f68f1b"
       ],
       "verified_by": [
-        "src/__tests__/design-tokens.test.ts:74"
+        "src/__tests__/design-tokens.test.ts:75"
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R005.1",
@@ -175,7 +175,7 @@
       ],
       "verified_by": [
         "e2e/workspace-density.spec.ts:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:170",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:198",
         "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:1"
       ],
       "rollup_of": [
@@ -222,7 +222,9 @@
       "title": "Bounded workspace viewport continuity",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "38c8f13794ee",
         "4d0f9693e45d",
+        "dc30239b2938",
         "f91c2a3a3446"
       ],
       "verified_by": [
@@ -263,7 +265,9 @@
       "title": "Repeatable documentation screenshots",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "1cac40d60bc3"
+        "1cac40d60bc3",
+        "38c8f13794ee",
+        "dc30239b2938"
       ],
       "verified_by": [
         "e2e/documentation-screenshots.browser.ts:1",
@@ -272,20 +276,21 @@
     },
     {
       "id": "WEBUI-DESIGN-R002.1.1",
-      "title": "Canopy Glass material and density",
+      "title": "Liquid Glass material and density",
       "delivery_state": "VERIFIED",
       "landed_in": [
         "12b5f5624953",
+        "38c8f13794ee",
+        "73051bf582bd",
         "93401c34a695",
-        "ac86f2de9817",
-        "ec837ceabe6b"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
-        "src/__tests__/design-tokens.test.ts:120",
-        "src/__tests__/design-tokens.test.ts:152",
-        "src/__tests__/design-tokens.test.ts:181",
-        "src/components/__tests__/ThemeProvider.test.tsx:158"
+        "src/__tests__/design-tokens.test.ts:121",
+        "src/__tests__/design-tokens.test.ts:172",
+        "src/__tests__/design-tokens.test.ts:201",
+        "src/__tests__/design-tokens.test.ts:215"
       ]
     },
     {
@@ -295,15 +300,15 @@
       "landed_in": [
         "12b5f5624953",
         "19b439519a22",
+        "38c8f13794ee",
         "47885260902d",
-        "93401c34a695",
-        "ac86f2de9817"
+        "667aa894cc3d"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
         "e2e/execution-graph.browser.ts:2",
         "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:94",
-        "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:160"
+        "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:161"
       ]
     },
     {
@@ -311,6 +316,9 @@
       "title": "Meaningful interruptible motion",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "667aa894cc3d",
+        "73051bf582bd",
+        "836d8895cd6f",
         "ac86f2de9817"
       ],
       "verified_by": [

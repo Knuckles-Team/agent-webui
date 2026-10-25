@@ -58,23 +58,23 @@
   --text-tiny: 0.75rem;
 }
 
-/* Canopy Glass: stable reading surfaces, translucent shell only. */
+/* Stable semantic palette plus bounded translucent workspace materials. */
 :root {
   --radius: 0.75rem;
   --background: #e9ede5;
-  --foreground: #1f2a24;
+  --foreground: #111111;
   --card: #f7f8f2;
-  --card-foreground: #1f2a24;
+  --card-foreground: #111111;
   --popover: #ffffff;
-  --popover-foreground: #1f2a24;
+  --popover-foreground: #111111;
   --primary: #3e634f;
   --primary-foreground: #ffffff;
   --secondary: #e6ebe1;
-  --secondary-foreground: #46544a;
+  --secondary-foreground: #111111;
   --muted: #e6ebe1;
-  --muted-foreground: #59665c;
+  --muted-foreground: #111111;
   --accent: #dde9d8;
-  --accent-foreground: #274c36;
+  --accent-foreground: #111111;
   --destructive: #963f37;
   --destructive-foreground: #ffffff;
   --border: #c5cfc1;
@@ -87,21 +87,35 @@
   --chart-5: #655946;
   --sugar: #f7f8f2;
   --sidebar: #f7f8f2;
-  --sidebar-foreground: #1f2a24;
+  --sidebar-foreground: #111111;
   --sidebar-primary: #3e634f;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #dde9d8;
-  --sidebar-accent-foreground: #274c36;
+  --sidebar-accent-foreground: #111111;
   --sidebar-border: #c5cfc1;
   --sidebar-ring: #245f70;
   --pydantic-brand: var(--primary);
   --surface-raised: #ffffff;
-  --text-secondary: #46544a;
+  --text-secondary: #111111;
   --material-edge: #ffffff;
   --material-shadow: 0 2px 8px rgb(31 42 36 / 6%), inset 0 1px 0 rgb(255 255 255 / 80%);
   --atmosphere-sage: #b5c5ab;
   --atmosphere-light: #faf3de;
-  --shell-alpha: 92%;
+  --shell-alpha: 32%;
+  --glass-field-floor: #45685b;
+  --glass-field-light: #fff9df;
+  --glass-field-blue: #87aaba;
+  --glass-chrome: rgb(241 246 231 / 32%);
+  --glass-secondary: rgb(218 234 220 / 32%);
+  --glass-primary: rgb(248 250 243 / 41%);
+  --glass-reading: rgb(255 255 250 / 51%);
+  --glass-control: rgb(255 255 252 / 61%);
+  --glass-edge: rgb(255 255 255 / 76%);
+  --glass-line: rgb(55 82 68 / 24%);
+  --glass-muted: #111111;
+  --glass-shadow:
+    0 18px 48px rgb(30 52 41 / 12%), 0 2px 6px rgb(30 52 41 / 5%), inset 0 1px 0 rgb(255 255 255 / 80%),
+    inset 0 -1px 0 rgb(255 255 255 / 20%);
   --status-info: #2a5c75;
   --status-info-surface: #e0edf2;
   --status-warning: #78520a;
@@ -158,7 +172,19 @@
   --material-shadow: 0 2px 8px rgb(0 0 0 / 16%), inset 0 1px 0 rgb(241 245 235 / 8%);
   --atmosphere-sage: #243d2e;
   --atmosphere-light: #343c29;
-  --shell-alpha: 90%;
+  --shell-alpha: 72%;
+  --glass-field-floor: #152d25;
+  --glass-field-light: #627263;
+  --glass-field-blue: #324d60;
+  --glass-chrome: rgb(24 43 34 / 72%);
+  --glass-secondary: rgb(24 43 34 / 74%);
+  --glass-primary: rgb(25 44 35 / 80%);
+  --glass-reading: rgb(28 47 38 / 88%);
+  --glass-control: rgb(35 55 44 / 88%);
+  --glass-edge: rgb(213 234 216 / 30%);
+  --glass-line: rgb(189 211 190 / 28%);
+  --glass-muted: #e1ebdc;
+  --glass-shadow: 0 18px 48px rgb(0 8 4 / 24%), inset 0 1px 0 rgb(223 241 225 / 20%);
   --status-info: #a8d3e8;
   --status-info-surface: #213c49;
   --status-warning: #edd08a;
@@ -169,8 +195,8 @@
 }
 
 .glass {
-  /* Glass uses the light palette; only chrome is translucent. */
-  --shell-alpha: 92%;
+  /* Compatibility theme alias. The independent transparency preference owns material. */
+  --shell-alpha: 32%;
 }
 
 /* ── Dashboard Widget Cards ───────────────────────────────────────── */

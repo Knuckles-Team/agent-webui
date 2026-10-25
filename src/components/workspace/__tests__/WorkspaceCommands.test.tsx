@@ -6,9 +6,11 @@ import type { WebMcpToolDefinition } from '@/lib/webmcp/types'
 import {
   WorkspaceCommandPalette,
   WorkspaceCommandsProvider,
+  useWorkspaceCommandNavigation,
   useWorkspaceCommands,
   type WorkspaceCommand,
 } from '../WorkspaceCommands'
+import { WorkspaceMap } from '../WorkspaceMap'
 const tools = vi.hoisted(() => ({ current: [] as WebMcpToolDefinition[] }))
 vi.mock('@/lib/webmcp/provider', () => ({
   useWebMcpToolSet: (value: WebMcpToolDefinition[]) => {
@@ -87,7 +89,7 @@ describe('bounded workspace commands', () => {
     render(<Surface />)
     open()
     const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByRole('link', { name: 'Work' })).toHaveAttribute('href', '/workspace/work')
+    expect(within(dialog).getByRole('link', { name: 'Chat & tasks' })).toHaveAttribute('href', '/workspace/work')
     fireEvent.change(screen.getByRole('textbox', { name: 'Search destinations' }), { target: { value: 'Alpha' } })
     const link = screen.getByRole('link', { name: 'Evidence Alpha' })
     expect(link).toHaveAttribute('href', loaded[0].href)
@@ -119,7 +121,7 @@ describe('bounded workspace commands', () => {
     )
     open()
     expect(screen.getAllByRole('link')).toHaveLength(1)
-    expect(screen.getByRole('link', { name: 'Operate' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Tools & connections' })).toBeInTheDocument()
   })
   it('withdraws denied-session commands and rejects held handles', async () => {
     const view = render(<Surface />)
@@ -198,5 +200,120 @@ describe('bounded workspace commands', () => {
     expect(screen.getByRole('dialog')).toHaveClass('overflow-auto')
     fireEvent.click(screen.getByRole('button', { name: 'Close destination search' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+})
+
+// spec: WEBUI-APPS-R049.1.14, WEBUI-APPS-R049.1.15, WEBUI-APPS-R049.1.16
+describe('native lens command admission', () => {
+  const graph = {
+    id: 'graph',
+    label: 'Sampled graph',
+    href: '/workspace/explore?q=retained&entity=evidence-a&tool=history&lens=graph&graphNode=graph-a&graphType=Person',
+  }
+  const queries = ['query', 'validation'].map((lens) => ({
+    id: lens,
+    label: `${lens} lens`,
+    href: `/workspace/explore?lens=${lens}`,
+  }))
+  const workflows = { id: 'workflow', label: 'Workflow plan', href: '/workspace/work?lens=workflows&workflow=plan-a' }
+  const usage = {
+    id: 'usage',
+    label: 'Session usage',
+    href: '/workspace/operate?lens=usage&usageTenant=tenant-a&usageSession=session-a&usageDetail=timeline',
+  }
+  it('admits user graph and usage commands while excluding query, validation and workflow authoring', () => {
+    render(<Surface entries={[graph, ...queries, workflows, usage]} />)
+    open()
+    expect(screen.getByRole('link', { name: graph.label })).toHaveAttribute('href', graph.href)
+    expect(screen.getByRole('link', { name: usage.label })).toHaveAttribute('href', usage.href)
+    for (const entry of [...queries, workflows])
+      expect(screen.queryByRole('link', { name: entry.label })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('link', { name: graph.label }))
+    expect(window.location.pathname + window.location.search).toBe(graph.href)
+  })
+  it('keeps reader commands out of Explore and Usage without hiding services', () => {
+    render(<Surface role="reader" entries={[graph, ...queries, workflows, usage]} />)
+    open()
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(['Tools & connections'])
+  })
+  it('admits query and validation for maintainers but requires admin for workflow plans', () => {
+    const view = render(<Surface role="maintainer" entries={[...queries, workflows]} />)
+    open()
+    for (const entry of queries) expect(screen.getByRole('link', { name: entry.label })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: workflows.label })).not.toBeInTheDocument()
+    view.rerender(<Surface role="admin" entries={[...queries, workflows]} />)
+    const link = screen.getByRole('link', { name: workflows.label })
+    fireEvent.click(link)
+    expect(window.location.pathname + window.location.search).toBe(workflows.href)
+  })
+  it('uses the same graph state through semantic commands and retires held graph handles', async () => {
+    const view = render(<Surface entries={[graph]} />)
+    await act(async () => {
+      await tools.current[0].execute({ commandId: commandId(3) }, { signal: new AbortController().signal })
+    })
+    expect(window.location.pathname + window.location.search).toBe(graph.href)
+    const held = tools.current[0]
+    const id = commandId(3)
+    view.rerender(<Surface owner="tenant-b" entries={[]} />)
+    await expect(held.execute({ commandId: id }, { signal: new AbortController().signal })).rejects.toThrow('stale')
+  })
+})
+
+// spec: WEBUI-APPS-R049.1.16
+describe('legacy Operate map continuity', () => {
+  function Map() {
+    const navigation = useWorkspaceCommandNavigation()
+    return (
+      <>
+        <output aria-label="Current map destination">{navigation.current}</output>
+        <WorkspaceMap entries={navigation.entries} current={navigation.current} onSelect={navigation.select} />
+      </>
+    )
+  }
+  function MapSurface({ entries }: { entries: WorkspaceCommand[] }) {
+    return (
+      <WorkspaceCommandsProvider owner="tenant-a" role="user">
+        <Loaded entries={entries} />
+        <Map />
+      </WorkspaceCommandsProvider>
+    )
+  }
+  it.each([
+    ['capability:search', 'server=catalog&item=search'],
+    ['definition:lookup', 'connector=records&definition=lookup'],
+  ])('projects a loaded %s without replacing legacy history or retained usage', (id, selection) => {
+    const retained = 'usageSession=session-a&usageDetail=timeline&usageProject=project-a'
+    const legacy = `/workspace/operate?${selection}&${retained}`
+    const href = `/workspace/operate?${selection}&lens=services&${retained}`
+    const entries = [{ id, label: 'Selected destination', href }]
+    window.history.replaceState({ retained: true }, '', legacy)
+    const view = render(<MapSurface entries={entries} />)
+    const branches = within(view.container.querySelector('.workspace-map-branches') as HTMLElement)
+    expect(branches.getByRole('link', { name: 'Selected destination' })).toHaveAttribute('aria-current', 'location')
+    expect(screen.getByLabelText('Current map destination')).toHaveTextContent(href)
+    expect(window.location.pathname + window.location.search).toBe(legacy)
+    expect(window.history.state).toEqual({ retained: true })
+    view.rerender(<MapSurface entries={[]} />)
+    expect(screen.queryByRole('link', { name: 'Selected destination' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Current map destination')).toHaveTextContent(legacy)
+  })
+  it.each(['health', 'usage'])('does not project an explicit %s lens onto Services', (lens) => {
+    const current = `/workspace/operate?server=catalog&item=search&lens=${lens}`
+    window.history.replaceState({}, '', current)
+    render(
+      <MapSurface
+        entries={[
+          {
+            id: 'capability:search',
+            label: 'Selected destination',
+            href: '/workspace/operate?server=catalog&item=search&lens=services',
+          },
+        ]}
+      />,
+    )
+    expect(screen.getByLabelText('Current map destination')).toHaveTextContent(current)
+    expect(
+      screen.getByText('The selection is not in the loaded map. Its task surface remains available.'),
+    ).toBeVisible()
   })
 })

@@ -73,3 +73,7 @@ R049.1.2 retains complete migration acceptance, including producer-bound executi
 R049.1.3 remains evidence for independent task and trace inspection, not a subagent association or chat target.
 R049.1.10 through R049.1.12 define new targeted actions through one backend contract.
 The browser consumes hierarchy, dependencies, public records and capabilities; it does not schedule agents or infer control targets.
+
+### Request handling without a mode (2026-10-25)
+
+The single composer under R005.4.1 sends requests without an interaction-mode choice. The backend owns request handling.

@@ -1,7 +1,12 @@
 // spec: WEBUI-APPS-R046.1
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { describeWorkspaceDestination, navigateWorkspace, useWorkspaceLocation } from '../workspace-navigation'
+import {
+  describeWorkspaceDestination,
+  navigateWorkspace,
+  resolveWorkspaceRedirect,
+  useWorkspaceLocation,
+} from '../workspace-navigation'
 import { navigateWithinWebUi } from '../webmcp/navigation'
 
 afterEach(() => {
@@ -65,6 +70,9 @@ it.each([
   ['/', 'user', '/workspace/work', 'workspace.work-proof'],
   ['/', 'reader', '/workspace/operate', 'workspace.operate'],
   ['/prompts', 'admin', '/workspace/work?lens=prompts', 'workspace.work-proof'],
+  ['/workflows', 'admin', '/workspace/work?lens=workflows', 'workspace.work-proof'],
+  ['/usage', 'user', '/workspace/operate?lens=usage', 'workspace.operate'],
+  ['/graph', 'reader', '/graph', 'knowledge.graph'],
   ['/overview', 'reader', '/overview', 'observability.dashboard'],
 ] as const)('shares canonical manual/tool entry %s for %s', (path, role, expected, routeId) => {
   expect(navigateWorkspace(path, role)).toMatchObject({ path: expected, routeId })
@@ -75,4 +83,20 @@ it('retains source role admission for compatibility links', () => {
   const push = vi.spyOn(window.history, 'pushState')
   expect(() => navigateWorkspace('/prompts', 'user')).toThrow('not permitted')
   expect(push).not.toHaveBeenCalled()
+})
+
+// spec: WEBUI-APPS-R049.1.14, WEBUI-APPS-R049.1.15, WEBUI-APPS-R049.1.16
+it('preserves native alias source admission and leaves legacy graph reader access unchanged', () => {
+  const push = vi.spyOn(window.history, 'pushState')
+  expect(() => navigateWorkspace('/workflows', 'maintainer')).toThrow('not permitted')
+  expect(() => navigateWorkspace('/usage', 'reader')).toThrow('not permitted')
+  expect(push).not.toHaveBeenCalled()
+  expect(resolveWorkspaceRedirect('/workflows?workflow=plan-a&conversation=kept#context', 'admin')).toBe(
+    '/workspace/work?workflow=plan-a&conversation=kept&lens=workflows#context',
+  )
+  expect(resolveWorkspaceRedirect('/usage?usageSession=session-a&usageDetail=timeline', 'user')).toBe(
+    '/workspace/operate?usageSession=session-a&usageDetail=timeline&lens=usage',
+  )
+  expect(resolveWorkspaceRedirect('/graph', 'reader')).toBeNull()
+  expect(navigateWorkspace('/graph', 'reader').routeId).toBe('knowledge.graph')
 })

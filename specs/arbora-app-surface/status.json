@@ -220,7 +220,11 @@
     "WEBUI-APPS-R049.1.12",
     "WEBUI-APPS-R049.1.13",
     "WEBUI-APPS-R049.2.1",
-    "WEBUI-APPS-R049.2.2"
+    "WEBUI-APPS-R049.2.2",
+    "WEBUI-APPS-R049.1.14",
+    "WEBUI-APPS-R049.1.15",
+    "WEBUI-APPS-R049.1.16",
+    "WEBUI-APPS-R005.4.1"
   ],
   "requirements": [
     {
@@ -490,15 +494,21 @@
       "title": "One chat session list",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "38c8f13794ee",
         "4d0f9693e45d",
-        "d18ec8c78341",
-        "e234cefa7db0"
+        "68ad43e0f7a9",
+        "73051bf582bd",
+        "d18ec8c78341"
       ],
       "verified_by": [
+        "e2e/conversation-first.browser.ts:1",
         "e2e/native-chat.browser.ts:1",
-        "src/__tests__/Chat.conversation-identity.test.tsx:706",
-        "src/components/__tests__/ChatApprovalPresence.test.tsx:1",
-        "src/components/__tests__/ChatPanel.test.tsx:1"
+        "src/__tests__/Chat.conversation-identity.test.tsx:1",
+        "src/__tests__/Chat.conversation-identity.test.tsx:711",
+        "src/__tests__/Chat.conversation-identity.test.tsx:870"
+      ],
+      "rollup_of": [
+        "WEBUI-APPS-R005.4.1"
       ]
     },
     {
@@ -554,11 +564,11 @@
         "af4bf7721747"
       ],
       "verified_by": [
-        "src/components/__tests__/AppRoleVisibility.test.tsx:80",
+        "src/components/__tests__/AppRoleVisibility.test.tsx:79",
         "src/components/__tests__/RoutePurpose.test.tsx:1",
         "src/components/__tests__/RoutePurpose.test.tsx:64",
         "src/components/webmcp/WebMcpControl.test.tsx:146",
-        "src/components/workspace/__tests__/ExploreShell.test.tsx:139"
+        "src/components/workspace/__tests__/ExploreShell.test.tsx:138"
       ],
       "rollup_of": [
         "WEBUI-APPS-R005.6.1",
@@ -585,11 +595,11 @@
         "af4bf7721747"
       ],
       "verified_by": [
-        "src/components/__tests__/AppRoleVisibility.test.tsx:80",
+        "src/components/__tests__/AppRoleVisibility.test.tsx:79",
         "src/components/__tests__/RoutePurpose.test.tsx:1",
         "src/components/__tests__/RoutePurpose.test.tsx:64",
         "src/components/webmcp/WebMcpControl.test.tsx:146",
-        "src/components/workspace/__tests__/ExploreShell.test.tsx:139"
+        "src/components/workspace/__tests__/ExploreShell.test.tsx:138"
       ]
     },
     {
@@ -2008,7 +2018,10 @@
         "WEBUI-APPS-R049.1.10",
         "WEBUI-APPS-R049.1.11",
         "WEBUI-APPS-R049.1.12",
-        "WEBUI-APPS-R049.1.13"
+        "WEBUI-APPS-R049.1.13",
+        "WEBUI-APPS-R049.1.14",
+        "WEBUI-APPS-R049.1.15",
+        "WEBUI-APPS-R049.1.16"
       ]
     },
     {
@@ -2048,9 +2061,9 @@
       "landed_in": [],
       "verified_by": [
         "e2e/workspace-catalog.browser.ts:17",
-        "e2e/workspace-task-lifecycle.spec.ts:396",
+        "e2e/workspace-task-lifecycle.spec.ts:400",
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:170",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:198",
         "src/components/views/__tests__/ArboraReadinessView.test.tsx:1"
       ]
     },
@@ -2061,16 +2074,16 @@
       "landed_in": [
         "158591a6bcef",
         "213863471869",
+        "38c8f13794ee",
         "4d0f9693e45d",
-        "6592af62bedb",
-        "80061c0d6501"
+        "6592af62bedb"
       ],
       "verified_by": [
+        "e2e/conversation-first.browser.ts:1",
         "e2e/native-chat.browser.ts:1",
         "e2e/workspace-task-lifecycle.spec.ts:1",
         "e2e/workspace-task-lifecycle.spec.ts:132",
-        "e2e/workspace-task-lifecycle.spec.ts:265",
-        "src/__tests__/Chat.conversation-identity.test.tsx:706"
+        "e2e/workspace-task-lifecycle.spec.ts:267"
       ]
     },
     {
@@ -2096,7 +2109,7 @@
       ],
       "verified_by": [
         "e2e/workspace-layout.spec.ts:1",
-        "src/__tests__/Chat.conversation-identity.test.tsx:1",
+        "src/__tests__/Chat.conversation-identity.test.tsx:2",
         "src/components/workspace/__tests__/CurrentResponseTaskLink.test.tsx:1"
       ]
     },
@@ -2120,7 +2133,8 @@
         "c767b6a5b17f"
       ],
       "verified_by": [
-        "src/components/__tests__/ConsentBanner.test.tsx:22",
+        "src/components/__tests__/ConsentBanner.test.tsx:204",
+        "src/components/__tests__/ConsentBanner.test.tsx:23",
         "src/components/__tests__/WorkspaceNavigation.test.tsx:51"
       ]
     },
@@ -2157,7 +2171,7 @@
         "422f1629932f"
       ],
       "verified_by": [
-        "src/components/workspace/__tests__/ExploreQueryWorkspace.test.tsx:139",
+        "src/components/workspace/__tests__/ExploreQueryWorkspace.test.tsx:146",
         "src/components/workspace/__tests__/QueryEditorTools.test.tsx:1"
       ]
     },
@@ -2215,13 +2229,18 @@
       "title": "Shared shell and Explore presentation slice",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "38c8f13794ee",
+        "73051bf582bd",
         "93401c34a695",
-        "ac86f2de9817"
+        "ac86f2de9817",
+        "fe8996c4e4d8"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:4",
-        "src/components/workspace/__tests__/ExploreQueryWorkspace.test.tsx:210",
-        "src/components/workspace/__tests__/ExploreWorkspace.test.tsx:135"
+        "e2e/conversation-first.browser.ts:1",
+        "src/__tests__/Chat.conversation-identity.test.tsx:870",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:287",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:322"
       ]
     },
     {
@@ -2230,6 +2249,71 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R049.1.14",
+      "title": "Native read-only graph lens source slice",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "57c4a7bee78b",
+        "fc03d1807ace"
+      ],
+      "verified_by": [
+        "e2e/explore-graph.browser.ts:1",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:233",
+        "src/components/knowledge-graph/__tests__/GraphCanvas.engineMode.test.tsx:158",
+        "src/components/workspace/__tests__/ExploreGraphLens.test.tsx:1",
+        "src/components/workspace/__tests__/WorkspaceCommands.test.tsx:206"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R049.1.15",
+      "title": "Retained contextual workflow plan source",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "c2c6edadaea6",
+        "f005d430aee0",
+        "fc03d1807ace"
+      ],
+      "verified_by": [
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:233",
+        "src/components/__tests__/ResponsiveLimitation.test.tsx:54",
+        "src/components/views/__tests__/WorkflowEditorView.test.tsx:1",
+        "src/components/workspace/__tests__/WorkWorkflowLens.test.tsx:1",
+        "src/components/workspace/__tests__/WorkWorkspace.test.tsx:1"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R049.1.16",
+      "title": "Absorb existing usage analysis into Operate",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "c2c6edadaea6",
+        "c707d71df0fe",
+        "fc03d1807ace"
+      ],
+      "verified_by": [
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:233",
+        "src/components/workspace/__tests__/LoadedWorkspaceCommands.test.tsx:204",
+        "src/components/workspace/__tests__/OperateUsageLens.test.tsx:1",
+        "src/components/workspace/__tests__/WorkspaceCommands.test.tsx:206",
+        "src/components/workspace/__tests__/WorkspaceCommands.test.tsx:262"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R005.4.1",
+      "title": "Requests without interaction modes",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "38c8f13794ee",
+        "68ad43e0f7a9",
+        "dc30239b2938"
+      ],
+      "verified_by": [
+        "src/__tests__/Chat.conversation-identity.test.tsx:1",
+        "src/__tests__/Chat.slash-commands.test.tsx:1",
+        "src/__tests__/Chat.swe-mode.test.tsx:1"
+      ]
     }
   ]
 }

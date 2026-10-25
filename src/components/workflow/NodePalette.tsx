@@ -28,6 +28,7 @@ export const PALETTE_DND_MIME = 'application/x-workflow-node'
 interface NodePaletteProps {
   capabilities: WorkflowCapabilities | null
   loading?: boolean
+  onAdd?: (payload: PaletteDragPayload) => void
 }
 
 /** The static control-flow palette entries. */
@@ -37,34 +38,51 @@ const CONTROL_FLOW: { kind: WorkflowNodeKind; label: string }[] = [
   { kind: 'router', label: 'Router' },
 ]
 
-function PaletteEntry({ payload }: { payload: PaletteDragPayload }) {
+function PaletteEntry({
+  payload,
+  onAdd,
+}: {
+  payload: PaletteDragPayload
+  onAdd?: (payload: PaletteDragPayload) => void
+}) {
   const style = KIND_STYLES[payload.kind]
   const Icon = style.icon
 
-  const onDragStart = (event: DragEvent<HTMLDivElement>) => {
+  const onDragStart = (event: DragEvent<HTMLButtonElement>) => {
     event.dataTransfer.setData(PALETTE_DND_MIME, JSON.stringify(payload))
     event.dataTransfer.effectAllowed = 'move'
   }
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <button
+      type="button"
+      aria-label={`Add ${payload.label}`}
+      onClick={() => onAdd?.(payload)}
       draggable
       onDragStart={onDragStart}
       data-testid={`palette-item-${payload.kind}`}
       className={cn(
-        'flex cursor-grab items-center gap-2 rounded-md border bg-card/70 px-2 py-1.5 text-xs transition-colors hover:bg-accent active:cursor-grabbing',
+        'flex min-h-11 w-full cursor-grab items-center gap-2 rounded-md border bg-card/70 px-2 py-1.5 text-xs transition-colors hover:bg-accent active:cursor-grabbing',
         style.ring,
       )}
     >
       <Icon className={cn('size-3.5 shrink-0', style.accent)} />
       <span className="truncate">{payload.label}</span>
-    </div>
+    </button>
   )
 }
 
-function PaletteGroup({ title, kind, items }: { title: string; kind: WorkflowNodeKind; items: CapabilityItem[] }) {
+function PaletteGroup({
+  title,
+  kind,
+  items,
+  onAdd,
+}: {
+  title: string
+  kind: WorkflowNodeKind
+  items: CapabilityItem[]
+  onAdd?: (payload: PaletteDragPayload) => void
+}) {
   if (items.length === 0) return null
   return (
     <div className="space-y-1.5">
@@ -78,6 +96,7 @@ function PaletteGroup({ title, kind, items }: { title: string; kind: WorkflowNod
         {items.map((item) => (
           <PaletteEntry
             key={item.id}
+            onAdd={onAdd}
             payload={{
               kind,
               refId: makeRefId(kind, item.id),
@@ -92,18 +111,18 @@ function PaletteGroup({ title, kind, items }: { title: string; kind: WorkflowNod
   )
 }
 
-export default function NodePalette({ capabilities, loading }: NodePaletteProps) {
+export default function NodePalette({ capabilities, loading, onAdd }: NodePaletteProps) {
   const agents = useMemo(() => capabilities?.agents ?? [], [capabilities])
   const tools = useMemo(() => capabilities?.tools ?? [], [capabilities])
   const skills = useMemo(() => capabilities?.skills ?? [], [capabilities])
 
   return (
-    <div className="flex h-full w-56 shrink-0 flex-col border-r border-border/40 bg-muted/10">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col border-r border-border/40 bg-muted/10">
       <div className="border-b border-border/40 px-3 py-2">
         <h3 className="text-sm font-bold">Palette</h3>
-        <p className="text-[10px] text-muted-foreground">Drag nodes onto the canvas</p>
+        <p className="text-[10px] text-muted-foreground">Click or press Enter to add, or drag to the canvas</p>
       </div>
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-4 p-3">
           <div className="space-y-1.5">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -111,7 +130,7 @@ export default function NodePalette({ capabilities, loading }: NodePaletteProps)
             </span>
             <div className="space-y-1">
               {CONTROL_FLOW.map((cf) => (
-                <PaletteEntry key={cf.kind} payload={{ kind: cf.kind, label: cf.label }} />
+                <PaletteEntry key={cf.kind} onAdd={onAdd} payload={{ kind: cf.kind, label: cf.label }} />
               ))}
             </div>
           </div>
@@ -119,9 +138,9 @@ export default function NodePalette({ capabilities, loading }: NodePaletteProps)
             <p className="text-xs text-muted-foreground">Loading capabilities…</p>
           ) : (
             <>
-              <PaletteGroup title="Agents" kind="agent" items={agents} />
-              <PaletteGroup title="Tools" kind="tool" items={tools} />
-              <PaletteGroup title="Skills" kind="skill" items={skills} />
+              <PaletteGroup title="Agents" kind="agent" items={agents} onAdd={onAdd} />
+              <PaletteGroup title="Tools" kind="tool" items={tools} onAdd={onAdd} />
+              <PaletteGroup title="Skills" kind="skill" items={skills} onAdd={onAdd} />
             </>
           )}
         </div>

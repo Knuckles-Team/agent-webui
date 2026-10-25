@@ -19,7 +19,6 @@ vi.mock('@/components/workspace/WorkWorkspace', () => ({ default: () => <p>Work 
 vi.mock('@/components/workspace/ExploreQueryWorkspace', () => ({ default: () => <p>Explore evidence</p> }))
 vi.mock('@/components/app-sidebar', () => ({ AppSidebar: () => <p>Legacy sidebar</p> }))
 vi.mock('@/components/WorkspaceNavigation', () => ({ WorkspaceNavigation: () => <p>Legacy navigation</p> }))
-vi.mock('@/components/ConsentBanner', () => ({ ConsentBanner: () => null }))
 vi.mock('@/components/ChatPanel', () => ({
   default: () => {
     probes.chat()
@@ -111,7 +110,7 @@ describe('new workspace composition', () => {
     await screen.findByText('Operate evidence')
     expect(screen.getByText('Conversation')).toBe(assistant)
     expect(assistant).toHaveAttribute('data-instance', instance)
-    expect(screen.getByRole('link', { name: 'operate' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Tools' })).toHaveAttribute('aria-current', 'page')
     expect(probes.dashboard).not.toHaveBeenCalled()
   })
   it('does not absorb legacy workspace routes before their capability migration', async () => {

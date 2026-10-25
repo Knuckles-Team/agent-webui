@@ -1,7 +1,12 @@
-import { ArrowUpRight, ChevronRight, FileText, FolderSearch, X } from 'lucide-react'
+import { ArrowUpRight, ChevronRight, FileText, FolderSearch, Search, X } from 'lucide-react'
 import './ExploreWorkspace.css'
 import { conversationOwnerKey } from '@/lib/chat-store'
-import { parseExploreLensState } from '@/lib/explore-lens-state'
+import {
+  parseExploreLensState,
+  exploreLensHref,
+  navigateExploreLens,
+  type ExploreLensState,
+} from '@/lib/explore-lens-state'
 import { useWorkspaceCommands } from './WorkspaceCommands'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -11,7 +16,7 @@ import { usePageContextPublisher } from '@/lib/page-context'
 import { roleAtLeast } from '@/lib/nav-registry'
 import { useIdentity } from '@/lib/auth'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
-import { EXPLORE_TOOLS, exploreHref, navigateExplore, type ExploreState } from '@/lib/explore-workspace'
+import { EXPLORE_TOOLS, type ExploreState } from '@/lib/explore-workspace'
 import { useWebMcpToolSet } from '@/lib/webmcp/provider'
 import { makeTool } from '@/lib/webmcp/tools'
 import type { ObjectSetResult } from '@/components/views/ObjectExplorerView'
@@ -21,11 +26,13 @@ const button = 'explore-control'
 const revealNavigationFocus = () => true
 
 function useDestination(location: string) {
-  try {
-    return { state: parseExploreLensState(location), error: null }
-  } catch (error) {
-    return { state: { entity: null, tool: 'overview' } as ExploreState, error: String(error) }
-  }
+  return useMemo<{ state: ExploreLensState; error: string | null }>(() => {
+    try {
+      return { state: parseExploreLensState(location), error: null }
+    } catch (error) {
+      return { state: { entity: null, tool: 'overview', lens: 'evidence' }, error: String(error) }
+    }
+  }, [location])
 }
 
 /** A new collection/entity composition, not legacy pages mounted inside tabs. */
@@ -42,7 +49,7 @@ export default function ExploreWorkspace({
   const canRead = active && !identityLoading && !identity.needsSignIn && roleAtLeast(identity.role, 'user')
   const location = useWorkspaceLocation()
   const { state, error: destinationError } = useDestination(location)
-  const workspaceLens = 'lens' in state ? state.lens : 'evidence'
+  const workspaceLens = state.lens
   const query = state.query ?? ''
   const started = state.query !== undefined
   const [draft, setDraft] = useState(query)
@@ -64,33 +71,48 @@ export default function ExploreWorkspace({
     queryFn: () => api.getOntologyObject(state.entity!, 'standard'),
     enabled: canRead && Boolean(state.entity) && !destinationError,
   })
+  const collectionData = canRead && !results.isFetching && !results.isError ? results.data : undefined
+  const selectedData =
+    canRead && !object.isFetching && !object.isError && object.data?.id === state.entity ? object.data : undefined
+  const displayedObject = useMemo(() => {
+    if (!selectedData) return undefined
+    const records = collectionData?.objects ?? []
+    const titles = new Map(records.map((record) => [record.id, record.title]))
+    return {
+      ...selectedData,
+      links: selectedData.links.map((link) => ({
+        ...link,
+        target_title: link.target_title ?? titles.get(link.target_id),
+      })),
+    }
+  }, [selectedData, collectionData])
   const commands = useMemo(
     () =>
       canRead
-        ? (results.data?.objects ?? []).map((row) => ({
+        ? (collectionData?.objects ?? []).map((row) => ({
             id: row.id,
             label: row.title ?? row.id,
-            href: exploreHref({ entity: row.id, tool: 'overview', query: state.query }),
+            href: exploreLensHref({ ...state, entity: row.id, tool: 'overview', lens: 'evidence' }),
           }))
         : [],
-    [canRead, results.data, state.query],
+    [canRead, collectionData, state],
   )
   useWorkspaceCommands(commands, conversationOwnerKey(identity))
   const conversationContext = useMemo(
     () => ({
       selection:
-        canRead && object.data
+        canRead && selectedData
           ? [
               {
                 kind: 'ontology-object',
-                id: object.data.id,
-                label: (object.data.title ?? object.data.id).slice(0, 256),
+                id: selectedData.id,
+                label: (selectedData.title ?? selectedData.id).slice(0, 256),
               },
             ]
           : [],
       filters: { collectionQuery: query.slice(0, 256), evidenceTool: state.tool, workspaceLens },
     }),
-    [canRead, object.data, query, state.tool, workspaceLens],
+    [canRead, selectedData, query, state.tool, workspaceLens],
   )
   usePageContextPublisher(conversationContext)
   useEffect(() => {
@@ -107,7 +129,9 @@ export default function ExploreWorkspace({
   }, [canRead, location, state.entity, revealFocus])
   const transition = (next: ExploreState) => {
     try {
-      navigateExplore({ ...next, query: next.query ?? state.query }, identity.role)
+      navigateExploreLens({ ...state, ...next, query: next.query ?? state.query, lens: 'evidence' }, identity.role, [
+        'evidence',
+      ])
       setNavigationError('')
     } catch (error) {
       setNavigationError(error instanceof Error ? error.message : 'Navigation failed')
@@ -120,11 +144,13 @@ export default function ExploreWorkspace({
       identity.role,
       identity.userKey,
       identity.raw?.tenant,
-      object.data,
-      results.data,
+      selectedData,
+      collectionData,
       state.entity,
       state.query,
       state.tool,
+      state.graphNode,
+      state.graphType,
     ],
   )
   const liveToolGeneration = useRef(toolGeneration)
@@ -141,8 +167,8 @@ export default function ExploreWorkspace({
     const schema = z.object({ entity: z.string().min(1).max(256).nullable(), tool: z.enum(EXPLORE_TOOLS) }).strict()
     const allowed = new Set([
       state.entity,
-      ...(results.data?.objects.map((row) => row.id) ?? []),
-      ...(object.data?.links.map((link) => link.target_id) ?? []),
+      ...(collectionData?.objects.map((row) => row.id) ?? []),
+      ...(selectedData?.links.map((link) => link.target_id) ?? []),
     ])
     return [
       makeTool({
@@ -160,7 +186,7 @@ export default function ExploreWorkspace({
             throw new Error('Evidence navigation context is stale')
           if (next.entity !== null && !allowed.has(next.entity))
             throw new Error('Entity is outside the loaded evidence context')
-          navigateExplore({ ...next, query: state.query }, identity.role)
+          navigateExploreLens({ ...state, ...next, lens: 'evidence' }, identity.role, ['evidence'])
           return next
         },
       }),
@@ -171,20 +197,20 @@ export default function ExploreWorkspace({
     identity.role,
     identity.userKey,
     identity.raw?.tenant,
-    object.data,
-    results.data,
+    selectedData,
+    collectionData,
     state.entity,
-    state.query,
+    state,
   ])
   useWebMcpToolSet(tools)
   if (identityLoading) return <p role="status">Checking workspace access…</p>
-  if (!canRead) return <p role="alert">Explore is not available for the current identity.</p>
+  if (!canRead) return <p role="alert">Knowledge is not available for the current identity.</p>
   return (
     <section
-      aria-label="Explore workspace"
+      aria-label="Knowledge workspace"
       className="workspace-surface explore-workspace flex min-h-0 min-w-0 flex-col gap-3"
     >
-      {showHeading && <h1 className="text-xl font-semibold">Explore</h1>}
+      {showHeading && <h1 className="text-xl font-semibold">Knowledge</h1>}
       <nav aria-label="Evidence scope" className="flex flex-wrap items-center gap-2 text-sm">
         <button
           className={button}
@@ -199,7 +225,7 @@ export default function ExploreWorkspace({
         {state.entity && (
           <>
             <span aria-hidden="true">/</span>
-            <span className="break-all">{object.data?.title ?? state.entity}</span>
+            <span className="break-all">{selectedData?.title ?? state.entity}</span>
             <span aria-hidden="true">/</span>
             <span>{state.tool}</span>
           </>
@@ -207,11 +233,17 @@ export default function ExploreWorkspace({
       </nav>
       {(destinationError ?? navigationError) && <p role="alert">{destinationError ?? navigationError}</p>}
       <div className="workspace-panels explore-panels" data-selected={Boolean(state.entity)}>
-        <details ref={collection} open aria-label="Evidence collection" className="explore-collection">
+        <details ref={collection} open aria-label="Search knowledge" className="explore-collection">
           <summary className="workspace-pane-toggle">
             <FolderSearch size={18} aria-hidden="true" />
-            <h2 className="inline font-semibold">Evidence collection</h2>
+            <h2 className="inline font-semibold">Search knowledge</h2>
+            {!results.isError && results.data && (
+              <span className="explore-collection-count">{results.data.total} items</span>
+            )}
           </summary>
+          <p className="explore-collection-description">
+            Find stored records and inspect their details, related records and change history.
+          </p>
           <form
             className="explore-search"
             onSubmit={(event) => {
@@ -221,17 +253,20 @@ export default function ExploreWorkspace({
             }}
           >
             <label className="min-w-0 flex-1 text-sm">
-              Find evidence
-              <input
-                ref={searchInput}
-                className="explore-search-input"
-                placeholder="Search evidence, entities and source notes"
-                maxLength={4096}
-                value={draft}
-                onChange={(event) => {
-                  setDraft(event.target.value)
-                }}
-              />
+              Search knowledge
+              <span className="explore-search-field">
+                <Search size={17} aria-hidden="true" />
+                <input
+                  ref={searchInput}
+                  className="explore-search-input"
+                  placeholder="Search stored records"
+                  maxLength={4096}
+                  value={draft}
+                  onChange={(event) => {
+                    setDraft(event.target.value)
+                  }}
+                />
+              </span>
             </label>
             <button className={`${button} self-end`} type="submit">
               Search
@@ -239,7 +274,8 @@ export default function ExploreWorkspace({
           </form>
           {!started && (
             <p className="py-4 text-sm text-muted-foreground">
-              Search a collection, then inspect its evidence without leaving your task.
+              Search for information stored in Arbora. Results depend on the connected knowledge service and your
+              access.
             </p>
           )}
           {started && results.isFetching && (
@@ -249,19 +285,21 @@ export default function ExploreWorkspace({
           )}
           {results.isError && (
             <p role="alert" className="py-3">
-              Evidence search is unavailable. Your query is retained; try again when the service is available.
+              Knowledge search is unavailable. Your query is retained; try again when the service is available.
             </p>
           )}
-          {results.data && <p className="py-2 text-xs text-muted-foreground">{results.data.total} matching objects</p>}
-          {results.data?.objects.length === 0 && (
-            <p className="py-3 text-sm">No matching evidence. Try a different query.</p>
+          {collectionData && (
+            <p className="py-2 text-xs text-muted-foreground">{collectionData.total} matching records</p>
           )}
-          <ul className="explore-records" aria-label="Evidence results">
-            {results.data?.objects.map((row) => (
+          {collectionData?.objects.length === 0 && (
+            <p className="py-3 text-sm">No matching records. Try a different query.</p>
+          )}
+          <ul className="explore-records" aria-label="Knowledge results">
+            {collectionData?.objects.map((row) => (
               <li key={row.id}>
                 <a
                   className="explore-record"
-                  href={exploreHref({ entity: row.id, tool: 'overview', query: state.query })}
+                  href={exploreLensHref({ ...state, entity: row.id, tool: 'overview', lens: 'evidence' })}
                   onClick={(event) => {
                     if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.button === 0) {
                       event.preventDefault()
@@ -275,7 +313,13 @@ export default function ExploreWorkspace({
                   </span>
                   <span className="explore-record-label">
                     <span className="block font-medium">{row.title ?? row.id}</span>
-                    <span className="text-xs text-muted-foreground">{row.type}</span>
+                    <span className="explore-record-type">{row.type}</span>
+                    {typeof row.properties?.summary === 'string' && (
+                      <span className="explore-record-summary">{row.properties.summary}</span>
+                    )}
+                    {typeof row.properties?.source === 'string' && (
+                      <span className="explore-record-source">{row.properties.source}</span>
+                    )}
                   </span>
                   <ChevronRight size={16} aria-hidden="true" className="explore-record-arrow" />
                 </a>
@@ -284,17 +328,39 @@ export default function ExploreWorkspace({
           </ul>
         </details>
         {state.entity && (
-          <section aria-label="Selected evidence" className="explore-inspector">
+          <section aria-label="Record details" className="explore-inspector">
+            <nav aria-label="Record location" className="explore-scope flex flex-wrap items-center gap-2 text-sm">
+              <button
+                className={button}
+                onClick={() => {
+                  if (collection.current) collection.current.open = true
+                  transition({ entity: null, tool: 'overview' })
+                  searchInput.current?.focus()
+                }}
+              >
+                Search knowledge
+              </button>
+              {state.entity && (
+                <>
+                  <span aria-hidden="true">/</span>
+                  <span className="break-all">{selectedData?.title ?? state.entity}</span>
+                  <span aria-hidden="true">/</span>
+                  <span>
+                    {{ overview: 'Details', relationships: 'Related records', history: 'Change history' }[state.tool]}
+                  </span>
+                </>
+              )}
+            </nav>
             <div className="explore-inspector-heading">
               <div className="min-w-0">
-                <span className="explore-eyebrow">{object.data?.object_type ?? 'Selected evidence'}</span>
+                <span className="explore-eyebrow">{selectedData?.object_type ?? 'Record details'}</span>
                 <h2 ref={heading} tabIndex={-1} className="break-words text-lg font-semibold">
-                  {object.data?.title ?? state.entity}
+                  {selectedData?.title ?? state.entity}
                 </h2>
               </div>
               <button
                 className="explore-control explore-close"
-                aria-label="Close evidence details"
+                aria-label="Close record details"
                 onClick={() => {
                   if (collection.current) collection.current.open = true
                   transition({ entity: null, tool: 'overview' })
@@ -305,28 +371,28 @@ export default function ExploreWorkspace({
             </div>
             {state.entity && (
               <>
-                <div role="group" aria-label="Evidence tools" className="my-3 flex flex-wrap gap-2">
+                <div role="group" aria-label="Record views" className="my-3 flex flex-wrap gap-2">
                   {EXPLORE_TOOLS.map((tool) => (
                     <button
-                      key={tool}
+                      key={{ overview: 'Details', relationships: 'Related records', history: 'Change history' }[tool]}
                       className={button}
                       aria-pressed={state.tool === tool}
                       onClick={() => {
                         transition({ entity: state.entity, tool })
                       }}
                     >
-                      {tool}
+                      {{ overview: 'Details', relationships: 'Related records', history: 'Change history' }[tool]}
                     </button>
                   ))}
                 </div>
-                {object.isFetching && <p role="status">Loading evidence…</p>}
-                {object.isError && (
-                  <p role="alert">This evidence could not be loaded. It may be unavailable or not permitted.</p>
+                {object.isFetching && <p role="status">Loading record…</p>}
+                {(object.isError || (object.data && object.data.id !== state.entity)) && (
+                  <p role="alert">This record could not be loaded. It may be unavailable or not permitted.</p>
                 )}
-                {object.data && (
-                  <div key={`${object.data.id}:${state.tool}`} className="explore-detail-content">
+                {selectedData && (
+                  <div key={`${selectedData.id}:${state.tool}`} className="explore-detail-content">
                     <EvidenceDetails
-                      object={object.data}
+                      object={displayedObject ?? selectedData}
                       tool={state.tool}
                       onSelect={(entity) => {
                         transition({ entity, tool: 'overview' })
@@ -368,6 +434,7 @@ function EvidenceDetails({
                 {link.link_type} {link.direction === 'in' ? '←' : '→'}{' '}
               </span>
               <span>{link.target_title ?? link.target_id}</span>
+              {link.target_title && <span className="text-xs text-muted-foreground">{link.target_id}</span>}
               <ArrowUpRight size={16} aria-hidden="true" />
             </button>
           </li>
@@ -389,17 +456,47 @@ function EvidenceDetails({
         ))}
       </ol>
     )
+  return <EvidenceOverview object={object} onSelect={onSelect} />
+}
+
+function EvidenceOverview({ object, onSelect }: { object: OntologyObject; onSelect: (id: string) => void }) {
   return (
-    <dl className="explore-properties">
-      {object.properties.length === 0 && <div>No properties are available.</div>}
-      {object.properties.map((property) => (
-        <div key={property.name} className="explore-property">
-          <dt className="text-xs text-muted-foreground">{property.title ?? property.name}</dt>
-          <dd className="break-all text-sm">
-            {typeof property.value === 'string' ? property.value : JSON.stringify(property.value)}
-          </dd>
+    <>
+      <dl className="explore-properties">
+        {object.properties.length === 0 && <div>No properties are available.</div>}
+        {object.properties.map((property) => (
+          <div key={property.name} className="explore-property" data-property={property.name}>
+            <dt className="text-xs text-muted-foreground">{property.title ?? property.name}</dt>
+            <dd className="break-all text-sm">
+              {typeof property.value === 'string' ? property.value : JSON.stringify(property.value)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {(object.links.length > 0 || object.history.length > 0) && (
+        <div className="explore-overview-context">
+          {object.links.length > 0 && (
+            <section aria-label="Related records">
+              <h3>Related records · {object.links.length}</h3>
+              <EvidenceDetails
+                object={{ ...object, links: object.links.slice(0, 4) }}
+                tool="relationships"
+                onSelect={onSelect}
+              />
+            </section>
+          )}
+          {object.history.length > 0 && (
+            <section aria-label="Recent history">
+              <h3>Recent history</h3>
+              <EvidenceDetails
+                object={{ ...object, history: object.history.slice(0, 2) }}
+                tool="history"
+                onSelect={onSelect}
+              />
+            </section>
+          )}
         </div>
-      ))}
-    </dl>
+      )}
+    </>
   )
 }

@@ -83,6 +83,18 @@ jobs:
       - name: Install Chromium and system dependencies
         id: browser_engine
         run: pnpm exec playwright install --with-deps chromium
+      - name: Capture Liquid Glass reference preview
+        id: liquid_glass_preview
+        if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
+        run: LIQUID_GLASS_PREVIEW=1 pnpm exec playwright test --config e2e/canopy-glass.config.ts --grep 'Liquid Glass reference preview' --output test-results/liquid-glass-preview
+      - name: Preserve first Liquid Glass pixels and transition video
+        if: ${{ always() && (steps.liquid_glass_preview.outcome == 'success' || steps.liquid_glass_preview.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: liquid-glass-preview
+          path: test-results/liquid-glass-preview/
+          retention-days: 14
+          if-no-files-found: error
       - name: Workspace identity, native readability and cancellation
         id: workspace_identity
         if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
@@ -99,10 +111,10 @@ jobs:
         id: workspace_catalog
         if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
         run: pnpm exec playwright test --config e2e/workspace-branches.config.ts workspace-catalog
-      - name: Canopy Glass retained evidence and effects
+      - name: Canopy Glass and native graph, workflow and usage lenses
         id: canopy_native
         if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
-        run: pnpm exec playwright test --config e2e/canopy-glass.config.ts
+        run: pnpm exec playwright test --config e2e/canopy-glass.config.ts --grep-invert 'Liquid Glass reference preview'
       - name: Native 200 percent zoom and keyboard reachability
         id: native_zoom
         if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}

@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.3, WEBUI-APPS-R004.4
+// spec: WEBUI-APPS-R049.1.3, WEBUI-APPS-R004.4, WEBUI-APPS-R049.1.15
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'
@@ -7,6 +7,7 @@ import { PublicPageContextSchema, toPublicPageContext } from '@/lib/webmcp/contr
 import { parseBoundedWebMcpOutput } from '@/lib/webmcp/validation'
 import type { WebMcpToolDefinition } from '@/lib/webmcp/types'
 import { ApiError } from '@/lib/api-validation'
+import { api } from '@/lib/api'
 import { readCurrentPlan } from '@/lib/current-plan'
 import { navigateWork, parseWorkState, workApi, workHref } from '@/lib/work-workspace'
 import { useConversations } from '@/lib/chat-store'
@@ -64,13 +65,20 @@ function Probe() {
   parseBoundedWebMcpOutput(PublicPageContextSchema, toPublicPageContext(context))
   return <output aria-label="Selected evidence">{context.selection.map((entry) => entry.id).join(',')}</output>
 }
-function mount() {
-  return renderWithProviders(
+function mount(expand = true) {
+  const view = renderWithProviders(
     <PageContextProvider route="/workspace/work" view="workspace.work-proof">
       <WorkWorkspace />
       <Probe />
     </PageContextProvider>,
   )
+  if (expand && screen.queryByText('Tasks and conversations')) {
+    const summary = screen.getByText('Tasks and conversations').closest('summary')!
+    if (!summary.closest('details')!.open) fireEvent.click(summary)
+    const traces = screen.getByText('Technical traces')
+    if (!traces.closest('details')!.open) fireEvent.click(traces)
+  }
+  return view
 }
 beforeEach(() => {
   window.history.replaceState({}, '', '/workspace/work')
@@ -99,7 +107,7 @@ describe('retained Work composition', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Available conversation' }), {
       target: { value: 'conversation-a' },
     })
-    expect(await screen.findByText('Active: /conversation-a')).toBeInTheDocument()
+    expect(await screen.findByText('Current conversation selected')).toBeInTheDocument()
     fireEvent.click(await screen.findByRole('link', { name: 'task-a' }))
     await screen.findByText('Status: working')
     fireEvent.click(await screen.findByRole('link', { name: 'Recorded trace' }))
@@ -112,12 +120,12 @@ describe('retained Work composition', () => {
       run: 'trace-a',
       node: 'node-a',
     })
-    expect(screen.getByText(/Conversation-to-run association is unavailable/)).toBeInTheDocument()
+    expect(screen.getByText(/These technical records are not linked/)).toBeInTheDocument()
     act(() => {
       window.history.replaceState({}, '', '/workspace/work?conversation=conversation-a&task=task-a')
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
-    expect(screen.getByRole('heading', { name: 'Work' })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Tasks and conversations' })).toHaveFocus()
     expect(screen.getByLabelText('Selected evidence')).toHaveTextContent('task-a')
   })
   it('reads only the selected task run metadata, never its independent trace URL or reference', async () => {
@@ -358,7 +366,7 @@ describe('retained Work composition', () => {
     const conversation = '/' + '😀'.repeat(32)
     window.history.replaceState({}, '', workHref({ conversation, task: null, run: null, node: null }))
     mount()
-    expect(await screen.findByText(`Active: ${conversation}`)).toBeInTheDocument()
+    expect(await screen.findByText('Current conversation selected')).toBeInTheDocument()
   })
 
   it('preserves explicit unavailable trace capability instead of inventing an empty result', async () => {
@@ -391,4 +399,54 @@ describe('typed Work destinations', () => {
     expect(() => navigateWork({ ...selected, conversation: '\ud800' }, 'user')).toThrow()
     expect(push).not.toHaveBeenCalled()
   })
+})
+
+// The mounted Work surface consumes the contextual editor, never the old page.
+it('keeps a workflow preview while inspecting the selected task without retargeting conversation', async () => {
+  state.role = 'admin'
+  vi.spyOn(api, 'listWorkflows').mockResolvedValue([
+    { id: 'workflow:demo', name: 'Demo', steps: ['Check'], orchestrates: [] },
+  ])
+  vi.spyOn(api, 'listWorkflowCapabilities').mockResolvedValue({ agents: [], tools: [], skills: [] })
+  const save = vi.spyOn(api, 'saveWorkflow')
+  const run = vi.spyOn(api, 'runWorkflow')
+  window.history.replaceState(
+    {},
+    '',
+    '/workspace/work?conversation=conversation-a&task=task-a&lens=workflows&workflow=workflow%3Ademo',
+  )
+  mount()
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'workflow name' })).toHaveValue('Demo'))
+  fireEvent.change(screen.getByRole('textbox', { name: 'workflow name' }), {
+    target: { value: 'Retained local plan' },
+  })
+  fireEvent.click(screen.getByRole('link', { name: 'Inspect tasks and traces' }))
+  await screen.findByRole('heading', { name: 'Task task-a' })
+  expect(screen.queryByRole('region', { name: 'Workflow plan editor' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('link', { name: 'Workflow plans' }))
+  expect(screen.getByRole('textbox', { name: 'workflow name' })).toHaveValue('Retained local plan')
+  expect(screen.getByText('Current conversation selected')).toBeInTheDocument()
+  expect(parseWorkState(window.location.href)).toMatchObject({
+    conversation: 'conversation-a',
+    task: 'task-a',
+    workflow: 'workflow:demo',
+  })
+  expect(save).not.toHaveBeenCalled()
+  expect(run).not.toHaveBeenCalled()
+})
+
+// spec: WEBUI-APPS-R049.1.3, WEBUI-APPS-R049.2.1
+it('keeps inspection secondary by default and opens real task deep links', async () => {
+  const view = mount(false)
+  expect(screen.getByText('Tasks and conversations').closest('details')).not.toHaveAttribute('open')
+  act(() => {
+    window.history.pushState({}, '', '/workspace/work?task=task-a')
+    window.dispatchEvent(new Event('history-state-changed'))
+  })
+  expect(await screen.findByText('Status: working')).toBeVisible()
+  expect(screen.getByText('Tasks and conversations').closest('details')).toHaveAttribute('open')
+  expect(
+    screen.getByText('Tasks you can access. They are not automatically linked to this conversation.'),
+  ).toBeVisible()
+  view.unmount()
 })

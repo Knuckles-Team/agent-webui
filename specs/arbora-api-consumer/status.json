@@ -264,7 +264,7 @@
       ],
       "verified_by": [
         "agent/agent_webui/__tests__/test_run_identity.py:3",
-        "src/__tests__/Chat.swe-mode.test.tsx:1"
+        "src/__tests__/Chat.swe-mode.test.tsx:2"
       ]
     },
     {

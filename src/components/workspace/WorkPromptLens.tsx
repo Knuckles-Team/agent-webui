@@ -67,7 +67,7 @@ function AdmittedWorkPromptLens({ state, role }: Props) {
               navigateWork({ ...state, lens }, role)
             }}
           >
-            {lens === 'prompts' ? 'Prompt authoring' : 'Investigation'}
+            {lens === 'prompts' ? 'Saved instructions' : 'Task details'}
           </a>
         ))}
       </nav>
