@@ -153,9 +153,15 @@ test('one native assistant retains draft, controls and context through navigatio
       await expect(page.locator('.workspace-chat-layout')).toHaveAttribute('data-conversation-first', 'true')
       await expect(panel.getByRole('heading', { name: 'Chat & tasks', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Expand chat', exact: true })).toHaveCount(0)
-      const chatBox = await panel.boundingBox()
-      const contextBox = await page.locator('.workspace-context-content').boundingBox()
-      expect(chatBox!.y + chatBox!.height).toBeLessThanOrEqual(contextBox!.y)
+      await expect(page.getByRole('heading', { name: 'Tasks and conversations', exact: true })).toBeVisible()
+      // Read both edges in one rendered frame after the lazy Work route mounts.
+      // Separate browser round trips can straddle its layout/scroll adjustment.
+      const geometry = await page.locator('.workspace-chat-layout').evaluate((layout) => {
+        const chat = layout.querySelector('.workspace-assistant')!.getBoundingClientRect()
+        const context = layout.querySelector('.workspace-context-content')!.getBoundingClientRect()
+        return { chatBottom: chat.bottom, contextTop: context.top }
+      })
+      expect(geometry.chatBottom).toBeLessThanOrEqual(geometry.contextTop)
     }
     await expect(page.locator('#chat-panel-toggle, #agent-chat-drawer')).toHaveCount(0)
     await expect(input).toHaveCount(1)

@@ -955,7 +955,7 @@ mobile/device, all-route migration and installed-provider acceptance.
 
 Critical compact-state controls remain outside optional message tools: the
 existing SWE mode, live session and Stop controls. Request-mode selection is
-removed under R005.4.1. Pending
+deleted under R005.4.1. Pending
 approval renderers mark their actual review state. The shell exposes
 Review required approval, which only expands and focuses that same UI.
 No approval decision, execution path or provider is added. Clearing the existing
@@ -1133,4 +1133,4 @@ browser geometry acceptance or provider completeness.
 
 ### Request handling without a mode (2026-10-25)
 
-R005.4.1 removes Chat request-mode UI, storage and payload only. Reuse the existing agents.run host adapter, which already forwards ordinary user text without this field. Do not classify prompts locally or alter authorization, approvals, model selection or developer workspace routing.
+R005.4.1 deletes Chat request-mode UI, storage and payload only. Reuse the existing agents.run host adapter, which already forwards ordinary user text without this field. Do not classify prompts locally or alter authorization, approvals, model selection or developer workspace routing.

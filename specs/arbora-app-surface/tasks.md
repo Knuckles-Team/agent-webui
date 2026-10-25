@@ -415,4 +415,4 @@ Scoped source checks cannot close native-browser, real-provider, workflow-effect
 
 ### Request handling without a mode (2026-10-25)
 
-R005.4.1 local source work: remove obsolete request-mode controls and state; add mounted transport regressions; run scoped Chat suites. Full quality gates and served inference acceptance remain separate.
+R005.4.1 local source work: delete obsolete request-mode controls and state; add mounted transport regressions; run scoped Chat suites. Full quality gates and served inference acceptance remain separate.
