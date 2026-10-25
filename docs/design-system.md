@@ -253,3 +253,40 @@ cannot establish those outcomes.
 Workspace navigation and selected records use a pale translucent fill without dark partial inset borders. Shared controls use 14px text, a 20px line height and aligned icons; selected navigation uses medium weight. Section and record titles retain a restrained hierarchy. Keyboard focus keeps its complete 2px perimeter outline, while semantic submit actions retain their contrasting colors. Forced colors use system selection and focus indicators.
 
 Ordinary buttons, including attachment, microphone and options controls, share `--button-neutral` (translucent sage), hover and pressed fills, with no resting outline. Primary submit uses the stronger `--button-primary` fill and its semantic foreground. Keyboard focus remains outlined; destructive, disabled, opaque and forced-color states retain distinct accessible treatment. These button tokens refine controls only, not the approved panel or wallpaper values.
+
+### Named appearance palettes
+
+Settings offers Green, Blue, Red, Purple, Pink, Orange and Yellow. Green restores
+the accepted Canopy tokens above, including its original wallpaper, glass and
+typography. Alternatives reuse the existing persisted accent and derive shared
+neutral/primary button, hover, pressed and focus colors. Existing custom accents
+remain available as Custom; legacy automatically saved blue still migrates to
+green unless explicitly chosen. Light/dark and material preferences stay separate.
+
+Derived primary/action text targets 4.5:1, as do neutral button labels in every
+state; focus targets 3:1 against the supporting surface. Opaque and system
+reduced-transparency modes remove button translucency. Forced colors uses native
+system button/focus colors. Danger, warning and status tokens do not change with
+the palette, and status always retains text or another non-color cue.
+
+### Optional wallpaper ambience
+
+Workspace Settings offers Off, Subtle and Expressive wallpaper motion. Off is the
+initial choice and keeps the original Canopy photo unchanged. Other scenes offer
+static or gently moving tree, roots and fluid motifs. Roots represent source
+systems, the trunk represents the agent harness, leaves represent knowledge, and
+light represents the workspace. These are decorative metaphors, not live activity
+or graph relationships.
+
+Weather preview is manual: Clear, Rain, Snow, Thunderstorm, Fog, Heat and Cloudy.
+The preview does not request location or contact a weather service. Storms use
+slow droplets without flashes or audio. Effects remain behind content and cannot
+intercept input. Reduced motion freezes the scene; opaque surfaces, reduced
+transparency and forced colors suppress the overlay. Hidden/offscreen scenes
+pause. Returning to Off/Canopy/Clear stops drawing, sets the backing dimensions
+to zero and retains the photo alone.
+
+The renderer caps backing pixels at 800,000 and device pixel ratio at 1.5. Subtle
+schedules up to 12 draws per second; Expressive schedules up to 24. These are
+work limits, not measured frame-rate guarantees. Broader input, memory and visual
+qualification remains separate from these bounds.

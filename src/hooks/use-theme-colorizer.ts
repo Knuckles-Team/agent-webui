@@ -1,4 +1,5 @@
 import { useState, useLayoutEffect } from 'react'
+import { derivePaletteTokens } from '@/lib/theme-palette'
 
 const DEFAULT_BASE_COLOR = '0.47 0.055 155'
 const DECIMAL_COMPONENT = /^-?(?:\d+(?:\.\d*)?|\.\d+)$/
@@ -56,9 +57,16 @@ function isCustomAccent(baseColor: string, explicitChoice: boolean) {
   return explicitChoice || (baseColor !== DEFAULT_BASE_COLOR && baseColor !== '0.52 0.18 260')
 }
 function applyActionAccent(root: HTMLElement, baseColor: string, custom: boolean) {
-  const [, chroma, hue] = baseColor.split(' ')
-  const dark = root.classList.contains('dark')
-  const color = `oklch(${dark ? 0.8 : 0.47} ${Math.min(Number(chroma), 0.08)} ${hue})`
+  // Selecting green retires every derived override and restores the accepted baseline.
+  custom = custom && baseColor !== DEFAULT_BASE_COLOR
+  const tokens = derivePaletteTokens(baseColor, root.classList.contains('dark'))
+  const color = tokens.primary
+  if (custom) root.dataset.palette = 'custom'
+  else delete root.dataset.palette
+  for (const [name, value] of Object.entries(tokens)) {
+    if (custom) root.style.setProperty(`--palette-${name}`, value)
+    else root.style.removeProperty(`--palette-${name}`)
+  }
   for (const property of ['--primary', '--sidebar-primary']) {
     if (custom) root.style.setProperty(property, color)
     else root.style.removeProperty(property)

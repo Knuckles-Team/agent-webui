@@ -490,34 +490,60 @@ textarea::placeholder {
   font-weight: 500;
 }
 
+/* Derived hues only: default green retains the exact accepted material tokens. */
+:root[data-palette='custom'] {
+  --ring: var(--palette-focus);
+  --sidebar-ring: var(--palette-focus);
+  --accent: var(--palette-neutral);
+  --sidebar-accent: var(--palette-neutral);
+  --button-neutral: color-mix(in oklch, var(--palette-neutral) 64%, transparent);
+  --button-neutral-hover: color-mix(in oklch, var(--palette-neutral-hover) 78%, transparent);
+  --button-neutral-active: color-mix(in oklch, var(--palette-neutral-active) 84%, transparent);
+  --button-primary: color-mix(in oklch, var(--palette-primary) 96%, transparent);
+  --button-primary-hover: color-mix(in oklch, var(--palette-primary-hover) 98%, transparent);
+}
+:root.dark[data-palette='custom'] {
+  --button-neutral: color-mix(in oklch, var(--palette-neutral) 88%, transparent);
+  --button-neutral-hover: color-mix(in oklch, var(--palette-neutral-hover) 92%, transparent);
+  --button-neutral-active: color-mix(in oklch, var(--palette-neutral-active) 96%, transparent);
+}
+:root[data-palette='custom'] .ui-button[data-variant='default']:not(:disabled):active,
+:root[data-palette='custom'] .ui-button[data-variant='default']:not(:disabled)[aria-pressed='true'] {
+  background: var(--palette-primary-active);
+}
+
 :root[data-transparency='opaque'] {
-  --button-neutral: #b8cfb9;
-  --button-neutral-hover: #adc9b1;
-  --button-neutral-active: #9fbfa4;
+  --button-neutral: var(--palette-neutral, #b8cfb9);
+  --button-neutral-hover: var(--palette-neutral-hover, #adc9b1);
+  --button-neutral-active: var(--palette-neutral-active, #9fbfa4);
   --button-primary: var(--primary);
-  --button-primary-hover: var(--primary);
+  --button-primary-hover: var(--palette-primary-hover, var(--primary));
 }
 :root.dark[data-transparency='opaque'] {
-  --button-neutral: #3d5642;
-  --button-neutral-hover: #435e48;
-  --button-neutral-active: #49654e;
+  --button-neutral: var(--palette-neutral, #3d5642);
+  --button-neutral-hover: var(--palette-neutral-hover, #435e48);
+  --button-neutral-active: var(--palette-neutral-active, #49654e);
 }
 @media (prefers-reduced-transparency: reduce) {
-  :root {
-    --button-neutral: #b8cfb9;
-    --button-neutral-hover: #adc9b1;
-    --button-neutral-active: #9fbfa4;
+  :root,
+  :root[data-palette='custom'] {
+    --button-neutral: var(--palette-neutral, #b8cfb9);
+    --button-neutral-hover: var(--palette-neutral-hover, #adc9b1);
+    --button-neutral-active: var(--palette-neutral-active, #9fbfa4);
     --button-primary: var(--primary);
-    --button-primary-hover: var(--primary);
+    --button-primary-hover: var(--palette-primary-hover, var(--primary));
   }
-  :root.dark {
-    --button-neutral: #3d5642;
-    --button-neutral-hover: #435e48;
-    --button-neutral-active: #49654e;
+  :root.dark,
+  :root.dark[data-palette='custom'] {
+    --button-neutral: var(--palette-neutral, #3d5642);
+    --button-neutral-hover: var(--palette-neutral-hover, #435e48);
+    --button-neutral-active: var(--palette-neutral-active, #49654e);
   }
 }
 @media (forced-colors: active) {
-  .ui-button {
+  .ui-button,
+  :root[data-palette='custom'] .ui-button[data-variant='default']:not(:disabled):active,
+  :root[data-palette='custom'] .ui-button[data-variant='default']:not(:disabled)[aria-pressed='true'] {
     background: ButtonFace;
     color: ButtonText;
     border: 1px solid ButtonText;

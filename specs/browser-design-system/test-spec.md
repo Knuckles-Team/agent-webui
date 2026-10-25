@@ -326,3 +326,38 @@ Keyboard-only skip controls must reveal with visible focus, without reserving id
 At 200-percent text, text-bearing header controls reflow rather than overflow fixed icon columns.
 An expanded secondary assistant must remain reachable by ordinary wheel scrolling as well as focus.
 These cases do not claim live-provider execution or full-route acceptance.
+
+## Context-aware wallpaper acceptance
+
+These cases describe future evidence, not existing implementation or accepted recordings.
+Tests enter real appearance controls and the shared frame, not an isolated renderer demonstration.
+
+| Requirement | Future proving tests | Positive and negative cases |
+|---|---|---|
+| WEBUI-DESIGN-R005.3 | Extend `WorkspaceFrame.test.tsx` and `canopy-glass.browser.ts`. | Follow context and manual override preserve Chat/Knowledge/Tools labels, navigation, drafts and identity. Assert Canopy/Fluid first. Assert Roots=connectors, Trunk=harness, Branches/leaves=knowledge and Light=workspace. Require matching supplied relationships/events for activity. Reject missing, stale, duplicate, unrelated and out-of-order events. Preserve the actual task graph. |
+| WEBUI-DESIGN-R005.4 | Extend `ThemeProvider.test.tsx`, `WorkspaceFrame.test.tsx` and `canopy-glass.browser.ts`. | Assert Off/Subtle/Expressive, invalid/blocked storage, initial reduction and preference changes during motion. Interrupt repeated input and hide/show cycles without stale callbacks or replay. Exercise unavailable battery signals, resource fallback, unsupported rendering and context loss. Preserve text, focus, controls and contrast. |
+| WEBUI-DESIGN-R005.5 | Extend `ThemeProvider.test.tsx`, `WorkspaceFrame.test.tsx` and `canopy-glass.browser.ts`. | Prove explicit provider/location opt-in, manual-preview labels and all seven conditions. Reject automatic GPS/network lookup, secret location, expired or mismatched responses and requests after disable. Cover unknown, stale, offline and unsupported states. Assert droplets/fog/snow spare content; heat preserves UI coordinates. |
+
+Capture wide and 320px layouts in light/dark, opaque, reduced-motion, reduced-transparency and forced-color states.
+Review brightest/darkest animation frames against existing 4.5:1 text and 3:1 control/focus targets.
+Compare normal-motion recordings with separate reduced-motion evidence at the exact candidate revision.
+Assert one shared renderer after opening panels, changing scenes or navigating repeatedly.
+Assert zero wallpaper animation work while Off, reduced or hidden.
+Without explicit ambience opt-in, settled scenes must schedule no continuous animation.
+Expressive selection alone must never enable weather requests or ambient playback.
+Effects must never add audio, sharp flashes, independent status announcements or pointer interception.
+
+R010 evidence must name numeric frame-work, backing-pixel, allocation and memory-growth budgets before capture.
+Retain all existing R010 latency, load and provenance targets; wallpaper tests do not replace them.
+Measure identical Off/Subtle/Expressive runs, including streaming, selection, typing, resize and repeated scene replacement.
+Run five-minute samples with ambience off/on and 25 scene replacements; record memory and live-resource counts before and after.
+Missing measurement support remains an explicit acceptance gap, not a passing result.
+Event/provider fixtures prove browser mapping only; served evidence remains necessary before claiming real activity or current-weather support.
+
+## Named palette continuation
+
+WEBUI-DESIGN-R002.1.1 adds deterministic per-palette light/dark action and neutral
+state contrast, persistence, green reset and semantic-token isolation checks.
+Mount Settings to exercise labelled palette selection and remount persistence.
+Qualify real-browser light/dark, opaque, reduced-transparency and forced-colors
+galleries separately; source tests do not establish composited pixel acceptance.

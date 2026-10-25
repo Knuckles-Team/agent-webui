@@ -78,3 +78,18 @@ editor, run, administration and authentication surfaces. The existing R002–R00
 R010, WEBUI-APPS-R049.1.2/R049.2/R050 obligations remain open. Source tests,
 synthetic rendered screenshots and a polished shell cannot establish full
 redesign, accessibility, mobile, performance or served-provider acceptance.
+
+## Context-aware wallpaper options
+
+WEBUI-DESIGN-R005.3 adds scene selection and truthful activity mapping.
+WEBUI-DESIGN-R005.4 adds wallpaper controls and lifecycle safeguards.
+WEBUI-DESIGN-R005.5 adds optional weather-linked ambience and explicit manual previews.
+R010 retains performance acceptance; R002.1.1 retains material and contrast acceptance.
+Scene names describe appearance, never product destinations or backend authority.
+Chat, Knowledge and Tools remain the visible destination labels.
+The first proof covers Sunlit canopy and Fluid gradient behind the existing glass surfaces.
+Roots represent source connectors; the trunk represents the harness; branches and leaves represent knowledge.
+Light represents workspace attention. Weather follows actual conditions only after explicit opt-in.
+Event-bound ecosystem scenes follow the first proof; optional weather scenes come last.
+This amendment adds no renderer, shader dependency, backend event contract or release prerequisite.
+Existing source receipts do not prove these new requirements.

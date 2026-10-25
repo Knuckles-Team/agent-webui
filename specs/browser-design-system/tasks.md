@@ -214,3 +214,19 @@ Do not infer that authored test bindings complete those journeys.
 The original parent obligations and qualified source-child receipts remain intact.
 The generated ancestor state must remain open while either retained acceptance child remains open.
 Metadata guard tests preserve this distinction; they are not feature-acceptance evidence.
+
+## Context-aware wallpaper delivery
+
+- [ ] WEBUI-DESIGN-R005.3: Add context/manual scene selection through the existing provider and shared frame. Qualify Canopy/Fluid first, then evidence-bound connector roots, harness trunk and knowledge branches/leaves.
+- [ ] WEBUI-DESIGN-R005.4: Add wallpaper motion controls and lifecycle safeguards. Prove reduction, interruption, contrast and static fallback through real controls. Record exact-candidate R010 resource evidence without closing broader acceptance.
+- [ ] WEBUI-DESIGN-R005.5: Add opt-in weather following and labelled manual previews after the scene proof. Qualify provider/location scope, freshness states and glass-safe effects. Keep default idle tests and all broader acceptance open.
+
+## Named palette source continuation
+
+- Extended R002.1.1 before implementation; reused the colorizer and legacy accent
+  storage rather than adding another theme wrapper or preference store.
+- Added seven named Settings choices, bounded shared state/focus tokens, green
+  reset and material/accessibility fallbacks. Semantic statuses stay independent.
+- Scoped deterministic token, colorizer, Settings/provider and consent tests pass.
+  Exact-candidate browser gallery and aggregate gates remain outstanding; this
+  bounded implementation does not close parent design acceptance.

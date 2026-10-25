@@ -462,3 +462,215 @@ test('Canopy narrow entry and explicit map keep a usable task', async ({ page },
   await expect(search).toHaveValue('project')
   await page.screenshot({ path: info.outputPath('canopy-narrow-returned-search.png'), animations: 'disabled' })
 })
+
+// spec: WEBUI-DESIGN-R005.4
+// spec: WEBUI-DESIGN-R005.5
+test('manual wallpaper settings retain the rendered workspace and bounded backing store', async ({ page }, info) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  const failures = await prepare(page, 'light')
+  const canvas = page.locator('.workspace-wallpaper')
+  await expect(canvas).toHaveCount(1)
+  await expect(canvas).toHaveAttribute('aria-hidden', 'true')
+  await expect(canvas).toHaveCSS('pointer-events', 'none')
+  await page.locator('.workspace-appearance > summary').click()
+  await expect(page.getByLabel('Wallpaper motion')).toHaveValue('off')
+  await expect(page.getByText(/Manual weather only/)).toBeVisible()
+  await page.getByLabel('Wallpaper scene').selectOption('tree')
+  await page.getByLabel('Weather preview (manual)').selectOption('thunderstorm')
+  const measurements = []
+  for (const mode of ['off', 'subtle', 'expressive']) {
+    await page.getByLabel('Wallpaper motion').selectOption(mode)
+    const result = await canvas.evaluate(async (element) => {
+      const node = element as HTMLCanvasElement
+      const first = node.toDataURL()
+      const frames: number[] = []
+      const longTasks: number[] = []
+      const memory = performance as Performance & { memory?: { usedJSHeapSize: number } }
+      const heapBefore = memory.memory?.usedJSHeapSize ?? null
+      const supportsLongTask = PerformanceObserver.supportedEntryTypes.includes('longtask')
+      const observer = supportsLongTask
+        ? new PerformanceObserver((list) => {
+            longTasks.push(...list.getEntries().map((entry) => entry.duration))
+          })
+        : null
+      observer?.observe({ type: 'longtask' })
+      let previous = performance.now()
+      const start = previous
+      await new Promise<void>((resolve) => {
+        function sample(now: number) {
+          frames.push(now - previous)
+          previous = now
+          if (now - start >= 1000) resolve()
+          else requestAnimationFrame(sample)
+        }
+        requestAnimationFrame(sample)
+      })
+      observer?.disconnect()
+      return {
+        longTasks: supportsLongTask ? longTasks : null,
+        heapBefore,
+        heapAfter: memory.memory?.usedJSHeapSize ?? null,
+        width: node.width,
+        height: node.height,
+        changed: first !== node.toDataURL(),
+        rafIntervals: frames,
+        dpr: devicePixelRatio,
+        userAgent: navigator.userAgent,
+      }
+    })
+    expect(result.width * result.height).toBeLessThanOrEqual(800_000)
+    expect(result.changed).toBe(mode !== 'off')
+    // A trusted keyboard event to its next animation frame, not remote-driver latency.
+    await page.evaluate(() => {
+      delete document.documentElement.dataset.wallpaperInputSample
+      document.addEventListener(
+        'keydown',
+        (event) => {
+          const delivered = performance.now() - event.timeStamp
+          requestAnimationFrame(() => {
+            document.documentElement.dataset.wallpaperInputSample = JSON.stringify({
+              trusted: event.isTrusted,
+              deliveredMs: delivered,
+              nextFrameMs: performance.now() - event.timeStamp,
+            })
+          })
+        },
+        { once: true },
+      )
+    })
+    await page.keyboard.press('Tab')
+    await expect(page.locator('html')).toHaveAttribute('data-wallpaper-input-sample', /trusted/)
+    const inputSample = await page.locator('html').getAttribute('data-wallpaper-input-sample')
+    measurements.push({ mode, ...result, inputSample: JSON.parse(inputSample!) })
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.workspace-appearance > summary')).toBeFocused()
+    await page.screenshot({ path: info.outputPath(`wallpaper-${mode}.png`) })
+    await page.locator('.workspace-appearance > summary').click()
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  // Let the browser deliver its media-query change before comparing static pixels.
+  await page.waitForTimeout(100)
+  const staticImage = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL())
+  await page.waitForTimeout(250)
+  expect(await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL())).toBe(staticImage)
+  await page.getByLabel('Surfaces').selectOption('opaque')
+  await expect(canvas).toBeHidden()
+  await page.getByLabel('Surfaces').selectOption('glass')
+  await expect(canvas).toBeVisible()
+  await expect.poll(() => canvas.evaluate((element) => (element as HTMLCanvasElement).width)).toBeGreaterThan(1)
+  await info.attach('wallpaper-cadence-sample.json', {
+    body: JSON.stringify({
+      note: 'Synthetic fixture: one-second browser rAF/long-task samples, one trusted key-to-frame sample and optional Chromium JS heap snapshots. Not canvas FPS, total memory or long-run production acceptance.',
+      measurements,
+    }),
+    contentType: 'application/json',
+  })
+  expect(failures).toEqual([])
+})
+
+// spec: WEBUI-DESIGN-R002.1.1
+for (const palette of ['Green', 'Blue', 'Red', 'Purple', 'Pink', 'Orange', 'Yellow']) {
+  test(`Canopy ${palette} palette native gallery and accessible states`, async ({ page }, info) => {
+    test.setTimeout(90_000)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const failures = await prepare(page, 'light')
+    await page
+      .getByRole('navigation', { name: 'Primary workspace contexts' })
+      .getByRole('link', { name: 'Chat', exact: true })
+      .click()
+    const input = page.getByRole('textbox', { name: 'Message input' })
+    await input.fill('Synthetic palette gallery draft — do not send')
+    const appearance = page.locator('.workspace-appearance summary')
+    const primary = page.getByRole('button', { name: 'Send message', exact: true })
+    const neutral = page.getByRole('button', { name: 'Attach image files', exact: true })
+    const evidence: object[] = []
+    for (const theme of ['light', 'dark'] as const) {
+      for (const material of ['glass', 'opaque', 'forced'] as const) {
+        await page.emulateMedia({ colorScheme: theme, forcedColors: material === 'forced' ? 'active' : 'none' })
+        await appearance.click()
+        await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption(theme)
+        await page
+          .getByRole('combobox', { name: 'Surfaces', exact: true })
+          .selectOption(material === 'opaque' ? 'opaque' : 'glass')
+        await page.getByRole('combobox', { name: 'Palette', exact: true }).selectOption({ label: palette })
+        await page.keyboard.press('Escape')
+        await expect(appearance).toBeFocused()
+        await expect(input).toHaveValue('Synthetic palette gallery draft — do not send')
+        await expect(primary).toBeEnabled()
+        if (material !== 'glass') await expect(page.locator('.workspace-map')).toHaveCSS('backdrop-filter', 'none')
+        for (const [name, control] of [
+          ['primary', primary],
+          ['neutral', neutral],
+        ] as const) {
+          await page.mouse.move(0, 0)
+          const resting = await contrast(control)
+          expect(resting).toBeGreaterThanOrEqual(4.5)
+          await control.hover()
+          const hover = await contrast(control)
+          expect(hover).toBeGreaterThanOrEqual(4.5)
+          await page.mouse.down()
+          const pressed = await contrast(control)
+          expect(pressed).toBeGreaterThanOrEqual(4.5)
+          // Release away from the control: never submit a message or open a file dialog.
+          await page.mouse.move(0, 0)
+          await page.mouse.up()
+          await control.focus()
+          await page.keyboard.press('Tab')
+          await page.keyboard.press('Shift+Tab')
+          await expect(control).toBeFocused()
+          await expect(control).toHaveCSS('outline-style', 'solid')
+          expect(
+            await control.evaluate((element) => parseFloat(getComputedStyle(element).outlineWidth)),
+          ).toBeGreaterThanOrEqual(2)
+          const styles = await control.evaluate((element) => {
+            const css = getComputedStyle(element)
+            return { fill: css.backgroundColor, text: css.color, focus: css.outlineColor }
+          })
+          evidence.push({ theme, material, control: name, resting, hover, pressed, ...styles })
+        }
+        await page.screenshot({
+          path: info.outputPath(`palette-${palette.toLowerCase()}-${theme}-${material}.png`),
+          animations: 'disabled',
+        })
+      }
+    }
+    await info.attach('palette-computed-contrast.json', {
+      body: JSON.stringify(
+        {
+          note: 'Browser-resolved CSS ancestor compositing; screenshots separately require pixel review over the wallpaper.',
+          evidence,
+        },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+    expect(failures).toEqual([])
+  })
+}
+
+// Chromium exposes reduced-transparency through CDP; assert support before claiming evidence.
+test('Canopy palette follows supported system reduced transparency', async ({ page, browserName }, info) => {
+  test.skip(browserName !== 'chromium', 'Reduced-transparency emulation requires Chromium CDP')
+  await prepare(page, 'light')
+  const session = await page.context().newCDPSession(page)
+  await session.send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }],
+  })
+  const supported = await page.evaluate(() => matchMedia('(prefers-reduced-transparency: reduce)').matches)
+  test.skip(!supported, 'Browser does not support reduced-transparency emulation')
+  const appearance = page.locator('.workspace-appearance summary')
+  for (const theme of ['light', 'dark']) {
+    await appearance.click()
+    await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption(theme)
+    await page.getByRole('combobox', { name: 'Palette', exact: true }).selectOption({ label: 'Purple' })
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.workspace-map')).toHaveCSS('backdrop-filter', 'none')
+    expect(await contrast(page.getByRole('button', { name: 'Search', exact: true }))).toBeGreaterThanOrEqual(4.5)
+    await page.screenshot({
+      path: info.outputPath(`palette-purple-${theme}-reduced-transparency.png`),
+      animations: 'disabled',
+    })
+  }
+  await session.detach()
+})

@@ -226,3 +226,129 @@ references. Record a short normal-motion selection/assistant disclosure video
 and a separate reduced-motion fixture. Source tests or mockups alone cannot
 accept visual fidelity. Opaque, unsupported-blur, reduced-transparency and forced
 colors retain readable surfaces and all controls. No backend authority changes.
+
+## Context-aware wallpaper amendment — 2026-10-25
+
+The browser owns scene presentation, not orchestration, connector state or processing-load inference.
+R005.3/R005.4/R005.5 extend the existing motion owner; R010 retains the complete performance obligation.
+Existing qualified source criteria and receipts remain unchanged.
+The current conversation-first release does not depend on this amendment.
+
+### Reuse and wiring
+
+The live path starts at `src/App.tsx:499` with `ThemeProvider`.
+`src/App.tsx:375` mounts `WorkspaceFrame` for supported workspace routes.
+The workspace component `WorkspaceFrame.tsx:110` reads the current context through `useWorkspaceCommandNavigation`.
+The workspace component `WorkspaceAppearance.tsx:7` exposes existing appearance controls through `useTheme`.
+Future scene preferences extend these seams, not a second store or route system.
+The workspace stylesheet `WorkspaceFrame.css` owns the shared background beneath existing glass surfaces.
+Future rendering must preserve `src/index.css` tokens, native controls and the approved wallpaper fallback.
+No attachment code, shader framework, weather API or remote asset becomes an implementation dependency through this amendment.
+
+### Scene meaning
+
+| Appearance element | Functional fit | Allowed visible response | Missing-data behavior |
+|---|---|---|---|
+| Light / Sunlit canopy | Workspace attention | Selected workspace or context produces one bounded light transition. | Static canopy; no inferred processing, learning or synchronization. |
+| Fluid gradient | Any context; calmer alternative | Context or selection changes produce one bounded gradient transition. | Static gradient; no status or performance claim. |
+| Trunk | Agent harness | Matching supplied harness events produce bounded trunk highlights. | Static trunk or selection feedback; no invented harness lifecycle. |
+| Branches and leaves | Knowledge | Selected records or supplied knowledge relationships produce bounded highlights. | Static decorative branches/leaves; no inferred facts, topology, counts or agents. |
+| Roots | Source-system connectors | Selected connectors highlight roots; matching connector/tool events produce bounded pulses. | Selection feedback only; connector presence never establishes connected, healthy or running state. |
+| Weather | Actual weather after opt-in, or manual preview | Selected observed conditions or labelled previews control atmospheric effects. | Explicit unknown/stale/offline state and static fallback; never inferred failure or workload. |
+
+Follow context emphasizes light for the selected workspace, knowledge branches/leaves in Knowledge and source-connector roots in Tools.
+A selected harness view may emphasize the trunk without asserting harness activity.
+Manual scene selection changes appearance only and remains stable across navigation.
+The actual task graph retains its explicit labels and supplied relationships; wallpaper branches do not replace it.
+Wallpaper selection never enables tools, starts tasks or changes permissions.
+Activity requires actual served evidence already available to the current view.
+Future implementation must document event fields, identity scope, ordering and terminal-state handling before enabling each pulse.
+Unavailable contracts block activity effects, not the static option or underlying product feature.
+Every status retains its native text; wallpaper never becomes the sole status channel.
+
+### Motion controls and safety
+
+Settings expose Follow context or a named manual scene, plus Off, Subtle and Expressive wallpaper motion.
+The first proof keeps the released static appearance until the user selects wallpaper motion.
+Preferences reuse bounded validation and blocked-storage fallback in `ThemeProvider`.
+Existing system/in-app reduction remains authoritative; no preference re-enables prohibited effects.
+Subtle uses existing transition tokens; Expressive permits stronger scene movement, never moving reading text or full-screen blur.
+Expressive duration and amplitude require explicit capture review before acceptance.
+New input replaces obsolete transitions immediately; state commits independently of rendering callbacks.
+Hidden documents cancel wallpaper animation without accumulating replay work.
+Battery-saving signals, when available, and measured resource pressure reduce effects or select the static fallback.
+Unavailable battery APIs never justify guessing battery state or requesting permissions.
+Renderer failure, context loss and reduced transparency preserve an opaque or approved static presentation.
+Effects remain noninteractive and absent from the accessibility tree.
+Weather introduces no audio, sharp lightning flashes, strobing or failure semantics.
+
+R005.5 defines a prospective, opt-in ambient exception to R005.2/R010's default no-idle wallpaper policy.
+Existing default-source motion tests remain idle-free; neither Expressive nor context changes imply consent to ambient playback.
+Continuous playback requires explicit ambience selection and complete R005.4/R005.5 safety plus R010 resource acceptance.
+
+### Weather source and material boundaries
+
+Weather following starts only after the user chooses a location, provider and enabled mode.
+Prefer an authorized existing weather source through Arbora; host-mediated MCP may supply that source.
+The browser adds no direct connector access; missing served capability requires a separate owning contract.
+No new provider API or permission exists through this amendment.
+No automatic GPS, inferred/private location, network lookup or location transmission occurs before that choice.
+Manual previews need no provider or location and always show their preview status in Settings.
+Supported previews are Clear, Rain, Snow, Thunderstorm, Fog, Heat and Cloudy.
+Before integration, define typed condition, source kind, chosen-location identifier, observation time, fetch time and freshness fields.
+Document the provider's condition mapping, refresh limit and numeric expiry policy before enabling weather following.
+Freshness distinguishes current, unknown, stale and offline; missing observation time never qualifies as current.
+Unknown/unsupported conditions use static fallback; stale/offline data retains its label, never a claim of current conditions.
+Changing location/provider invalidates previous responses; disabling stops future requests and ignores late responses.
+No location or weather data enters unsolicited telemetry or unrelated services.
+
+Thunderstorm may add raindrops to decorative glass regions and edges behind protected content surfaces.
+Droplets, fog and snow never cover text, focus indicators or controls, or intercept pointer input.
+Heat distorts only the background, never content, layout, hit targets or UI coordinates.
+One renderer/lifecycle serves the background and glass effects; panels never create separate rendering contexts.
+Opaque, reduced-motion, forced-color and resource fallback modes preserve the complete interface without weather effects.
+
+### Resource acceptance and delivery order
+
+Release obsolete assets, listeners and rendering resources after scene replacement.
+Before performance acceptance, declare device, browser, viewport, pixel ratio, fixture load and measurement method.
+Declare numeric backing-pixel, texture/framebuffer-byte, frame-work and memory-growth budgets alongside existing R010 input/frame targets.
+Compare Off, Subtle and Expressive under identical workloads; record failures and unsupported metrics.
+Resolution adaptation and static fallback must preserve input responsiveness before visual fidelity.
+Do not promise 120 FPS, zero overhead or hardware capability without measurements.
+First qualify Canopy/Fluid composition and controls, then evidence-bound Roots/Trunk/Knowledge, then opt-in weather.
+No stage closes broader material, accessibility, live-provider or performance acceptance without its own exact-candidate evidence.
+
+### First page-mounted renderer slice — 2026-10-25
+
+The shared `WorkspaceFrame` now mounts one decorative 2D canvas behind task surfaces.
+Existing Appearance settings persist Off/Subtle/Expressive, four abstract scenes
+and seven explicitly manual weather previews. Off is the default; default Canopy,
+Off and Clear preserve the original photo pixels. Other Off combinations render
+one static frame. Tree/roots/leaves/light are metaphors, not graph topology or
+agent/tool activity; no event or weather provider is fabricated. Context following
+and evidence-bound activity remain unimplemented acceptance work.
+
+Backing allocation is capped at 800,000 pixels and DPR 1.5.
+RGBA pixel storage is at most 3.2 MB, not a total browser-memory claim.
+Each frame draws at most 24 botanical elements, 24 weather particles and eight storm droplets. Subtle schedules at most 12 draws/second and
+Expressive at most 24; actual achieved cadence is device dependent. No shader,
+texture download, audio, lightning flash, content filter or pointer handler exists.
+Hidden/offscreen canvases stop their timer; no time is accumulated for replay.
+Reduced motion is static; opaque/reduced transparency and forced colors hide the
+canvas. Save-Data or reported device memory at or below 2 GB selects static output.
+Missing 2D rendering or context loss retains the existing photo fallback.
+Resize/media/visibility listeners and observers are removed on unmount.
+
+Scoped renderer tests cover allocation bounds, settings, timer limits, offscreen
+pause, reduction, fallback and cleanup. Hosted visual and input/frame/memory measurements remain required for the exact candidate before R010 performance acceptance.
+This source slice does not close broader design or live-weather requirements.
+
+## Named palette continuation
+
+Extend WEBUI-DESIGN-R002.1.1 through the existing colorizer and Settings.
+The green choice restores the exact accepted CSS baseline. Named alternatives
+derive coordinated action, neutral and focus tokens. Semantic status colors,
+typography, wallpaper and glass geometry stay unchanged. Preserve stored legacy
+accent provenance and unknown custom hues. Browser gallery qualification remains
+outstanding until exact-candidate pixels are reviewed.
