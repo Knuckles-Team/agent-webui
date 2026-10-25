@@ -163,3 +163,22 @@ This is a local plan preview, not a new orchestration engine. The current workfl
 `Save` and `Run` routes report unavailable, so their controls remain disabled.
 The editor displays capability catalog failures instead of an empty successful catalog. Local capability warnings do not constitute backend
 validation or permission to execute a workflow.
+
+
+## Graph and usage context
+
+Explore includes a read-only **Graph** lens with a sampled node list, adjacency
+links and a plain-text inspector. Graph selections stay separate from evidence
+selections. User access admits Graph and Evidence; Query and Validation still
+require maintainer access. The reader-admitted `/graph` page remains available
+for features that have not moved into Explore, including the legacy editor.
+
+The `/workflows` link opens Workflow plans in Work and still requires admin access.
+The `/usage` link opens Usage in Operate and still requires user access.
+Usage keeps session, timeline and filters while navigating between lenses.
+Selecting a fleet or connector catalog destination opens Services without
+clearing retained usage context.
+
+Analytics require a configured producer. Missing, denied and malformed reads
+remain unavailable rather than displaying invented totals or successful empty data.
+Tenant token totals alone do not establish model costs, sessions or traces.

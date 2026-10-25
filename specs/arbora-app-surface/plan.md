@@ -1069,3 +1069,19 @@ Arbora `usage.read` operation declares only a tenant-scoped totals snapshot and
 `usage:read` scope. It is not an analytics/session replacement. Served analytics
 availability must therefore be demonstrated independently; this UI correctly
 shows unavailable responses instead of treating fixtures as producer delivery.
+
+### 2026-10-25: Native feature-lens integration
+
+Compose source children R049.1.14, R049.1.15 and R049.1.16 on the same admitted
+workspace. Central commands preserve the existing lens policies.
+Explore graph and evidence require user. Query and validation require maintainer.
+Workflow plans require admin, and usage requires user. Keep the reader-level legacy graph route
+for unmigrated editor, Cypher and MAGMA features. Workflow and usage compatibility
+aliases retain their source role before canonical navigation.
+
+Fleet and connector-catalog destinations select Services without discarding
+retained usage filters or session context. Add all three authored synthetic
+browser journeys to the existing required hosted selection and artifact capture.
+Source integration does not establish native-browser or provider acceptance.
+Workflow edits remain in memory with Save/Run unavailable. Analytics keep the existing unavailable bindings.
+Do not derive rich evidence from usage totals or add a producer endpoint. Durable indexes remain with epistemic-graph.

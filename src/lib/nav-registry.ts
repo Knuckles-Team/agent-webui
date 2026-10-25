@@ -280,15 +280,16 @@ export const ROUTES: readonly RouteDef[] = [
   {
     id: 'control-plane.workflows',
     path: '/workflows',
+    redirects: [{ routeId: 'workspace.work-proof', search: 'lens=workflows' }],
     label: 'Workflows',
     section: 'control-plane',
-    blurb: 'Build and run step-by-step automations by connecting agent actions together.',
+    blurb: 'Preview a local workflow plan in Work; saving and execution remain unavailable.',
     icon: Workflow,
     // BUG-023: `/api/enhanced/workflows` is `kg:admin` on every method
     // (`_ADMIN_ROUTE_PREFIXES`), same unscoped-by-owner reasoning as
     // control-plane.goals above. Nav raised to match policy.
     minRole: 'admin',
-    mobile: 'unsupported',
+    mobile: 'adapted',
     element: lazy(() => import('@/components/views/WorkflowEditorView')),
   },
   {
@@ -796,9 +797,10 @@ export const ROUTES: readonly RouteDef[] = [
   {
     id: 'observability.usage',
     path: '/usage',
+    redirects: [{ routeId: 'workspace.operate', search: 'lens=usage' }],
     label: 'Usage & Cost',
     section: 'observability',
-    blurb: 'See how much every agent costs to run, broken down by model and time.',
+    blurb: 'Inspect available usage and session evidence in Operate without inventing missing analytics.',
     icon: Coins,
     minRole: 'user',
     mobile: 'adapted',

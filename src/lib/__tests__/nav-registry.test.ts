@@ -195,7 +195,7 @@ it('limits compatibility redirects to audited entries and registered terminal de
     ROUTES.filter((route) => route.redirects)
       .map((route) => route.id)
       .sort(),
-  ).toEqual(['control-plane.prompts', 'workspace.entry'])
+  ).toEqual(['control-plane.prompts', 'control-plane.workflows', 'observability.usage', 'workspace.entry'])
   for (const source of ROUTES) {
     for (const destination of source.redirects ?? []) {
       const target = ROUTE_REGISTRY.find((route) => route.id === destination.routeId)

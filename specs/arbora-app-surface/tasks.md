@@ -404,3 +404,11 @@ Source checks pass for the extracted Operate usage panels and typed adapters.
 Local whole-repository ESLint exceeded memory in two bounded attempts; scoped lint passes.
 Native browser scenarios are discoverable, but local Chromium execution remains blocked by the sandbox.
 Hosted browser, full lint and installed-producer evidence remain required. No source fixture closes those gaps.
+
+### Integrated native feature-lens source qualification
+
+Integrated source checks passed 413 tests across 40 files, whole TypeScript checking and changed-source lint.
+The production build and strict documentation build passed. Four hosted-selection contract tests passed.
+The hosted configuration discovers 24 synthetic journeys, including the nine new lens journeys.
+These journeys have not run here. Whole-repository ESLint received SIGKILL in two bounded attempts.
+Scoped source checks cannot close native-browser, real-provider, workflow-effect or full-migration acceptance.

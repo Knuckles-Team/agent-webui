@@ -12,7 +12,7 @@ import type { Role } from '@/lib/nav-registry'
 import { WorkspaceCommandsProvider, WorkspaceCommandPalette } from '../WorkspaceCommands'
 import WorkWorkspace from '../WorkWorkspace'
 import OperateWorkspace from '../OperateWorkspace'
-import { loadedOperateCommands, loadedWorkCommands } from '../loaded-workspace-commands'
+import { loadedCatalogCommands, loadedOperateCommands, loadedWorkCommands } from '../loaded-workspace-commands'
 const state = vi.hoisted(() => ({
   role: 'user' as Role,
   tenant: 'a',
@@ -123,7 +123,7 @@ describe('loaded Work and Operate command adapters', () => {
     await screen.findByRole('link', { name: 'source' })
     open()
     const link = await screen.findByRole('link', { name: 'Capability: Read records (source)' })
-    expect(link).toHaveAttribute('href', '/workspace/operate?server=source&item=tool-a&q=source')
+    expect(link).toHaveAttribute('href', '/workspace/operate?server=source&item=tool-a&q=source&lens=services')
     expect(screen.queryByRole('link', { name: /Capability: Hidden/ })).not.toBeInTheDocument()
     const catalog = state.tools.get('agent-webui.workspace.commands')!
     const result = (await catalog.execute({}, { signal: new AbortController().signal })) as {
@@ -135,7 +135,7 @@ describe('loaded Work and Operate command adapters', () => {
         .get('agent-webui.workspace.command')!
         .execute({ commandId: entry.commandId }, { signal: new AbortController().signal })
     })
-    expect(window.location.search).toBe('?server=source&item=tool-a&q=source')
+    expect(window.location.search).toBe('?server=source&item=tool-a&q=source&lens=services')
   })
   it('withdraws Work leaves and rejects old palette handles when admission is denied', async () => {
     const view = renderWithProviders(<Surface />)
@@ -199,4 +199,41 @@ describe('loaded Work and Operate command adapters', () => {
       loadedOperateCommands({ server: null, item: null, q: '' }, [], [{ id: 'x', name: 'x', server: 'missing' }]),
     ).toEqual([])
   })
+})
+
+// spec: WEBUI-APPS-R049.1.16
+it('selects services for fleet and catalog commands without losing retained usage context', () => {
+  const retained = {
+    server: 'source',
+    item: null,
+    q: 'read',
+    lens: 'usage' as const,
+    usageTenant: 'tenant-a',
+    usagePanel: 'sessions' as const,
+    usageSession: 'session-a',
+    usageDetail: 'timeline' as const,
+    usageFrom: '2026-01-01',
+    usageTo: '2026-01-31',
+    usageModel: 'model-a',
+    usageProject: 'project-a',
+    usageAgent: 'agent-a',
+    usageOrigin: 'origin-a',
+  }
+  const commands = [
+    ...loadedOperateCommands(retained, ['source'], [{ id: 'tool-a', name: 'Read', server: 'source' }]),
+    ...loadedCatalogCommands(
+      retained,
+      [{ server_id: 'connector-a', name: 'Source connector' }],
+      [{ id: 'definition-a', name: 'Read', kind: 'tool', server_name: 'Source connector' }],
+    ),
+  ]
+  expect(commands).toHaveLength(4)
+  for (const command of commands) {
+    const query = new URL(command.href, 'https://workspace.invalid').searchParams
+    expect(query.get('lens')).toBe('services')
+    for (const [key, value] of Object.entries(retained)) {
+      if (key.startsWith('usage')) expect(query.get(key)).toBe(value)
+    }
+  }
+  expect(new URL(commands[3].href, 'https://workspace.invalid').searchParams.get('definition')).toBe('definition-a')
 })

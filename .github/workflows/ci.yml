@@ -99,7 +99,7 @@ jobs:
         id: workspace_catalog
         if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
         run: pnpm exec playwright test --config e2e/workspace-branches.config.ts workspace-catalog
-      - name: Canopy Glass retained evidence and effects
+      - name: Canopy Glass and native graph, workflow and usage lenses
         id: canopy_native
         if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
         run: pnpm exec playwright test --config e2e/canopy-glass.config.ts

@@ -3,7 +3,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { z } from 'zod'
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { roleAtLeast, type Role } from '@/lib/nav-registry'
-import { EXPLORE_LENSES, navigateExploreLens, parseExploreLensState, exploreLensHref } from '@/lib/explore-lens-state'
+import {
+  EXPLORE_LENSES,
+  canUseExploreLens,
+  navigateExploreLens,
+  parseExploreLensState,
+  exploreLensHref,
+} from '@/lib/explore-lens-state'
 import { navigateWork, parseWorkState, workHref } from '@/lib/work-workspace'
 import { navigateOperate, parseOperateState, operateHref } from '@/lib/operate-workspace'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
@@ -34,12 +40,19 @@ function canonical(href: string, role: Role): string {
   if (!href.startsWith('/') || href.startsWith('//') || href.includes('#'))
     throw new Error('Invalid workspace command')
   const path = new URL(href, 'https://workspace.invalid').pathname
-  if (path === '/workspace/work' && roleAtLeast(role, 'user')) return workHref(parseWorkState(href))
+  if (path === '/workspace/work') {
+    const state = parseWorkState(href)
+    if (roleAtLeast(role, state.lens === 'prompts' || state.lens === 'workflows' ? 'admin' : 'user'))
+      return workHref(state)
+  }
   if (path === '/workspace/explore') {
     const state = parseExploreLensState(href)
-    if (roleAtLeast(role, state.lens === 'evidence' ? 'user' : 'maintainer')) return exploreLensHref(state)
+    if (canUseExploreLens(role, state.lens)) return exploreLensHref(state)
   }
-  if (path === '/workspace/operate' && roleAtLeast(role, 'reader')) return operateHref(parseOperateState(href))
+  if (path === '/workspace/operate') {
+    const state = parseOperateState(href)
+    if (roleAtLeast(role, state.lens === 'usage' ? 'user' : 'reader')) return operateHref(state)
+  }
   throw new Error('Workspace command unavailable')
 }
 function navigate(href: string, role: Role) {

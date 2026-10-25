@@ -34,6 +34,9 @@ vi.mock('@/lib/work-workspace', async (original) => ({
 }))
 vi.mock('@/components/workspace/OperateWorkspace', () => ({ default: () => <p>Reader workspace</p> }))
 vi.mock('@/components/views/DashboardView', () => ({ default: () => <p>Legacy overview</p> }))
+vi.mock('@/components/views/GraphView', () => ({ default: () => <p>Legacy graph reader and editor</p> }))
+vi.mock('@/components/views/WorkflowEditorView', () => ({ default: () => <p>Legacy workflow page</p> }))
+vi.mock('@/components/views/UsageView', () => ({ default: () => <p>Legacy usage page</p> }))
 vi.mock('@/components/ChatPanel', () => ({ default: () => <p>Retained assistant</p> }))
 vi.mock('@/components/UserMenu', () => ({ UserMenu: () => null }))
 vi.mock('@/components/mode-toggle', () => ({ ModeToggle: () => null }))
@@ -200,4 +203,59 @@ it('retains the real editor DOM across frame presentation and compatibility navi
   expect(await screen.findByRole('textbox', { name: 'Role / Title' })).toBe(field)
   expect(field).toHaveValue('Retained in the real frame')
   expect(screen.getByRole('complementary', { name: 'Workspace map' })).toBe(map)
+})
+
+// spec: WEBUI-APPS-R049.1.14, WEBUI-APPS-R049.1.15, WEBUI-APPS-R049.1.16
+it('redirects admitted workflows into the native in-memory editor without mounting the legacy page', async () => {
+  vi.mocked(fetch).mockImplementation(async (input) =>
+    String(input).endsWith('/workflows')
+      ? Response.json([{ id: 'workflow:demo', name: 'Demo', steps: ['Check'], orchestrates: [] }])
+      : Response.json({ detail: 'Unavailable' }, { status: 501 }),
+  )
+  window.history.replaceState({ retained: true }, '', '/workflows?conversation=kept&workflow=workflow%3Ademo')
+  const length = window.history.length
+  render(<App />)
+  const name = await screen.findByRole('textbox', { name: 'workflow name' })
+  await waitFor(() => expect(name).toHaveValue('Demo'))
+  expect(window.location.pathname).toBe('/workspace/work')
+  expect(new URLSearchParams(window.location.search).get('lens')).toBe('workflows')
+  expect(new URLSearchParams(window.location.search).get('conversation')).toBe('kept')
+  expect(window.history.length).toBe(length)
+  expect(window.history.state).toEqual({ retained: true })
+  expect(screen.queryByText('Legacy workflow page')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled()
+  expect(vi.mocked(fetch).mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(true)
+})
+it('redirects admitted usage into Operate with retained session context', async () => {
+  state.role = 'user'
+  window.history.replaceState({}, '', '/usage?usageSession=session-a&usageDetail=timeline')
+  const length = window.history.length
+  render(<App />)
+  expect(await screen.findByText('Reader workspace')).toBeVisible()
+  expect(window.location.pathname + window.location.search).toBe(
+    '/workspace/operate?usageSession=session-a&usageDetail=timeline&lens=usage',
+  )
+  expect(window.history.length).toBe(length)
+  expect(screen.queryByText('Legacy usage page')).not.toBeInTheDocument()
+})
+it.each([
+  ['/workflows', 'maintainer', 'Legacy workflow page'],
+  ['/usage', 'reader', 'Legacy usage page'],
+])('retains the source admission boundary for %s', async (path, role, legacy) => {
+  state.role = role
+  window.history.replaceState({}, '', path)
+  render(<App />)
+  expect(await screen.findByText('Insufficient role')).toBeVisible()
+  expect(window.location.pathname).toBe(path)
+  expect(screen.queryByText(legacy)).not.toBeInTheDocument()
+  // The shell may read public host information, but no protected feature data.
+  expect(vi.mocked(fetch).mock.calls.every(([url]) => String(url) === '/api/enhanced/info')).toBe(true)
+})
+it('retains the legacy reader-admitted graph route rather than redirecting away unmigrated features', async () => {
+  state.role = 'reader'
+  window.history.replaceState({}, '', '/graph')
+  render(<App />)
+  expect(await screen.findByText('Legacy graph reader and editor')).toBeVisible()
+  expect(window.location.pathname).toBe('/graph')
 })

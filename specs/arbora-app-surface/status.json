@@ -494,8 +494,7 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "4d0f9693e45d",
-        "d18ec8c78341",
-        "e234cefa7db0"
+        "d18ec8c78341"
       ],
       "verified_by": [
         "e2e/native-chat.browser.ts:1",
@@ -2056,7 +2055,7 @@
         "e2e/workspace-catalog.browser.ts:17",
         "e2e/workspace-task-lifecycle.spec.ts:396",
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:170",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:173",
         "src/components/views/__tests__/ArboraReadinessView.test.tsx:1"
       ]
     },
@@ -2242,13 +2241,15 @@
       "title": "Native read-only graph lens source slice",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "27acc988019e"
+        "27acc988019e",
+        "66bc25839ae2"
       ],
       "verified_by": [
         "e2e/explore-graph.browser.ts:1",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:208",
         "src/components/knowledge-graph/__tests__/GraphCanvas.engineMode.test.tsx:158",
         "src/components/workspace/__tests__/ExploreGraphLens.test.tsx:1",
-        "src/lib/__tests__/explore-lens-state.test.ts:51"
+        "src/components/workspace/__tests__/WorkspaceCommands.test.tsx:204"
       ]
     },
     {
@@ -2256,23 +2257,31 @@
       "title": "Retained contextual workflow plan source",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "3b1fd81a5637"
+        "3b1fd81a5637",
+        "66bc25839ae2"
       ],
       "verified_by": [
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:208",
         "src/components/views/__tests__/WorkflowEditorView.test.tsx:1",
         "src/components/workspace/__tests__/WorkWorkflowLens.test.tsx:1",
-        "src/components/workspace/__tests__/WorkWorkspace.test.tsx:1"
+        "src/components/workspace/__tests__/WorkWorkspace.test.tsx:1",
+        "src/components/workspace/__tests__/WorkspaceCommands.test.tsx:204"
       ]
     },
     {
       "id": "WEBUI-APPS-R049.1.16",
       "title": "Absorb existing usage analysis into Operate",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "2cabc79e3889",
+        "66bc25839ae2"
+      ],
       "verified_by": [
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:208",
+        "src/components/workspace/__tests__/LoadedWorkspaceCommands.test.tsx:204",
         "src/components/workspace/__tests__/OperateUsageLens.test.tsx:1",
-        "src/lib/__tests__/usage-analytics-api.test.ts:1",
-        "src/lib/__tests__/usage-analytics.test.ts:1"
+        "src/components/workspace/__tests__/WorkspaceCommands.test.tsx:204",
+        "src/lib/__tests__/usage-analytics-api.test.ts:1"
       ]
     }
   ]

@@ -43,6 +43,29 @@ class BrowserGateTests(unittest.TestCase):
             )
             self.assertNotIn('continue-on-error', step)
 
+    def test_native_feature_lenses_run_in_the_required_hosted_selection(self):
+        # Source selection only; this assertion is not rendered browser acceptance.
+        steps = self.jobs['workspace-browser']['steps']
+        native = next(step for step in steps if step.get('id') == 'canopy_native')
+        self.assertEqual(
+            native['run'],
+            'pnpm exec playwright test --config e2e/canopy-glass.config.ts',
+        )
+        config = (ROOT / 'e2e/canopy-glass.config.ts').read_text()
+        for suite in (
+            'explore-graph.browser.ts',
+            'work-workflows.browser.ts',
+            'operate-usage.browser.ts',
+        ):
+            self.assertIn(repr(suite), config)
+            self.assertTrue((ROOT / 'e2e' / suite).is_file())
+        artifact = next(
+            step for step in steps
+            if step.get('with', {}).get('name') == 'canopy-glass-browser'
+        )
+        self.assertIn('failure', artifact['if'])
+        self.assertEqual(artifact['with']['path'], 'test-results/canopy-glass/')
+
     def test_aggregate_waits_for_all_required_jobs_even_on_failure(self):
         gate = self.jobs['gates']
         self.assertEqual(gate['if'], 'always()')
