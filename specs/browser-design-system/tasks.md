@@ -240,3 +240,15 @@ Metadata guard tests preserve this distinction; they are not feature-acceptance 
 
 - [x] WEBUI-DESIGN-R005.3.1: Implement route-derived selection and manual overrides; exact-head hosted qualification remains required.
 - [ ] WEBUI-DESIGN-R005.3.2: Connect current Arbora evidence before adding activity or topology; qualify all rejection cases.
+
+## Overstory documentation capture refresh — 2026-10-25
+
+- WEBUI-DESIGN-R011: Import the six successful synthetic browser captures from
+  CI run `40230399141`, artifact `12613176256`. The recorded clean source is
+  `aeb9d63307a363027d6c0f022297232f1bdac632`, the tested merge of final naming
+  head `8cb5d30ae7490fa5cf25e7b8630c723d0505b395` with `e310d997`.
+- Review all six initial viewports. Preserve shared README/gallery asset paths,
+  original PNG digests and the lossless Knowledge WebP delivery receipt.
+  All delivered images remain below one million bytes and match captured pixels.
+- This refresh illustrates the branded interface. It does not establish live
+  provider availability or close broader design acceptance.

@@ -11,12 +11,12 @@
       "theme": "light",
       "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "ecf62ef54df6873b2983b5def438e3e761b98c3d",
+      "sourceRevision": "aeb9d63307a363027d6c0f022297232f1bdac632",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "0f8647b83589e1bb25a72ca94fae8d7b744c5569a72b3324ca9e1f5601467fb5"
+      "sha256": "c541fc77991acfd618641890264b1c0e6a7a8cb778dd6e64929aa34820500204"
     },
     {
       "file": "work-narrow.png",
@@ -28,12 +28,12 @@
       "theme": "light",
       "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "ecf62ef54df6873b2983b5def438e3e761b98c3d",
+      "sourceRevision": "aeb9d63307a363027d6c0f022297232f1bdac632",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "8185999666da52355dff98a611559661c9296834fc3584cf1663ab26ae12e15b"
+      "sha256": "3acdc97933db19fc32d56a0ca40ad7cc3c2bd2781d09ac48096188a90050c470"
     },
     {
       "file": "explore-wide.png",
@@ -45,17 +45,17 @@
       "theme": "light",
       "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "ecf62ef54df6873b2983b5def438e3e761b98c3d",
+      "sourceRevision": "aeb9d63307a363027d6c0f022297232f1bdac632",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "fdb26b44d06ad42fadeb81a16802df2180074b38a41179f3a8c83d2bdfa3037c",
+      "sha256": "e1b87da13c3336e9313d16001166641fdb6195b1137398cd5b67c41745ce0814",
       "delivery": {
         "file": "explore-wide.webp",
-        "sha256": "067b678dc65a8a667980eab9694255b1714e01a1af191ef9d6b81d66365294be",
+        "sha256": "e666fdff237f9bc16e7c7361d6275aee0a7238e71f5c655f32403d4d2e5a0479",
         "encoding": "lossless-webp",
-        "rgbaSha256": "9468dfe5ac8384a1977cdf0c45636d01bc4949860d238f7f74098d3b306d447f",
+        "rgbaSha256": "097773207872f7910afaa3944b53573c06a1d6282c4ee5d31475f7ad7b360d22",
         "optimizer": {
           "pillow": "12.3.0",
           "libwebp": "1.6.0"
@@ -72,7 +72,7 @@
       "theme": "light",
       "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "ecf62ef54df6873b2983b5def438e3e761b98c3d",
+      "sourceRevision": "aeb9d63307a363027d6c0f022297232f1bdac632",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
@@ -89,12 +89,12 @@
       "theme": "light",
       "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "ecf62ef54df6873b2983b5def438e3e761b98c3d",
+      "sourceRevision": "aeb9d63307a363027d6c0f022297232f1bdac632",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "b53c2272222c80ab5dd726cb70d39f4e950e42ca33f0e1001ca320e1e6ff32e4"
+      "sha256": "05c0cec2a7f70da34fd1aa24e9ea87ebb8510b9a5a6057a370f5633818518a11"
     },
     {
       "file": "operate-narrow.png",
@@ -106,7 +106,7 @@
       "theme": "light",
       "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "ecf62ef54df6873b2983b5def438e3e761b98c3d",
+      "sourceRevision": "aeb9d63307a363027d6c0f022297232f1bdac632",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
