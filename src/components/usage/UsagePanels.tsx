@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { Activity, BarChart3, Coins, Cpu, Search, Wrench } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, workspaceButtonClass } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { UnavailableNotice } from '@/components/ui/unavailable-notice'
 import { StatusMessage } from '@/components/ui/status-message'
@@ -22,7 +23,7 @@ const fmtNum = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(
 
 function Kpi({ label, value, icon: Icon }: { label: string; value: string; icon: typeof Coins }) {
   return (
-    <div className="min-w-0 rounded border">
+    <div className="usage-reading min-w-0 rounded border">
       <div className="flex min-w-0 items-center gap-3 p-3">
         <div className="rounded-md bg-primary/10 p-2 text-primary">
           <Icon className="h-5 w-5" aria-hidden="true" />
@@ -331,7 +332,7 @@ export function UsageSearchPanel({
         <button
           key={`${h.session_id}-${h.ordinal}-${i}`}
           type="button"
-          className="min-h-11 w-full rounded border p-2 text-left text-sm hover:bg-muted/50 [overflow-wrap:anywhere]"
+          className={cn(workspaceButtonClass, 'block w-full text-left')}
           onClick={() => {
             onOpenDetail(h.session_id)
           }}
@@ -363,7 +364,7 @@ export function UsageTracesPanel({ traces }: { traces: UsageTraces }) {
             href={traceUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="block min-h-11 rounded border p-2 text-sm hover:bg-muted/50 [overflow-wrap:anywhere]"
+            className={cn(workspaceButtonClass, 'block w-full text-left')}
           >
             <span className="font-mono text-xs">{t.session_id}</span>
             <span className="ml-2 text-muted-foreground">{t.project}</span>
@@ -437,7 +438,7 @@ export function UsageSessionPanel({ detail, timeline }: { detail: UsageSessionDe
           {detail.messages.length === 0 && <Empty>No messages recorded for this session.</Empty>}
           <ol className="space-y-2" aria-label="Session messages">
             {detail.messages.map((m) => (
-              <li key={m.ordinal} className="rounded border p-2 text-sm">
+              <li key={m.ordinal} className="usage-reading rounded border p-2 text-sm">
                 <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                   <Badge variant={m.role === 'user' ? 'secondary' : 'outline'}>{m.role}</Badge>
                   <span>Message {m.ordinal}</span>

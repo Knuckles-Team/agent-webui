@@ -1143,3 +1143,12 @@ Reuse palette-aware neutral buttons for catalog navigation. Preserve readiness
 evidence, status and disabled states, native links, focus and filtering. Keep
 opaque, reduced-transparency and forced-color fallbacks; no new layout, routing
 or backend behavior. Scoped browser captures do not close R049.2 acceptance.
+
+## Usage control and evidence consistency — 2026-10-25
+
+Extend R049.2.1 in place after the Tools section polish. Apply existing neutral
+action classes to Usage refresh, filtering, session navigation and result links.
+Reuse the same reading material for the Usage section, KPI cards and messages.
+Keep one blurred section, not a blur per item. Preserve charts, measured values,
+status badges, authority checks, filters, history and keyboard/touch behavior.
+This presentation continuation adds no analytics functionality or acceptance claim.

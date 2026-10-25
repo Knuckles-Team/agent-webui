@@ -2238,9 +2238,9 @@
       "verified_by": [
         "e2e/canopy-glass.browser.ts:4",
         "e2e/conversation-first.browser.ts:1",
+        "e2e/operate-usage.browser.ts:1",
         "e2e/workspace-catalog.browser.ts:87",
-        "src/__tests__/Chat.conversation-identity.test.tsx:870",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:292"
+        "src/__tests__/Chat.conversation-identity.test.tsx:870"
       ]
     },
     {
