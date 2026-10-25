@@ -628,3 +628,18 @@ Keep Work/Operate and unqualified native interactions visible as gaps rather tha
 
 The gate-wrapper metadata tests keep broad ancestor rollups open and preserve qualified source receipts.
 Those data-only guards do not establish product acceptance.
+
+### WEBUI-APPS-R049.1.14: Native sampled graph source qualification
+
+- Mount the graph lens in Explore, not the old GraphView. Use the same validated
+  read facades and actual read-only GraphCanvas regression contract.
+- Prove independent graph/evidence IDs, adjacency, query/result retention,
+  neighbor/history transitions, plain-text hostile properties, reader exclusion
+  from Explore, owner/role retirement and malformed URL refusal.
+- Defer provider reads. Refresh or change the type/identity; deny any endpoint;
+  late siblings cannot restore protected nodes, properties, edges or aggregates.
+  Unknown/unavailable/partial totals remain distinct from zero or empty data.
+- Check held WebMCP handles expire on lens, selection, request and identity
+  changes. Graph selection uses only the loaded sample and exposes no mutation.
+- Actual browser short/narrow layouts, native history/focus and served-provider
+  authorization remain independent acceptance, not implied by mounted fixtures.

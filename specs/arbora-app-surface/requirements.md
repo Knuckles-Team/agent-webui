@@ -313,3 +313,9 @@ The original R049.2 requirement remains unchanged.
 | ID | Requirement | Verification |
 |---|---|---|
 | `WEBUI-APPS-R049.2.2` | **Remaining measured redesign acceptance.** Complete every original R049.2 obligation beyond the bounded shell/Explore source slice. Include complete Work/Operate composition and identical-fixture before/after tasks. Record navigation counts, scrolling distances, all-leaf search and actual layout evidence. Preserve keyboard, touch and native WebMCP qualification. Do not clip content or hide features to improve measurements. | Planned: publish baseline/redesigned task results and complete native interaction evidence under the original R049.2 acceptance criteria. Scoped presentation tests cannot close this row. |
+
+## Native Explore sampled graph source
+
+| ID | Requirement | Verification |
+|---|---|---|
+| `WEBUI-APPS-R049.1.14` | **Native read-only graph lens source slice.** Compose GraphCanvas and existing validated read facades within Explore. Do not mount the legacy Graph page shell. Retain independent graph selection/type and evidence collection/entity/tool state. Preserve query drafts and results across adjacent selection and browser history. Provide keyboard-accessible sampled adjacency and a plain-text inspector. Keep existing route admission. Infer no schema/manage capability. Expose no edit controls or requests. Withdraw data on denied refresh, obsolete requests and identity changes. Preserve sample limits, partial results and unavailable/error provenance. | Mounted graph-lens, state and reader fixtures pair with the existing canvas regression suite. This source-only child extends R030, R046.2.2, R047, R048 and API R008.2. Original owners retain browser/provider acceptance, engine edits, Cypher/MAGMA migration and old-route adaptation. R049.1.2 retains complete feature parity. |

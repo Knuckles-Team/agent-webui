@@ -362,3 +362,13 @@ with base 954a227. Browser qualification remains incomplete.
 Keep the Work/Operate, baseline comparison and native interaction obligations above open.
 Preserve the qualified source child without promoting its broader ancestor.
 Metadata guard tests are not evidence that the remaining redesign is accepted.
+
+### Native Explore sampled graph continuation
+
+- [ ] Qualify R049.1.14's direct read-only graph composition and retained state.
+- [ ] Retain R049.1.2's old-route adaptation, Cypher/MAGMA/editing migration and
+  served/browser full parity. Local GraphView edits are not engine write proof.
+
+Source qualification passed 121 scoped tests, TypeScript and the production build.
+The normal all-files run remains blocked by whole-repository ESLint termination.
+Two bounded attempts received SIGKILL. Actual browser/provider acceptance remains open.

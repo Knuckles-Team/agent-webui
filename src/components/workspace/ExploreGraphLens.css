@@ -1,0 +1,88 @@
+.explore-graph-lens {
+  container-type: inline-size;
+  container-name: explore-graph;
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+}
+.explore-graph-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.explore-graph-grid {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr) minmax(12rem, 18rem);
+  align-items: start;
+  gap: 0.75rem;
+}
+.explore-graph-types,
+.explore-graph-inspector {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.explore-graph-inspector {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.explore-graph-main {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+}
+.explore-graph-canvas {
+  height: clamp(18rem, 48dvh, 34rem);
+  min-width: 0;
+}
+.explore-graph-canvas > div > .absolute.flex {
+  flex-wrap: wrap;
+  max-width: calc(100% - 2rem);
+}
+.explore-graph-properties {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+}
+.explore-graph-nodes {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.explore-graph-nodes a {
+  min-height: 2.75rem;
+}
+@media (max-width: 1100px) {
+  .explore-graph-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .explore-graph-types {
+    max-height: 15rem;
+    overflow: auto;
+  }
+}
+@media (max-height: 600px) {
+  .explore-graph-canvas {
+    height: 18rem;
+  }
+}
+
+@container explore-graph (max-width: 54rem) {
+  .explore-graph-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .explore-graph-types {
+    max-height: 15rem;
+    overflow: auto;
+  }
+}
+
+.explore-graph-types button,
+.explore-graph-canvas button {
+  min-height: 2.75rem;
+}

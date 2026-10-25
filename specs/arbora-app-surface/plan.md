@@ -1009,3 +1009,22 @@ Explicit retained-acceptance children now preserve those obligations in canonica
 Parent requirement text and qualified child evidence remain unchanged.
 Regenerate every spec status and audit ancestor states after source and receipt commits.
 The metadata regression must not create feature-acceptance bindings for retained work.
+
+### 2026-10-25: Native Explore sampled graph lens
+
+Extend R049.1.2 with bounded child R049.1.14. Share GraphView's validated graph
+reads, GraphCanvas and GraphAdapter, not its page/card/tab shell. Preserve the
+existing reader-level graph boundary within Explore's user-level boundary.
+Nodes and edges use the existing typed served facades; stats/type aggregates
+retain their existing honest unavailable and partial states. Do not substitute
+GraphSchema, which is an administrative operation, for any read capability.
+
+Graph selection and type filters are independent of evidence identity. Keep
+query drafts/results within the owner-and-role-scoped Explore lifetime. Clear
+obsolete/denied read data and retire hidden handles. Provide a keyboard list
+for the same sampled adjacency. Do not claim a complete neighborhood.
+Read-only canvas disables every edit entry point. Legacy local draft editing is
+not an engine write and remains unmigrated with Cypher and MAGMA. R030 writes,
+API R008.2 served parity, R046.2.2 full continuity, R047/R048 complete command
+coverage and R049.1.2 migration remain open. Mounted fixtures and metadata
+checks are not actual browser, installed-provider or full-redesign acceptance.
