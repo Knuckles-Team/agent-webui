@@ -356,7 +356,7 @@
         "04c4742838cb"
       ],
       "verified_by": [
-        "e2e/canopy-glass.browser.ts:711"
+        "e2e/canopy-glass.browser.ts:714"
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R005.3.1",
@@ -371,7 +371,7 @@
         "22fe6f99d8ec"
       ],
       "verified_by": [
-        "e2e/canopy-glass.browser.ts:711",
+        "e2e/canopy-glass.browser.ts:714",
         "src/components/workspace/WorkspaceWallpaper.tsx:1",
         "src/components/workspace/__tests__/WorkspaceWallpaper.test.tsx:1"
       ]
@@ -394,9 +394,9 @@
       "verified_by": [
         "e2e/canopy-glass.browser.ts:467",
         "e2e/canopy-glass.browser.ts:683",
+        "e2e/canopy-glass.browser.ts:746",
         "src/__tests__/design-tokens.test.ts:336",
-        "src/components/workspace/WorkspaceWallpaper.tsx:1",
-        "src/components/workspace/__tests__/WorkspaceWallpaper.test.tsx:1"
+        "src/components/workspace/WorkspaceWallpaper.tsx:1"
       ]
     },
     {

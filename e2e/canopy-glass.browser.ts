@@ -474,7 +474,7 @@ test('manual wallpaper settings retain the rendered workspace and bounded backin
   await expect(canvas).toHaveAttribute('aria-hidden', 'true')
   await expect(canvas).toHaveCSS('pointer-events', 'none')
   await page.locator('.workspace-appearance > summary').click()
-  await expect(page.getByLabel('Wallpaper motion')).toHaveValue('off')
+  await expect(page.getByLabel('Wallpaper motion')).toHaveValue('subtle')
   await expect(page.getByText(/Manual weather only/)).toBeVisible()
   await page.getByLabel('Wallpaper scene').selectOption('tree')
   await page.getByLabel('Weather preview (manual)').selectOption('thunderstorm')
@@ -683,9 +683,12 @@ test('Canopy palette follows supported system reduced transparency', async ({ pa
 // spec: WEBUI-DESIGN-R005.4
 // Golden crop comes from the accepted #180 desktop capture (runtime 83d52c8).
 // A text-free inspector region pins actual frost, not merely computed blur.
-test('default wallpaper preserves accepted glass backdrop pixels', async ({ page }) => {
+test('explicit Off preserves accepted static glass backdrop pixels', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await prepare(page, 'light')
+  await page.locator('.workspace-appearance > summary').click()
+  await page.getByLabel('Wallpaper motion').selectOption('off')
+  await page.locator('.workspace-appearance > summary').click()
   await expect(page.locator('.workspace-wallpaper')).toHaveAttribute('data-active', 'false')
   await expect(page.locator('.workspace-wallpaper')).toBeHidden()
   await expect(page.locator('.workspace-frame')).toHaveCSS('isolation', 'auto')
@@ -716,6 +719,7 @@ test('Follow workspace resolves real page context without enabling motion and ma
   const canvas = page.locator('.workspace-wallpaper')
   const contexts = page.getByRole('navigation', { name: 'Primary workspace contexts' })
   await page.locator('.workspace-appearance > summary').click()
+  await page.getByLabel('Wallpaper motion').selectOption('off')
   await page.getByLabel('Wallpaper scene').selectOption('context')
   await expect(page.getByLabel('Wallpaper motion')).toHaveValue('off')
   await expect(canvas).toHaveAttribute('data-scene', 'canopy')
@@ -736,5 +740,29 @@ test('Follow workspace resolves real page context without enabling motion and ma
   await contexts.getByRole('link', { name: 'Chat', exact: true }).click()
   await expect(canvas).toHaveAttribute('data-scene', 'fluid')
   await expect(input).toHaveValue('Synthetic context scene draft — do not send')
+  expect(failures).toEqual([])
+})
+
+// spec: WEBUI-DESIGN-R005.4
+test('fresh wallpaper defaults animate subtly and Off immediately persists', async ({ page }, info) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  const failures = await prepare(page, 'light')
+  const canvas = page.locator('.workspace-wallpaper')
+  await expect(canvas).toHaveAttribute('data-active', 'true')
+  await page.screenshot({ path: info.outputPath('wallpaper-default-subtle.png') })
+  await page.locator('.workspace-appearance > summary').click()
+  await expect(page.getByLabel('Wallpaper motion')).toHaveValue('subtle')
+  await expect(page.getByLabel('Wallpaper scene')).toHaveValue('canopy')
+  expect(await page.evaluate(() => localStorage.getItem('agent-webui.wallpaper-motion'))).toBeNull()
+  const first = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL())
+  await expect.poll(() => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL())).not.toBe(first)
+  await page.getByLabel('Wallpaper motion').selectOption('off')
+  await expect(canvas).toHaveAttribute('data-active', 'false')
+  expect(await page.evaluate(() => localStorage.getItem('agent-webui.wallpaper-motion'))).toBe('off')
+  const contexts = page.getByRole('navigation', { name: 'Primary workspace contexts' })
+  await page.locator('.workspace-appearance > summary').click()
+  await contexts.getByRole('link', { name: 'Chat', exact: true }).click()
+  await expect(canvas).toHaveAttribute('data-active', 'false')
   expect(failures).toEqual([])
 })

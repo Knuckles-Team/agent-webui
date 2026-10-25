@@ -379,3 +379,11 @@ default pixel golden and reduced-motion coverage. No live-event acceptance claim
 R005.3.1 owns the route/manual tests above. R005.3.2 retains the parent event and
 topology journeys, including stale, duplicate, unrelated and out-of-order rejection.
 That evidence seam is not implemented or covered by the route selection tests.
+
+### Subtle by default, with explicit opt-out (R005.4)
+
+Test absent and invalid preferences, persisted Off, saved manual scenes and immediate opt-out.
+Verify that mounting does not persist a default or overwrite any valid choice.
+Default animation remains capped at 12 FPS; reductions and constrained resources remain static.
+Keep hidden/offscreen cleanup, opaque/forced-color hiding and renderer fallback coverage.
+The original glass golden explicitly selects Off and Canopy; new-default captures receive separate visual review.
