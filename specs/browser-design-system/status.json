@@ -222,6 +222,7 @@
       "title": "Bounded workspace viewport continuity",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "38c8f13794ee",
         "4d0f9693e45d",
         "f91c2a3a3446"
       ],
@@ -263,7 +264,8 @@
       "title": "Repeatable documentation screenshots",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "1cac40d60bc3"
+        "1cac40d60bc3",
+        "38c8f13794ee"
       ],
       "verified_by": [
         "e2e/documentation-screenshots.browser.ts:1",
@@ -276,9 +278,10 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "12b5f5624953",
+        "38c8f13794ee",
+        "73051bf582bd",
         "93401c34a695",
-        "ac86f2de9817",
-        "ec837ceabe6b"
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
@@ -295,9 +298,9 @@
       "landed_in": [
         "12b5f5624953",
         "19b439519a22",
+        "38c8f13794ee",
         "47885260902d",
-        "93401c34a695",
-        "ac86f2de9817"
+        "667aa894cc3d"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
@@ -311,6 +314,9 @@
       "title": "Meaningful interruptible motion",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "667aa894cc3d",
+        "73051bf582bd",
+        "836d8895cd6f",
         "ac86f2de9817"
       ],
       "verified_by": [
