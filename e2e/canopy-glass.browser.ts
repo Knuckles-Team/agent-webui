@@ -689,6 +689,21 @@ test('default wallpaper preserves accepted glass backdrop pixels', async ({ page
   await expect(page.locator('.workspace-wallpaper')).toHaveAttribute('data-active', 'false')
   await expect(page.locator('.workspace-wallpaper')).toBeHidden()
   await expect(page.locator('.workspace-frame')).toHaveCSS('isolation', 'auto')
-  const region = await page.screenshot({ clip: { x: 1250, y: 600, width: 120, height: 150 }, animations: 'disabled' })
-  expect(region).toMatchSnapshot('canopy-default-glass-region.png', { threshold: 0, maxDiffPixels: 0 })
+  // Direct clipped screenshots can change the browser's backdrop-filter rasterization.
+  // Crop a completed full viewport capture instead, exactly as the accepted golden was made.
+  const capture = await page.screenshot({ animations: 'disabled' })
+  const region = await page.evaluate(async (base64) => {
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
+    const canvas = document.createElement('canvas')
+    canvas.width = 120
+    canvas.height = 150
+    canvas.getContext('2d')!.drawImage(bitmap, -1250, -600)
+    bitmap.close()
+    return canvas.toDataURL().split(',')[1]
+  }, capture.toString('base64'))
+  expect(Buffer.from(region, 'base64')).toMatchSnapshot('canopy-default-glass-region.png', {
+    threshold: 0,
+    maxDiffPixels: 0,
+  })
 })
