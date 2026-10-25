@@ -258,6 +258,8 @@ it('uses quiet selection and aligned control type without losing keyboard focus'
     expect(css).toContain('font-size: var(--workspace-control-size)')
     expect(css).toContain('line-height: var(--workspace-control-leading)')
   }
+  expect(frame).toContain('background: var(--button-neutral-active)')
+  expect(frame).toContain('background: var(--button-neutral-hover)')
   expect(frame).toContain('--workspace-control-size: 0.875rem')
   expect(frame).toContain('--workspace-control-leading: 1.25rem')
   expect(frame).toContain('outline: 2px solid var(--workspace-ring)')

@@ -203,8 +203,12 @@
   background: var(--button-neutral);
   text-transform: capitalize;
 }
+.workspace-map-toggle:hover,
+.workspace-frame-actions button:hover {
+  background: var(--button-neutral-hover);
+}
 .workspace-map-toggle[aria-expanded='true'] {
-  background: var(--button-neutral);
+  background: var(--button-neutral-active);
   color: var(--workspace-ink);
   box-shadow: none;
 }
@@ -241,7 +245,7 @@
 .workspace-frame-actions button[aria-pressed='true'] {
   color: var(--workspace-ink);
   border-color: transparent;
-  background: var(--button-neutral);
+  background: var(--button-neutral-active);
   box-shadow: none;
 }
 .workspace-frame-layout {
