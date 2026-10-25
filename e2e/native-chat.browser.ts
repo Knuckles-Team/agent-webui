@@ -71,50 +71,13 @@ async function reachComposerByWheel(page: Page, input: Locator) {
         element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2))
       )
     })
-  const samples: unknown[] = []
-  const sample = () =>
-    input.evaluate((element) => {
-      const box = element.getBoundingClientRect()
-      const wheelHit = document.elementFromPoint(innerWidth * 0.7, innerHeight - 24)
-      const owners = []
-      for (let node = wheelHit; node; node = node.parentElement) {
-        const style = getComputedStyle(node)
-        owners.push({
-          tag: node.tagName,
-          className: node.className,
-          overflowY: style.overflowY,
-          position: style.position,
-          scrollTop: node.scrollTop,
-          scrollHeight: node.scrollHeight,
-          clientHeight: node.clientHeight,
-        })
-      }
-      return {
-        owners,
-        inputTop: box.top,
-        inputBottom: box.bottom,
-        wheelHit: wheelHit?.className,
-        scrollAncestors: Array.from(
-          document.querySelectorAll(
-            '.workspace-viewport, .workspace-task-surface, .workspace-context-content, .workspace-assistant-content',
-          ),
-        ).map((node) => ({
-          className: node.className,
-          scrollTop: node.scrollTop,
-          scrollHeight: node.scrollHeight,
-          clientHeight: node.clientHeight,
-        })),
-      }
-    })
   // Ordinary scrolling must work too: programmatic reveal can scroll overflow:hidden.
   for (let attempt = 0; attempt < 12 && !(await visible()); attempt += 1) {
     const size = page.viewportSize()!
     const direction = await input.evaluate((element) => (element.getBoundingClientRect().top < 0 ? -1 : 1))
     await page.mouse.move(size.width * 0.7, size.height - 24)
-    samples.push({ attempt, phase: 'before', state: await sample() })
     await page.mouse.wheel(0, (direction * size.height) / 2)
     await page.waitForTimeout(50)
-    samples.push({ attempt, phase: 'after', state: await sample() })
   }
   const reached = await visible()
   {
@@ -161,7 +124,7 @@ async function reachComposerByWheel(page: Page, input: Locator) {
     const path = test
       .info()
       .outputPath(`native-composer-wheel-${geometry.viewport.width}x${geometry.viewport.height}.json`)
-    await writeFile(path, JSON.stringify({ ...geometry, reached, samples }, null, 2))
+    await writeFile(path, JSON.stringify({ ...geometry, reached }, null, 2))
     await test.info().attach('native-composer-wheel-geometry', {
       path,
       contentType: 'application/json',
@@ -482,7 +445,22 @@ test('native composer and task remain reachable with enlarged text at narrow and
     { width: 320, height: 740 },
     { width: 844, height: 390 },
   ]) {
+    const retainedFocus = await page.locator(':focus').elementHandle()
+    expect(retainedFocus).not.toBeNull()
     await page.setViewportSize(size)
+    // Resize updates the viewport in one frame, then restores retained focus in the next.
+    // Wait for that lifecycle before deliberately revealing the task for ordinary wheel access.
+    await expect
+      .poll(() =>
+        page
+          .locator('.workspace-viewport')
+          .evaluate((element) => element.style.getPropertyValue('--workspace-visible-height')),
+      )
+      .toBe(`${size.height}px`)
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+    )
+    expect(await retainedFocus!.evaluate((element) => document.activeElement === element)).toBe(true)
     const context = page.locator('.workspace-context-content')
     const input = page.locator('#chat-message-input')
     await context.scrollIntoViewIfNeeded()
