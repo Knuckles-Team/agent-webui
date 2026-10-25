@@ -494,7 +494,8 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "4d0f9693e45d",
-        "d18ec8c78341"
+        "d18ec8c78341",
+        "e234cefa7db0"
       ],
       "verified_by": [
         "e2e/native-chat.browser.ts:1",
@@ -2241,8 +2242,8 @@
       "title": "Native read-only graph lens source slice",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "27acc988019e",
-        "66bc25839ae2"
+        "57c4a7bee78b",
+        "fc03d1807ace"
       ],
       "verified_by": [
         "e2e/explore-graph.browser.ts:1",
@@ -2257,8 +2258,8 @@
       "title": "Retained contextual workflow plan source",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "3b1fd81a5637",
-        "66bc25839ae2"
+        "f005d430aee0",
+        "fc03d1807ace"
       ],
       "verified_by": [
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:208",
@@ -2273,8 +2274,8 @@
       "title": "Absorb existing usage analysis into Operate",
       "delivery_state": "VERIFIED",
       "landed_in": [
-        "2cabc79e3889",
-        "66bc25839ae2"
+        "c707d71df0fe",
+        "fc03d1807ace"
       ],
       "verified_by": [
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:208",
