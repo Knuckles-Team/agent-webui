@@ -85,7 +85,7 @@ for (const theme of ['light', 'dark', 'glass']) {
       await page.screenshot({ path: info.outputPath(`identity-${theme}-${size.width}x${size.height}.png`) })
       await closeNarrowMap(page, map, size)
     }
-    await checkPrimaryWork(page)
+    await checkWorkDisclosure(page)
   })
 }
 
@@ -205,7 +205,7 @@ async function checkNarrowTask(page: Page, map: Locator, size: { width: number; 
   const task = await page.getByRole('region', { name: 'Current workspace task' }).boundingBox()
   expect(task!.y).toBeLessThan(290)
   expect(task!.height).toBeGreaterThanOrEqual(340)
-  await expectDock(page)
+  await expectClosedAssistant(page)
   const reprobe = page.getByRole('button', { name: 'Reprobe readiness', exact: true })
   const initial = await reprobe.evaluate((element) => {
     const rect = (node: Element) => {
@@ -232,8 +232,8 @@ async function checkNarrowTask(page: Page, map: Locator, size: { width: number; 
     body: JSON.stringify(initial, null, 2),
     contentType: 'application/json',
   })
-  // The in-flow assistant shares the task area. Reach actions using actual Tab
-  // navigation, not a programmatic scroll that can reveal overflow:hidden content.
+  // Closed chat reserves no task area. Reach actions using actual Tab navigation,
+  // not a programmatic scroll that can reveal overflow:hidden content.
   await tabTo(page, reprobe)
   await expect(reprobe).toBeFocused()
   await hit(reprobe)
@@ -241,7 +241,7 @@ async function checkNarrowTask(page: Page, map: Locator, size: { width: number; 
   await tabTo(page, refresh)
   await expect(refresh).toBeFocused()
   await hit(refresh)
-  await expectDock(page)
+  await expectClosedAssistant(page)
   await tabTo(page, page.getByRole('textbox', { name: 'Filter fleet children' }))
   await hit(page.getByRole('textbox', { name: 'Filter fleet children' }))
   await checkNativeAssistant(page)
@@ -266,26 +266,48 @@ async function closeNarrowMap(page: Page, map: Locator, size: { width: number; h
   await expect(map).not.toBeVisible()
 }
 
-async function expectDock(page: Page) {
+async function expectClosedAssistant(page: Page) {
   await expect(page.locator('#chat-panel-toggle')).toHaveCount(0)
-  const panel = page.getByRole('region', { name: 'Workspace assistant' })
+  const panel = page.locator('#workspace-assistant')
+  await expect(panel).toHaveCount(1)
+  await expect(panel).toBeHidden()
+  await expect(page.locator('#chat-message-input')).toHaveCount(1)
+  await expect(page.locator('#chat-message-input')).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Focus message input' })).toHaveCount(0)
+  const expand = page
+    .locator('#workspace-assistant-entry-slot')
+    .getByRole('button', { name: 'Expand chat', exact: true })
+  await expect(expand).toBeVisible()
+  await expect(expand).toHaveAttribute('aria-expanded', 'false')
+  await expect(expand).toHaveAttribute('aria-pressed', 'false')
+  expect(await panel.evaluate((element) => element.getBoundingClientRect().height)).toBe(0)
+  const layout = await page.locator('.workspace-chat-layout').boundingBox()
+  const context = await page.locator('.workspace-context-content').boundingBox()
+  expect(context!.width).toBeCloseTo(layout!.width, 0)
+  expect(context!.height).toBeCloseTo(layout!.height, 0)
   expect(await panel.evaluate((element) => getComputedStyle(element).position)).toBe('static')
   expect(await page.locator('.workspace-viewport').evaluate((element) => element.getBoundingClientRect().height)).toBe(
     740,
   )
 }
 async function checkNativeAssistant(page: Page) {
-  const expand = page.getByRole('button', { name: 'Expand chat', exact: true })
+  const entry = page.locator('#workspace-assistant-entry-slot')
+  const expand = entry.getByRole('button', { name: 'Expand chat', exact: true })
   await tabTo(page, expand)
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('button', { name: 'Restore chat size', exact: true })).toBeFocused()
-  await page.keyboard.press('Escape')
-  await expect(expand).toBeFocused()
+  const restore = entry.getByRole('button', { name: 'Restore chat size', exact: true })
+  await expect(restore).toBeFocused()
+  await expect(restore).toHaveAttribute('aria-expanded', 'true')
+  await expect(restore).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Focus message input' }).click()
   await expect(page.getByRole('textbox', { name: 'Message input' })).toBeFocused()
-  await expectDock(page)
+  const panel = page.getByRole('region', { name: 'Workspace assistant' })
+  expect(await panel.evaluate((element) => getComputedStyle(element).position)).toBe('static')
+  await page.keyboard.press('Escape')
+  await expect(expand).toBeFocused()
+  await expectClosedAssistant(page)
 }
-async function checkPrimaryWork(page: Page) {
+async function checkWorkDisclosure(page: Page) {
   await page.setViewportSize({ width: 320, height: 740 })
   await openContext(page)
   await page
@@ -296,6 +318,11 @@ async function checkPrimaryWork(page: Page) {
   await expect
     .poll(() => page.locator('.workspace-viewport').evaluate((element) => element.getBoundingClientRect().height))
     .toBe(740)
+  await expectClosedAssistant(page)
+  await page
+    .locator('#workspace-assistant-entry-slot')
+    .getByRole('button', { name: 'Expand chat', exact: true })
+    .click()
   await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible()
 }
 

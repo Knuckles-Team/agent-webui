@@ -35,6 +35,7 @@ async function prepare(
     )
   }, messages)
   await page.goto(path)
+  await page.getByRole('button', { name: 'Expand chat', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible()
 }
 
@@ -82,8 +83,8 @@ test('one native assistant retains draft, controls and context through navigatio
 }, info) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await prepare(page)
-  const panel = page.getByRole('region', { name: 'Workspace assistant' })
-  const input = page.getByRole('textbox', { name: 'Message input' })
+  const panel = page.locator('#workspace-assistant')
+  const input = page.locator('#chat-message-input')
   await input.fill('Unsent question carried through the workspace')
   await input.evaluate((element) => element.setAttribute('data-retained-composer', 'true'))
   const navigation = page.getByRole('navigation', { name: 'Primary workspace contexts' })
@@ -110,27 +111,23 @@ test('one native assistant retains draft, controls and context through navigatio
     { width: 2560, height: 1080 },
   ]) {
     await page.setViewportSize(size)
-    await expect(panel).toBeVisible()
+    const restore = page.getByRole('button', { name: 'Restore chat size', exact: true })
+    if (await restore.isVisible()) await restore.click()
+    await expect(panel).toBeHidden()
+    await expect(input).toBeHidden()
     await expect(input).toHaveAttribute('data-retained-composer', 'true')
     expect(await panel.evaluate((element) => getComputedStyle(element).position)).toBe('static')
+    expect(await panel.evaluate((element) => element.getBoundingClientRect().height)).toBe(0)
     expect(
       await page.locator('.workspace-chat-boundary').evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true)
     const taskBox = await page.locator('.workspace-context-content').boundingBox()
-    const chatBox = await panel.boundingBox()
-    if (size.width >= 1440) {
-      expect(taskBox!.width).toBeGreaterThan(chatBox!.width)
-      expect(chatBox!.x).toBeGreaterThanOrEqual(taskBox!.x + taskBox!.width - 1)
-    } else if (size.width === 320) {
-      // A retained two-line draft measured 229px; intrinsic content must not be clipped to a fixture cap.
-      expect(taskBox!.height).toBeGreaterThanOrEqual(200)
-      expect(chatBox!.height).toBeLessThan(taskBox!.height)
-      await expect(panel.locator('.chat-compact-status')).toBeVisible()
-      await expect(panel.getByRole('log')).toHaveCount(0)
-      expect(Math.abs(chatBox!.y - (taskBox!.y + taskBox!.height))).toBeLessThanOrEqual(1)
-      await reachComposerByWheel(page, input)
-      await hitTarget(input, false)
-    }
+    const layoutBox = await page.locator('.workspace-chat-layout').boundingBox()
+    expect(Math.abs(taskBox!.width - layoutBox!.width)).toBeLessThanOrEqual(1)
+    expect(Math.abs(taskBox!.height - layoutBox!.height)).toBeLessThanOrEqual(1)
+    expect(taskBox!.height).toBeGreaterThanOrEqual(200)
+    await expect(panel.getByRole('log')).toHaveCount(0)
+    await expect(page.locator('#workspace-assistant-entry-slot .workspace-assistant-disclosure')).toBeVisible()
     const expand = page.getByRole('button', { name: 'Expand chat', exact: true })
     await hitTarget(expand)
     await expand.tap()
@@ -138,14 +135,22 @@ test('one native assistant retains draft, controls and context through navigatio
       'aria-pressed',
       'true',
     )
+    await expect(panel).toBeVisible()
+    const expandedTaskBox = await page.locator('.workspace-context-content').boundingBox()
+    const expandedChatBox = await panel.boundingBox()
+    expect(expandedChatBox!.y).toBeGreaterThanOrEqual(expandedTaskBox!.y + expandedTaskBox!.height)
+    expect(Math.abs(expandedChatBox!.width - expandedTaskBox!.width)).toBeLessThanOrEqual(1)
     await reachComposerByWheel(page, input)
     await page.getByRole('button', { name: 'Focus message input' }).click()
     await expect(input).toBeFocused()
     await hitTarget(input)
     await page.keyboard.press('Escape')
-    await expect(input).toBeFocused()
+    await expect(expand).toBeFocused()
     await expect(expand).toHaveAttribute('aria-pressed', 'false')
+    await expect(input).toBeHidden()
     await expect(input).toHaveValue('Unsent question carried through the workspace')
+    await expand.click()
+    await expect(input).toHaveAttribute('data-retained-composer', 'true')
     const options = panel.getByRole('button', { name: 'Message options' })
     if (await options.isVisible()) await options.click()
     for (const name of ['Attach image files', 'Export conversation']) {
@@ -168,12 +173,13 @@ test('retained legacy private routes keep the native dock reachable at short and
   await prepare(page)
   for (const path of ['/overview', '/files']) {
     await page.goto(path)
+    await page.getByRole('button', { name: 'Expand chat', exact: true }).click()
     for (const size of [
       { width: 740, height: 320 },
       { width: 320, height: 740 },
     ]) {
       await page.setViewportSize(size)
-      const input = page.getByRole('textbox', { name: 'Message input' })
+      const input = page.locator('#chat-message-input')
       await expect(input).toBeVisible()
       await hitTarget(input)
       await input.fill('Legacy private route draft')
@@ -202,21 +208,21 @@ test('retained long transcript keeps its real scrolling child and scroll-to-late
   }))
   await page.setViewportSize({ width: 1440, height: 900 })
   await prepare(page, messages)
-  const panel = page.getByRole('region', { name: 'Workspace assistant' })
+  const panel = page.locator('#workspace-assistant')
   const transcriptElement = panel.locator('.chat-transcript')
   await transcriptElement.evaluate((element) => element.setAttribute('data-retained-transcript', 'true'))
-  const input = page.getByRole('textbox', { name: 'Message input' })
+  const input = page.locator('#chat-message-input')
   await input.fill('Retained alongside a long transcript')
   for (const size of [
     { width: 1440, height: 900 },
     { width: 320, height: 740 },
   ]) {
     await page.setViewportSize(size)
-    if (size.width === 320) {
-      await expect(panel.getByRole('log')).toHaveCount(0)
-      await expect(input).toBeFocused()
-      await page.getByRole('button', { name: 'Expand chat', exact: true }).click()
-    }
+    const restore = page.getByRole('button', { name: 'Restore chat size', exact: true })
+    if (await restore.isVisible()) await restore.click()
+    await expect(panel.getByRole('log')).toHaveCount(0)
+    await expect(input).toBeHidden()
+    await page.getByRole('button', { name: 'Expand chat', exact: true }).click()
     await expect(transcriptElement).toHaveAttribute('data-retained-transcript', 'true')
     await expect(input).toHaveValue('Retained alongside a long transcript')
     const scroller = transcriptElement.locator(':scope > div').first()
@@ -235,15 +241,14 @@ test('retained long transcript keeps its real scrolling child and scroll-to-late
       .poll(() => scroller.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop))
       .toBeLessThan(3)
     await transcriptElement.getByRole('button', { name: 'Read evidence', exact: true }).first().focus()
-    if (size.width === 320) {
-      await page.keyboard.press('Escape')
-      await expect(input).toBeFocused()
-      await expect(panel.getByRole('log')).toHaveCount(0)
-    }
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Expand chat', exact: true })).toBeFocused()
+    await expect(panel.getByRole('log')).toHaveCount(0)
+    await expect(transcriptElement).toHaveAttribute('data-retained-transcript', 'true')
   }
 })
 
-test('compact view keeps execution mode and live SWE stop visible without Options', async ({ page }) => {
+test('contextual activity survives closing and live SWE stop stays reachable without Options', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await prepare(page)
   let actions = 0
@@ -268,7 +273,11 @@ test('compact view keeps execution mode and live SWE stop visible without Option
   await page.getByRole('textbox', { name: 'Message input' }).fill('synthetic command')
   await page.getByRole('button', { name: 'Send message', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Stop SWE session' })).toBeVisible()
+  await page.getByRole('button', { name: 'Restore chat size', exact: true }).click()
+  await expect(page.locator('#workspace-assistant')).toBeHidden()
+  await expect(page.locator('#workspace-assistant-entry-slot')).toContainText('Developer workspace session active.')
   await page.setViewportSize({ width: 320, height: 740 })
+  await page.getByRole('button', { name: 'Expand chat', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Message options' })).toHaveAttribute('aria-expanded', 'false')
   await expect(page.getByText('Developer workspace mode', { exact: true })).toBeVisible()
   await expect(page.getByText('Developer workspace session active.', { exact: true })).toBeVisible()
@@ -282,9 +291,10 @@ test('compact view keeps execution mode and live SWE stop visible without Option
   await expect(page.getByText('Developer workspace mode enabled.', { exact: true })).toBeVisible()
 })
 
-test('compact approval cue follows the existing review arrival, disclosure and decision', async ({ page }) => {
+test('contextual approval cue follows the existing review arrival, disclosure and decision', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 740 })
   await prepare(page)
+  await page.getByRole('button', { name: 'Restore chat size', exact: true }).click()
   const review = page.getByRole('button', { name: 'Review required approval' })
   await expect(review).toHaveCount(0)
   await page.evaluate(() => {
@@ -315,7 +325,7 @@ test('compact approval cue follows the existing review arrival, disclosure and d
   await expect(page.getByRole('group', { name: 'Required approval' })).toBeFocused()
   await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
-  await expect(page.getByRole('textbox', { name: 'Message input' })).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Expand chat', exact: true })).toBeFocused()
   await expect(review).toBeVisible()
   await review.click()
   await page.getByRole('button', { name: 'Reject', exact: true }).click()
@@ -328,9 +338,10 @@ test('fresh secondary workspace entries do not autofocus or scroll down to the c
   await prepare(page, transcript, '/workspace/explore')
   for (const path of ['/workspace/explore', '/workspace/operate']) {
     await page.goto(path)
-    const input = page.getByRole('textbox', { name: 'Message input' })
-    await expect(input).toBeVisible()
+    const input = page.locator('#chat-message-input')
+    await expect(input).toBeHidden()
     await expect(input).not.toBeFocused()
+    await expect(page.locator('#workspace-assistant-entry-slot .workspace-assistant-disclosure')).toBeVisible()
     expect(await page.locator('.workspace-viewport').evaluate((element) => element.scrollTop)).toBe(0)
     await info.attach(`native-chat-fresh-${path.split('/').at(-1)}.png`, {
       body: await page.screenshot({
@@ -340,6 +351,7 @@ test('fresh secondary workspace entries do not autofocus or scroll down to the c
       contentType: 'image/png',
     })
   }
+  await page.getByRole('button', { name: 'Expand chat', exact: true }).click()
   await page.getByRole('button', { name: 'Focus message input' }).click()
   await expect(page.getByRole('textbox', { name: 'Message input' })).toBeFocused()
 })
@@ -357,14 +369,14 @@ test('native composer and task remain reachable with enlarged text at narrow and
   ]) {
     await page.setViewportSize(size)
     const context = page.locator('.workspace-context-content')
-    const input = page.getByRole('textbox', { name: 'Message input' })
+    const input = page.locator('#chat-message-input')
     await context.scrollIntoViewIfNeeded()
     expect((await context.boundingBox())!.height).toBeGreaterThanOrEqual(200)
     await expect
       .poll(() =>
         page
           .locator('.workspace-assistant-content, .workspace-assistant .chat-flow')
-          .evaluateAll((elements) => elements.every((element) => element.scrollHeight <= element.clientHeight + 1)),
+          .evaluateAll((elements) => elements.every((element) => element.scrollWidth <= element.clientWidth + 1)),
       )
       .toBe(true)
     await reachComposerByWheel(page, input)
@@ -404,7 +416,7 @@ test('native composer and task remain reachable with enlarged text at narrow and
       )
       .toBe(true)
     await input.focus()
-    const expand = page.getByRole('button', { name: 'Expand chat', exact: true })
+    const expand = page.getByRole('button', { name: 'Restore chat size', exact: true })
     for (const [control, key] of [
       [mode, 'Tab'],
       [expand, 'Shift+Tab'],

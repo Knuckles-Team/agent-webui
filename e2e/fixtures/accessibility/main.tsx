@@ -59,7 +59,10 @@ function Fixture() {
   const [primary, setPrimary] = useState(false)
   return (
     <PageContextProvider route={primary ? '/chat' : '/atlas'} view={primary ? 'chat' : 'atlas'}>
-      <button onClick={() => setPrimary((value) => !value)}>Switch view</button>
+      <header className="flex flex-wrap items-center gap-2">
+        <button onClick={() => setPrimary((value) => !value)}>Switch view</button>
+        <div id="workspace-assistant-entry-slot" />
+      </header>
       <div className="workspace-chat-boundary">
         <div className="workspace-chat-layout" data-primary={primary}>
           <div className="workspace-context-content" hidden={primary}>

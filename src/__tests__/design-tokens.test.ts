@@ -118,35 +118,52 @@ describe.each(['light', 'dark'] as const)('%s theme contrast targets (WEBUI-DESI
 })
 
 // spec: WEBUI-DESIGN-R002.1.1
-it.each(['light', 'dark'] as const)('protects %s shell labels even over black and white backdrops', (theme) => {
+it.each(['light', 'dark'] as const)('keeps %s glass text readable over the bounded authored field', (theme) => {
   const tokens = theme === 'dark' ? DARK : LIGHT
-  const alpha = Number.parseFloat(tokens['--shell-alpha']) / 100
-  expect(alpha).toBeGreaterThanOrEqual(0.9)
-  for (const backdrop of [0, 255]) {
-    const surface = tokens['--card']
-      .slice(1)
-      .match(/../g)!
-      .map((channel) => parseInt(channel, 16))
-    const composite =
+  for (const material of [
+    '--glass-chrome',
+    '--glass-secondary',
+    '--glass-primary',
+    '--glass-reading',
+    '--glass-control',
+  ]) {
+    const values = tokens[material].match(/[\d.]+/g)!.map(Number)
+    const color =
       '#' +
-      surface
-        .map((channel) =>
-          Math.round(channel * alpha + backdrop * (1 - alpha))
-            .toString(16)
-            .padStart(2, '0'),
-        )
+      values
+        .slice(0, 3)
+        .map((value) => value.toString(16).padStart(2, '0'))
         .join('')
-    for (const text of ['--foreground', '--muted-foreground'])
-      expect(contrastRatio(tokens[text], composite)).toBeGreaterThanOrEqual(4.5)
+    const alpha = values[3] / 100
+    expect(alpha).toBeLessThan(0.9)
+    expect(alpha).toBeGreaterThan(0.5)
+    // The authored field contains no channel darker than this floor. White is
+    // conservative for every luminous spot, including overlapping gradients.
+    for (const backdrop of [tokens['--glass-field-floor'], '#ffffff']) {
+      const composite = compositeHex(color, backdrop, alpha)
+      for (const text of ['--foreground', '--glass-muted'])
+        expect(contrastRatio(tokens[text], composite), `${theme} ${material} ${text}`).toBeGreaterThanOrEqual(4.5)
+    }
   }
 })
 
-it('uses the same solid reading palette for glass instead of alpha text surfaces', () => {
+it('keeps glass materials separate from semantic tokens and container opacity', () => {
   const glass = readThemeBlock(CSS_SOURCE, '.glass')
-  expect(glass['--shell-alpha']).toBe('92%')
+  expect(glass['--shell-alpha']).toBe('58%')
   expect(glass['--card']).toBeUndefined()
   expect(glass['--background']).toBeUndefined()
   expect(CSS_SOURCE).not.toContain('.glass body')
+  const frame = readFileSync(resolve(import.meta.dirname, '../components/workspace/WorkspaceFrame.css'), 'utf-8')
+  const explore = readFileSync(resolve(import.meta.dirname, '../components/workspace/ExploreWorkspace.css'), 'utf-8')
+  expect(frame).toContain('background: var(--glass-chrome)')
+  expect(explore).toContain('background: var(--glass-primary)')
+  for (const source of [frame, explore]) {
+    expect(source).toContain("[data-transparency='opaque']")
+    expect(source).toContain('(prefers-reduced-transparency: reduce)')
+    expect(source).toContain('(forced-colors: active)')
+    expect(source).toContain('backdrop-filter: none')
+    expect(source).not.toContain('opacity: 0.92')
+  }
 })
 
 // spec: WEBUI-DESIGN-R002.1.1

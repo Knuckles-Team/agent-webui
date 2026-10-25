@@ -95,6 +95,7 @@ export function WorkspaceNavigation({ route, currentRole }: { route: RouteDef; c
             {selectedReference ? ` / ${selectedReference}` : ''}
           </span>
         </nav>
+        <div id="workspace-assistant-entry-slot" />
         <details ref={disclosure} className="group">
           <summary
             ref={summary}

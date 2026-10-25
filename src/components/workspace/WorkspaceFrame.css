@@ -4,29 +4,47 @@
   --workspace-canopy: var(--accent);
   --workspace-node: var(--surface-raised);
   --workspace-ink: var(--foreground);
-  --workspace-muted: var(--muted-foreground);
-  --workspace-line: var(--input);
-  --workspace-branch: var(--text-secondary);
+  --workspace-muted: var(--glass-muted);
+  --workspace-line: var(--glass-line);
+  --workspace-branch: var(--glass-muted);
   --workspace-selection: var(--primary);
   --workspace-selection-ink: var(--primary-foreground);
   --workspace-ring: var(--ring);
+  --muted-foreground: var(--glass-muted);
+  --workspace-inset: 1rem;
+  gap: 1rem;
+  padding: max(var(--workspace-inset), env(safe-area-inset-top, 0px))
+    max(var(--workspace-inset), env(safe-area-inset-right, 0px))
+    max(var(--workspace-inset), env(safe-area-inset-bottom, 0px))
+    max(var(--workspace-inset), env(safe-area-inset-left, 0px));
+  /* One static light field. Overlapping soft gradients suggest canopy light,
+     not a literal forest or an animated full-screen blur surface. */
   background:
-    radial-gradient(ellipse at 5% 8%, var(--atmosphere-light), transparent 48%),
-    radial-gradient(ellipse at 95% 85%, var(--atmosphere-sage), transparent 56%), var(--background);
+    radial-gradient(ellipse 12% 34% at 26% -6%, rgb(255 255 235 / 65%), transparent 100%),
+    radial-gradient(ellipse 10% 22% at 76% 92%, rgb(246 250 226 / 68%), transparent 100%),
+    radial-gradient(ellipse 5% 12% at 15% 71%, rgb(239 246 202 / 48%), transparent 100%),
+    radial-gradient(ellipse 7% 9% at 85% 24%, rgb(232 240 199 / 50%), transparent 100%),
+    radial-gradient(ellipse 46% 75% at 48% -18%, var(--glass-field-light), transparent 100%),
+    radial-gradient(ellipse 35% 62% at 106% 77%, var(--glass-field-blue), transparent 100%),
+    radial-gradient(ellipse 38% 55% at 16% 105%, var(--glass-field-blue), transparent 100%),
+    radial-gradient(ellipse 25% 60% at 3% 32%, var(--atmosphere-sage), transparent 100%),
+    radial-gradient(ellipse 28% 40% at 70% 55%, var(--atmosphere-sage), transparent 100%), var(--glass-field-floor);
+  background-attachment: local;
 }
 .workspace-context-rail {
   position: relative;
   z-index: 20;
   color: var(--workspace-ink);
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--glass-edge);
+  border-radius: 1.5rem;
   background: var(--workspace-surface);
-  box-shadow: var(--material-shadow);
-  padding: 0.5rem 0.75rem;
+  box-shadow: var(--glass-shadow);
+  padding: 0.375rem 0.875rem;
 }
 .workspace-header-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.625rem;
   min-width: 0;
   min-height: 2.75rem;
   flex-wrap: wrap;
@@ -39,7 +57,8 @@
 .workspace-header-disclosure,
 .workspace-header-content,
 #workspace-map-toggle-slot,
-#workspace-frame-tools-slot {
+#workspace-frame-tools-slot,
+#workspace-assistant-entry-slot {
   display: contents;
 }
 .workspace-header-summary {
@@ -50,12 +69,17 @@
 }
 .workspace-context-rail nav a {
   border-color: transparent;
+  border-radius: 0.875rem;
+  font-size: 0.875rem;
+  transition: background-color var(--motion-context) var(--motion-ease);
 }
 .workspace-context-rail nav a[aria-current='page'] {
-  color: var(--workspace-selection-ink);
-  background: var(--workspace-selection);
-  border-color: var(--workspace-selection);
-  box-shadow: inset 0 -2px 0 var(--material-edge);
+  color: var(--workspace-ink);
+  background: var(--glass-control);
+  border-color: var(--glass-edge);
+  box-shadow:
+    0 2px 8px rgb(36 57 44 / 5%),
+    inset 0 1px 0 var(--glass-edge);
 }
 .workspace-context-navigation {
   flex-shrink: 0;
@@ -72,8 +96,9 @@
   gap: 0.5rem;
   width: 100%;
   color: var(--text-secondary);
-  background: var(--surface-raised);
-  border-color: var(--input);
+  background: var(--glass-control);
+  border-color: var(--glass-edge);
+  border-radius: 0.875rem;
   text-align: left;
 }
 .workspace-command-trigger kbd {
@@ -96,12 +121,12 @@
   min-height: 44px;
   gap: 0.375rem;
   padding: 0.5rem;
-  border: 1px solid var(--input);
-  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 0.875rem;
   list-style: none;
   cursor: pointer;
   font-size: 0.875rem;
-  background: var(--card);
+  background: transparent;
 }
 .workspace-appearance-options {
   position: absolute;
@@ -156,12 +181,13 @@
   padding: 0.5rem;
   border: 1px solid var(--workspace-line);
   border-radius: 0.5rem;
-  background: var(--workspace-node);
+  background: var(--glass-control);
   text-transform: capitalize;
 }
 .workspace-map-toggle[aria-expanded='true'] {
-  background: var(--workspace-selection);
-  color: var(--workspace-selection-ink);
+  background: var(--glass-control);
+  color: var(--workspace-ink);
+  box-shadow: inset 0 -2px 0 var(--primary);
 }
 .workspace-frame {
   display: flex;
@@ -189,14 +215,15 @@
 .workspace-frame-actions button {
   min-height: 44px;
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--workspace-line);
-  border-radius: 0.5rem;
-  background: var(--workspace-node);
+  border: 1px solid var(--glass-edge);
+  border-radius: 0.75rem;
+  background: var(--glass-control);
 }
 .workspace-frame-actions button[aria-pressed='true'] {
-  color: var(--workspace-selection-ink);
-  border-color: var(--workspace-selection);
-  background: var(--workspace-selection);
+  color: var(--workspace-ink);
+  border-color: var(--glass-edge);
+  background: var(--glass-control);
+  box-shadow: inset 0 -2px 0 var(--primary);
 }
 .workspace-frame-layout {
   display: grid;
@@ -210,17 +237,20 @@
   min-height: 12rem;
   max-height: min(24rem, 45dvh);
   overflow: auto;
-  padding: 0.75rem;
+  padding: 1.125rem;
   scroll-padding: 1rem;
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--glass-edge);
+  border-radius: 1.5rem;
   background: var(--workspace-surface);
-  box-shadow: var(--material-shadow);
+  box-shadow: var(--glass-shadow);
 }
 .workspace-map[hidden] {
   display: none;
 }
 .workspace-map-context {
+  padding-bottom: 1rem;
   margin-bottom: 1rem;
+  border-bottom: 1px solid var(--glass-line);
 }
 .workspace-map-context strong {
   display: block;
@@ -243,15 +273,15 @@
   min-height: 44px;
   padding: 0.5rem 0.75rem;
   margin-top: 0.25rem;
-  border: 1px solid var(--workspace-line);
-  border-radius: 0.5rem;
-  background: var(--workspace-node);
+  border: 1px solid var(--glass-edge);
+  border-radius: 0.75rem;
+  background: var(--glass-control);
 }
 .workspace-map-breadcrumbs {
   display: grid;
   gap: 0.5rem;
   margin: 0.5rem 0 1rem 0.75rem;
-  border-left: 2px solid var(--workspace-branch);
+  border-left: 1px solid var(--glass-line);
   padding: 0 0 0 0.75rem;
   list-style: none;
 }
@@ -270,7 +300,7 @@
   position: absolute;
   width: calc(0.75rem + var(--path-indent));
   left: calc(-0.75rem - var(--path-indent));
-  border-top: 2px solid var(--workspace-branch);
+  border-top: 1px solid var(--glass-line);
 }
 .workspace-map-node {
   display: flex;
@@ -278,24 +308,26 @@
   min-height: var(--control-height);
   min-width: 0;
   padding: 0.375rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--workspace-node);
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  background: transparent;
   overflow-wrap: anywhere;
   font-size: 0.875rem;
 }
 .workspace-map-node[aria-current] {
-  color: var(--workspace-selection-ink);
-  border-color: var(--workspace-selection);
-  background: var(--workspace-selection);
-  box-shadow: inset 3px 0 var(--material-edge);
+  color: var(--workspace-ink);
+  border-color: var(--glass-edge);
+  background: var(--glass-control);
+  box-shadow:
+    inset 3px 0 var(--primary),
+    0 4px 12px rgb(37 65 47 / 4%);
   font-weight: 600;
 }
 .workspace-map-parent {
   margin-top: 1rem;
 }
 .workspace-map-parent .workspace-map-node {
-  border-width: 2px;
+  border-width: 1px;
 }
 .workspace-map-branches,
 .workspace-map-list {
@@ -306,7 +338,7 @@
 .workspace-map-branches {
   margin-left: 0.75rem;
   padding-left: 1rem;
-  border-left: 2px solid var(--workspace-branch);
+  border-left: 1px solid var(--glass-line);
 }
 .workspace-map-branches li,
 .workspace-map-list li {
@@ -320,7 +352,7 @@
   width: 1rem;
   left: -1rem;
   top: 22px;
-  border-top: 2px solid var(--workspace-branch);
+  border-top: 1px solid var(--glass-line);
 }
 .workspace-task-surface {
   display: flex;
@@ -354,19 +386,17 @@
 }
 @container workspace-frame (min-width: 64rem) {
   .workspace-frame-layout[data-map-open='true'] {
-    grid-template-columns: minmax(12rem, var(--workspace-map-size, 14rem)) 0.5rem minmax(24rem, 1fr);
+    grid-template-columns: minmax(12rem, var(--workspace-map-size, 14rem)) 1rem minmax(24rem, 1fr);
   }
   .workspace-frame-layout {
     overflow: hidden;
   }
   .workspace-map {
     max-height: none;
-    border-bottom: 0;
   }
   .workspace-map-gutter {
     display: block;
     position: relative;
-    border-left: 1px solid var(--workspace-line);
   }
   .workspace-map-gutter button {
     position: absolute;
@@ -374,12 +404,12 @@
     left: 50%;
     transform: translateX(-50%);
     z-index: 2;
-    width: 44px;
+    width: 24px;
     height: 44px;
     color: var(--workspace-ink);
-    background: var(--workspace-canopy);
-    border: 1px solid var(--workspace-line);
-    border-radius: 0.5rem;
+    background: var(--glass-control);
+    border: 1px solid var(--glass-edge);
+    border-radius: 0.75rem;
     cursor: col-resize;
     touch-action: none;
   }
@@ -418,10 +448,13 @@
   }
 }
 @supports (backdrop-filter: blur(12px)) {
-  .workspace-context-rail,
+  .workspace-context-rail {
+    background: var(--glass-chrome);
+    backdrop-filter: blur(18px) saturate(125%);
+  }
   .workspace-map {
-    background: color-mix(in srgb, var(--workspace-surface) var(--shell-alpha), transparent);
-    backdrop-filter: blur(16px) saturate(105%);
+    background: var(--glass-secondary);
+    backdrop-filter: blur(18px) saturate(120%);
   }
 }
 .workspace-map:not([hidden]) {
@@ -496,12 +529,11 @@
   object-fit: contain;
   margin-inline-end: 0.375rem;
   border-radius: 0.25rem;
-  background: var(--card);
+  background: transparent;
 }
 
 .workspace-task-surface .workspace-route-content {
-  padding-top: 0.75rem;
-  padding-inline: 0.75rem;
+  padding: 0.25rem 0.125rem 0.75rem;
   scroll-padding: 1rem;
 }
 /* Fit Work evidence to its scrollport; give focused controls their own inset. */
@@ -515,7 +547,9 @@
   margin-top: 0.25rem;
 }
 .workspace-map-search input {
-  background: var(--surface-raised);
+  background: var(--glass-control);
+  border-color: var(--glass-edge);
+  box-shadow: inset 0 1px 2px rgb(40 62 47 / 4%);
 }
 .workspace-map-node {
   transition:
@@ -532,6 +566,20 @@
 }
 
 @media (max-width: 40rem) {
+  .workspace-viewport:has(.workspace-frame) {
+    --workspace-inset: 0.5rem;
+    gap: 0.5rem;
+  }
+  .workspace-context-rail {
+    border-radius: 1.25rem;
+    padding: 0.25rem 0.5rem;
+  }
+  .workspace-header-row {
+    gap: 0.25rem;
+  }
+  .workspace-context-rail nav a {
+    padding-inline: 0.625rem;
+  }
   .workspace-command-trigger kbd {
     display: none;
   }
@@ -543,6 +591,7 @@
     min-height: 0;
     max-height: min(14rem, 30dvh);
     padding-top: 0.5rem;
+    margin-bottom: 0.75rem;
   }
   .workspace-map-context {
     display: flex;
@@ -565,4 +614,64 @@
   .workspace-route-content .work-execution-diagram {
     max-height: min(20rem, calc(100cqh - 2rem), calc(100dvh - 2rem));
   }
+}
+
+/* System/explicit material reductions remove the field as well as its blur. */
+:root[data-transparency='opaque'] .workspace-viewport:has(.workspace-frame) {
+  --glass-control: var(--surface-raised);
+  --glass-reading: var(--surface-raised);
+  --glass-primary: var(--card);
+  --glass-secondary: var(--card);
+  --glass-chrome: var(--card);
+  background: var(--background);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .workspace-viewport:has(.workspace-frame) {
+    --glass-control: var(--surface-raised);
+    --glass-reading: var(--surface-raised);
+    --glass-primary: var(--card);
+    --glass-secondary: var(--card);
+    --glass-chrome: var(--card);
+    background: var(--background);
+  }
+}
+@media (forced-colors: active) {
+  .workspace-viewport:has(.workspace-frame) {
+    background: Canvas;
+    --glass-muted: CanvasText;
+    --glass-control: Canvas;
+    --glass-edge: ButtonText;
+    --glass-line: CanvasText;
+  }
+  .workspace-context-rail,
+  .workspace-map {
+    box-shadow: none;
+  }
+}
+
+.workspace-viewport:has(.workspace-frame) > div:empty {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  :root[data-transparency='opaque'] .workspace-viewport:has(.workspace-frame),
+  :root[data-transparency='opaque'] .workspace-context-rail,
+  :root[data-transparency='opaque'] .workspace-map {
+    background: Canvas;
+  }
+}
+
+@media (pointer: coarse) {
+  .workspace-map-gutter button {
+    width: 44px;
+    min-width: 44px;
+  }
+}
+/* Context text sits on its own thin reading scrim, not directly on a dark field. */
+.workspace-task-surface .workspace-route-content > div > p:first-child {
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--glass-primary);
 }

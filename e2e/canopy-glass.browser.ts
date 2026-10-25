@@ -95,10 +95,62 @@ async function expandedHeader(page: Page) {
   for (const name of ['Find destination', 'Focus map', 'Focus current task'])
     await expect(page.getByRole('button', { name, exact: true })).toBeVisible()
   const box = await page.locator('.workspace-context-rail').boundingBox()
-  expect(box!.x).toBe(0)
-  expect(box!.width).toBe(page.viewportSize()!.width)
+  expect(box!.x).toBeGreaterThan(0)
+  expect(box!.x).toBeLessThanOrEqual(32)
+  expect(box!.width).toBeGreaterThanOrEqual(page.viewportSize()!.width * 0.89)
+  expect(Math.abs(box!.width + box!.x * 2 - page.viewportSize()!.width)).toBeLessThanOrEqual(1)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 }
+
+test.describe('Liquid Glass reference preview', () => {
+  test.use({ video: { mode: 'on', size: { width: 1440, height: 900 } } })
+  test('real selected evidence, mobile and in-place Agent preview', async ({ page }, info) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    const failures = await prepare(page, 'light')
+    await page.screenshot({ path: info.outputPath('liquid-glass-desktop-preview.png'), animations: 'disabled' })
+    const panels = await page
+      .locator('.workspace-context-rail, .workspace-map, .explore-collection, .explore-inspector')
+      .evaluateAll((elements) =>
+        elements.map((element) => {
+          const style = getComputedStyle(element)
+          const box = element.getBoundingClientRect()
+          return {
+            class: element.className,
+            fill: style.backgroundColor,
+            blur: style.backdropFilter,
+            radius: style.borderRadius,
+            x: box.x,
+            y: box.y,
+            width: box.width,
+            height: box.height,
+          }
+        }),
+      )
+    await info.attach('liquid-glass-materials.json', {
+      body: JSON.stringify(panels, null, 2),
+      contentType: 'application/json',
+    })
+    for (const panel of panels) expect(panel.blur).not.toBe('none')
+    await expect(page.locator('#workspace-assistant')).toBeHidden()
+    const details = page.getByRole('region', { name: 'Selected evidence' })
+    await details.getByRole('button', { name: 'relationships', exact: true }).click()
+    await expect(details.getByRole('button', { name: /cites.*evidence:1$/ })).toBeVisible()
+    await details.getByRole('button', { name: 'overview', exact: true }).click()
+    await page.getByRole('button', { name: 'Expand chat', exact: true }).click()
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible()
+    await page.getByRole('textbox', { name: 'Message input' }).fill('Summarize the selected evidence')
+    await page.screenshot({ path: info.outputPath('liquid-glass-agent-expanded-preview.png'), animations: 'disabled' })
+    await page.keyboard.press('Escape')
+    await expect(page.locator('#workspace-assistant')).toBeHidden()
+    await details.getByRole('button', { name: 'Close evidence details' }).click()
+    await page.screenshot({ path: info.outputPath('liquid-glass-collection-preview.png'), animations: 'disabled' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.locator('.workspace-viewport').evaluate((element) => element.scrollTo(0, 0))
+    await page.screenshot({ path: info.outputPath('liquid-glass-mobile-preview.png'), animations: 'disabled' })
+    expect(failures).toEqual([])
+  })
+})
 
 for (const variant of [
   { theme: 'light', motion: 'no-preference' },
@@ -136,7 +188,7 @@ for (const variant of [
       await expect(details.getByRole('heading')).toHaveText(names[0])
       await page.locator('.workspace-viewport').evaluate((el) => el.scrollTo(0, 0))
       await expect(page.locator('#workspace-home')).toBeInViewport()
-      expect((await page.locator('.workspace-context-rail').boundingBox())!.y).toBe(0)
+      expect((await page.locator('.workspace-context-rail').boundingBox())!.y).toBeGreaterThan(0)
       if (viewport.width < 1024) {
         await expect(page.getByRole('button', { name: 'Show map' })).toBeVisible()
         await expect(page.getByRole('heading', { name: 'Explore', exact: true })).toBeInViewport()
@@ -279,6 +331,7 @@ test('Canopy dark security warning keeps its paired contrast', async ({ page }, 
   await search.hover()
   expect(await contrast(search)).toBeGreaterThanOrEqual(4.5)
   await page.screenshot({ path: info.outputPath('canopy-dark-security-warning.png'), animations: 'disabled' })
+  await page.getByRole('button', { name: 'Expand chat', exact: true }).click()
   await page.getByRole('button', { name: 'Focus message input', exact: true }).click()
   const send = page.getByRole('button', { name: 'Send message', exact: true })
   await expect(send).toBeDisabled()
@@ -309,7 +362,7 @@ test('Canopy narrow entry and explicit map keep a usable task', async ({ page },
   await page.setViewportSize({ width: 320, height: 740 })
   await prepare(page, 'glass', false, false)
   await expect(page.getByRole('button', { name: 'Show map' })).toBeVisible()
-  expect((await page.locator('.workspace-context-rail').boundingBox())!.y).toBe(0)
+  expect((await page.locator('.workspace-context-rail').boundingBox())!.y).toBeGreaterThan(0)
   await expect(page.locator('#workspace-home')).toBeInViewport()
   await expect(page.getByRole('textbox', { name: 'Find evidence' })).toBeInViewport()
   await page.screenshot({ path: info.outputPath('canopy-narrow-entry.png'), animations: 'disabled' })

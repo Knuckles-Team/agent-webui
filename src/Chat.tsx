@@ -57,6 +57,7 @@ import {
   type KeyboardEvent,
 } from 'react'
 
+import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useThrottle } from '@uidotdev/usehooks'
 import { nanoid } from 'nanoid'
@@ -723,6 +724,8 @@ interface ChatProps {
   pageContext: PageContextEnvelope
   /** Secondary native docks must not steal fresh task-entry focus. */
   focusOnMount?: boolean
+  /** Move only canonical status presentation to the contextual entry, never chat state. */
+  compactStatusTarget?: HTMLElement | null
 }
 
 /** Arrow-key/Enter/Tab/Escape navigation while the slash-command autocomplete popover
@@ -791,6 +794,23 @@ function submitAccessibleName(status: string): string {
     submitted: 'Sending message',
   }
   return names[status] ?? 'Send message'
+}
+
+/** Status may move into contextual chrome; the conversation itself never moves. */
+function renderCompactStatus(text: string, target?: HTMLElement | null, state = 'idle'): ReactNode {
+  const status = (
+    <p
+      role="status"
+      className={cn(
+        'chat-compact-status shrink-0 px-2 pt-1 text-xs text-muted-foreground',
+        state !== 'access' && 'hidden',
+      )}
+      data-chat-state={state}
+    >
+      {text}
+    </p>
+  )
+  return target ? createPortal(status, target) : status
 }
 
 /** Compact dock feedback derives only from the current canonical chat state. */
@@ -1104,6 +1124,7 @@ const OwnedChat = ({
   ownerKey,
   role,
   focusOnMount = true,
+  compactStatusTarget,
 }: ChatProps & { ownerKey: string; role: Role }) => {
   const [input, setInput] = useState('')
   const [composerOptionsOpen, setComposerOptionsOpen] = useState(false)
@@ -1886,15 +1907,17 @@ Available commands:
 
   return (
     <div className="chat-flow flex min-h-0 flex-col h-full overflow-auto" data-testid="chat-flow">
-      <p role="status" className="chat-compact-status hidden shrink-0 px-2 pt-1 text-xs text-muted-foreground">
-        {sweMode
+      {renderCompactStatus(
+        sweMode
           ? sweBusy
             ? 'Developer workspace command in progress.'
             : sweSessionId
               ? 'Developer workspace session active.'
               : 'Developer workspace mode enabled.'
-          : compactChatStatus(status, messages.length)}
-      </p>
+          : compactChatStatus(status, messages.length),
+        compactStatusTarget,
+        sweMode ? 'active' : status === 'ready' ? 'idle' : status,
+      )}
       <Conversation className="chat-transcript min-h-24 flex-1 shrink-0">
         <ConversationContent>
           {messages.map((message: UIMessage) => (
@@ -2145,17 +2168,22 @@ Available commands:
 /** Preserve workspace continuity only while the observed owner remains the same. */
 const Chat = (props: ChatProps) => {
   const { identity, loading } = useIdentity()
-  if (loading) return <p role="status">Checking conversation access…</p>
-  if (identity.needsSignIn) return <p role="status">Conversation access is not authorized. Sign in to continue.</p>
+  if (loading) return renderCompactStatus('Checking conversation access…', props.compactStatusTarget, 'access')
+  if (identity.needsSignIn)
+    return renderCompactStatus(
+      'Conversation access is not authorized. Sign in to continue.',
+      props.compactStatusTarget,
+      'access',
+    )
   const ownerKey = conversationOwnerKey(identity)
   return (
     <>
-      {hasUnassignedConversationHistory(identity.userKey) && (
-        <p role="status">
-          Older browser-only conversations are preserved but cannot be safely assigned to this account and tenant. Keep
-          this browser’s site data. Owner-verified history migration is not available yet.
-        </p>
-      )}
+      {hasUnassignedConversationHistory(identity.userKey) &&
+        renderCompactStatus(
+          'Older browser-only conversations are preserved but cannot be safely assigned to this account and tenant. Keep this browser’s site data. Owner-verified history migration is not available yet.',
+          props.compactStatusTarget,
+          'access',
+        )}
       <OwnedChat key={ownerKey} {...props} ownerKey={ownerKey} role={identity.role} />
     </>
   )

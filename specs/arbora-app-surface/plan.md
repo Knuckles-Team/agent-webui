@@ -883,8 +883,8 @@ remains unavailable, with no legacy fallback or fabricated graph.
 
 The bounded adapter validates the envelope, exact run/task identities, unique
 plan-step keys, explicit predecessor-to-dependent edges and evidence. The layout only places declared nodes; it does not schedule tasks or infer lineage.
-The inline diagram has an equivalent keyboard-accessible dependency list and
-wraps or scrolls within the existing Work panel at narrow widths. Labels remain
+The inline diagram has an equivalent keyboard-accessible dependency list.
+It wraps or scrolls within the existing Work panel at narrow widths. Labels remain
 plain text. Refresh, selection and identity changes retire the previous read;
 denied or malformed responses cannot reveal cached protected graph data.
 
@@ -1009,3 +1009,17 @@ Explicit retained-acceptance children now preserve those obligations in canonica
 Parent requirement text and qualified child evidence remain unchanged.
 Regenerate every spec status and audit ancestor states after source and receipt commits.
 The metadata regression must not create feature-acceptance bindings for retained work.
+
+## Liquid Glass reference correction — 2026-10-25
+
+Extend R049.2.1 and R005.4/R049.1.3 in their existing composition. Replace the
+default assistant side column with a contextual Agent entry in existing chrome.
+Reserve no permanent bottom bar or idle column; never use a floating bubble.
+Expand the same Chat instance in place; preserve drafts, owner retirement, real
+status, pending approvals, mode, stop, attachment and message-option access.
+Give the released width to evidence results and selected detail. Render optional
+summary/source metadata only when returned by the existing evidence search.
+No empty inspector, invented status or evidence, extra data access, or new router.
+
+Hosted browser captures and a short disclosure/selection video remain required
+for reference review. Keep broad all-route and installed-provider acceptance open.

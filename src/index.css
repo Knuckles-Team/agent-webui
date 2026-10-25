@@ -58,7 +58,7 @@
   --text-tiny: 0.75rem;
 }
 
-/* Canopy Glass: stable reading surfaces, translucent shell only. */
+/* Stable semantic palette plus bounded translucent workspace materials. */
 :root {
   --radius: 0.75rem;
   --background: #e9ede5;
@@ -101,7 +101,21 @@
   --material-shadow: 0 2px 8px rgb(31 42 36 / 6%), inset 0 1px 0 rgb(255 255 255 / 80%);
   --atmosphere-sage: #b5c5ab;
   --atmosphere-light: #faf3de;
-  --shell-alpha: 92%;
+  --shell-alpha: 58%;
+  --glass-field-floor: #45685b;
+  --glass-field-light: #fff9df;
+  --glass-field-blue: #87aaba;
+  --glass-chrome: rgb(241 246 231 / 58%);
+  --glass-secondary: rgb(218 234 220 / 54%);
+  --glass-primary: rgb(248 250 243 / 65%);
+  --glass-reading: rgb(255 255 250 / 80%);
+  --glass-control: rgb(255 255 252 / 64%);
+  --glass-edge: rgb(255 255 255 / 76%);
+  --glass-line: rgb(55 82 68 / 24%);
+  --glass-muted: #2c4034;
+  --glass-shadow:
+    0 18px 48px rgb(30 52 41 / 12%), 0 2px 6px rgb(30 52 41 / 5%), inset 0 1px 0 rgb(255 255 255 / 80%),
+    inset 0 -1px 0 rgb(255 255 255 / 20%);
   --status-info: #2a5c75;
   --status-info-surface: #e0edf2;
   --status-warning: #78520a;
@@ -158,7 +172,19 @@
   --material-shadow: 0 2px 8px rgb(0 0 0 / 16%), inset 0 1px 0 rgb(241 245 235 / 8%);
   --atmosphere-sage: #243d2e;
   --atmosphere-light: #343c29;
-  --shell-alpha: 90%;
+  --shell-alpha: 72%;
+  --glass-field-floor: #152d25;
+  --glass-field-light: #627263;
+  --glass-field-blue: #324d60;
+  --glass-chrome: rgb(24 43 34 / 72%);
+  --glass-secondary: rgb(24 43 34 / 74%);
+  --glass-primary: rgb(25 44 35 / 80%);
+  --glass-reading: rgb(28 47 38 / 88%);
+  --glass-control: rgb(35 55 44 / 88%);
+  --glass-edge: rgb(213 234 216 / 30%);
+  --glass-line: rgb(189 211 190 / 28%);
+  --glass-muted: #e1ebdc;
+  --glass-shadow: 0 18px 48px rgb(0 8 4 / 24%), inset 0 1px 0 rgb(223 241 225 / 20%);
   --status-info: #a8d3e8;
   --status-info-surface: #213c49;
   --status-warning: #edd08a;
@@ -169,8 +195,8 @@
 }
 
 .glass {
-  /* Glass uses the light palette; only chrome is translucent. */
-  --shell-alpha: 92%;
+  /* Compatibility theme alias. The independent transparency preference owns material. */
+  --shell-alpha: 58%;
 }
 
 /* ── Dashboard Widget Cards ───────────────────────────────────────── */

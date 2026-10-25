@@ -1,4 +1,4 @@
-import { ArrowUpRight, ChevronRight, FileText, FolderSearch, X } from 'lucide-react'
+import { ArrowUpRight, ChevronRight, FileText, FolderSearch, Search, X } from 'lucide-react'
 import './ExploreWorkspace.css'
 import { conversationOwnerKey } from '@/lib/chat-store'
 import { parseExploreLensState } from '@/lib/explore-lens-state'
@@ -185,7 +185,7 @@ export default function ExploreWorkspace({
       className="workspace-surface explore-workspace flex min-h-0 min-w-0 flex-col gap-3"
     >
       {showHeading && <h1 className="text-xl font-semibold">Explore</h1>}
-      <nav aria-label="Evidence scope" className="flex flex-wrap items-center gap-2 text-sm">
+      <nav aria-label="Evidence scope" className="explore-scope flex flex-wrap items-center gap-2 text-sm">
         <button
           className={button}
           onClick={() => {
@@ -211,7 +211,11 @@ export default function ExploreWorkspace({
           <summary className="workspace-pane-toggle">
             <FolderSearch size={18} aria-hidden="true" />
             <h2 className="inline font-semibold">Evidence collection</h2>
+            {results.data && <span className="explore-collection-count">{results.data.total} items</span>}
           </summary>
+          <p className="explore-collection-description">
+            Evidence, source notes and connections in your current scope.
+          </p>
           <form
             className="explore-search"
             onSubmit={(event) => {
@@ -222,16 +226,19 @@ export default function ExploreWorkspace({
           >
             <label className="min-w-0 flex-1 text-sm">
               Find evidence
-              <input
-                ref={searchInput}
-                className="explore-search-input"
-                placeholder="Search evidence, entities and source notes"
-                maxLength={4096}
-                value={draft}
-                onChange={(event) => {
-                  setDraft(event.target.value)
-                }}
-              />
+              <span className="explore-search-field">
+                <Search size={17} aria-hidden="true" />
+                <input
+                  ref={searchInput}
+                  className="explore-search-input"
+                  placeholder="Search evidence, entities and source notes"
+                  maxLength={4096}
+                  value={draft}
+                  onChange={(event) => {
+                    setDraft(event.target.value)
+                  }}
+                />
+              </span>
             </label>
             <button className={`${button} self-end`} type="submit">
               Search
@@ -275,7 +282,13 @@ export default function ExploreWorkspace({
                   </span>
                   <span className="explore-record-label">
                     <span className="block font-medium">{row.title ?? row.id}</span>
-                    <span className="text-xs text-muted-foreground">{row.type}</span>
+                    <span className="explore-record-type">{row.type}</span>
+                    {typeof row.properties?.summary === 'string' && (
+                      <span className="explore-record-summary">{row.properties.summary}</span>
+                    )}
+                    {typeof row.properties?.source === 'string' && (
+                      <span className="explore-record-source">{row.properties.source}</span>
+                    )}
                   </span>
                   <ChevronRight size={16} aria-hidden="true" className="explore-record-arrow" />
                 </a>
@@ -393,7 +406,7 @@ function EvidenceDetails({
     <dl className="explore-properties">
       {object.properties.length === 0 && <div>No properties are available.</div>}
       {object.properties.map((property) => (
-        <div key={property.name} className="explore-property">
+        <div key={property.name} className="explore-property" data-property={property.name}>
           <dt className="text-xs text-muted-foreground">{property.title ?? property.name}</dt>
           <dd className="break-all text-sm">
             {typeof property.value === 'string' ? property.value : JSON.stringify(property.value)}

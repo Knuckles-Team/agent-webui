@@ -96,16 +96,19 @@ space; dense lists and meaningful splits may use the rest.
 Retain compact, comfortable and touch usability. Compact spacing must not shrink
 required text below 12 CSS px: `--text-tiny` is `0.75rem`. Working text normally
 uses 13–14 px, readable line height and wrapping. `--radius: 0.75rem` yields
-8–16 px derived corners. Use a 4 px spacing rhythm and minimum rather than fixed
+8–16 px control corners; the workspace material uses 20–24 px panel corners. Use a 4 px spacing rhythm and minimum rather than fixed
 content heights. Compact controls/two-line records use `2.25rem`/`3.25rem`
 (36px/52px); comfortable uses `2.75rem`/`4rem` (44px/64px). Coarse-pointer records
 use 64px and controls retain a 44px floor in both density modes. Never meet a
 visible-row target by clipping labels or focus. At 1440×900, evaluate about 20 single-line or 11 two-line records after
 local chrome; record actual results and allow user enlargement to reduce counts.
 
-Glass belongs to chrome, not every nested panel. Use background alpha only, never
-container opacity over text. Keep at most two visible blur layers and no nested
-backdrop blur. Unsupported blur, reduced transparency, opaque preference and
+The continuous atmospheric field must remain visible through the header, map and
+primary panels. Primary evidence cards use higher-opacity white glass; secondary
+framing uses quieter sage/blue glass. Use background alpha only, never container
+opacity over text. Blur sibling framing surfaces only; nested cards and controls
+use alpha fills without another backdrop blur. No opaque ancestor may flatten
+the workspace field. Verify actual composited text and focus contrast. Unsupported blur, reduced transparency, opaque preference and
 forced colors remove effects without changing capability. Forced colors use
 system surfaces, text, selection and focus rather than preserving branded paint.
 

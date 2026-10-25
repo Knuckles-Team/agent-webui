@@ -79,6 +79,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
           <WorkspaceCommandPalette />
         </div>
         <div id="workspace-frame-tools-slot" />
+        <div id="workspace-assistant-entry-slot" />
         <div className="workspace-header-utilities">
           <WorkspaceAppearance />
           <a className="inline-flex min-h-11 items-center text-sm underline" href="/privacy">

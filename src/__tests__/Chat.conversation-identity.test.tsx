@@ -706,6 +706,7 @@ it('retains the real dock composer across context changes and sends the current 
   )
   const view = render(app('work'))
   const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Expand chat' }))
   const input = await screen.findByRole('textbox', { name: /message input/i })
   await user.type(input, 'A retained workspace question')
   for (const context of ['explore', 'operate', 'work', 'explore']) {
@@ -722,7 +723,11 @@ it('retains the real dock composer across context changes and sends the current 
   expect(sentBodies).toHaveLength(0)
   fireEvent.click(options)
   expect(options).toHaveAttribute('aria-expanded', 'false')
+  await user.click(screen.getByRole('button', { name: 'Restore chat size' }))
+  expect(input).not.toBeVisible()
+  expect(input).toHaveValue('A retained workspace question')
   await user.click(screen.getByRole('button', { name: 'Expand chat' }))
+  expect(screen.getByRole('textbox', { name: /message input/i })).toBe(input)
   await user.click(screen.getByRole('button', { name: 'Focus message input' }))
   await user.keyboard('{Enter}')
   await waitFor(() => {
@@ -744,6 +749,7 @@ it('retires the real native dock draft on owner change and session loss', async 
   )
   const view = render(app())
   const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Expand chat' }))
   await user.type(await screen.findByRole('textbox', { name: /message input/i }), 'Private owner draft')
   caller.tenant = 'new-tenant'
   view.rerender(app())
@@ -761,19 +767,31 @@ it('derives compact status from the canonical pending request and retires it wit
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const app = () => (
     <QueryClientProvider client={client}>
-      <Chat pageContext={pageContext} />
+      <PageContextProvider route="/workspace/work" view="work">
+        <header>
+          <div id="workspace-assistant-entry-slot" />
+        </header>
+        <ChatPanel currentView="work" isPrimary={false} />
+      </PageContextProvider>
     </QueryClientProvider>
   )
   const view = render(app())
   const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Expand chat' }))
   await user.type(await screen.findByRole('textbox', { name: /message input/i }), 'Pending turn{Enter}')
   await waitFor(() => {
     expect(sentBodies).toHaveLength(1)
   })
+  await user.click(screen.getByRole('button', { name: 'Restore chat size' }))
+  expect(document.getElementById('workspace-assistant')).not.toBeVisible()
   expect(screen.getByText('Waiting for reply…')).toHaveClass('chat-compact-status')
+  expect(document.getElementById('workspace-assistant-entry-slot')).toContainElement(
+    screen.getByText('Waiting for reply…'),
+  )
   caller.needsSignIn = true
   view.rerender(app())
   expect(screen.queryByText('Waiting for reply…')).not.toBeInTheDocument()
+  expect(screen.getByText('Conversation access is not authorized. Sign in to continue.')).toBeVisible()
 })
 
 it('retires the existing pending approval presence when the conversation owner changes', async () => {
@@ -824,8 +842,9 @@ it('does not steal fresh task-entry focus for a native secondary assistant', asy
   const task = screen.getByRole('button', { name: 'Current task' })
   task.focus()
   view.rerender(app(true))
-  await screen.findByRole('textbox', { name: /message input/i })
+  await screen.findByLabelText('Message input', { exact: true })
   expect(task).toHaveFocus()
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Expand chat' }))
   await userEvent.setup().click(screen.getByRole('button', { name: 'Focus message input' }))
   expect(screen.getByRole('textbox', { name: /message input/i })).toHaveFocus()
 })

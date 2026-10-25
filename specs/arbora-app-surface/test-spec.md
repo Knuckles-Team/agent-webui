@@ -628,3 +628,13 @@ Keep Work/Operate and unqualified native interactions visible as gaps rather tha
 
 The gate-wrapper metadata tests keep broad ancestor rollups open and preserve qualified source receipts.
 Those data-only guards do not establish product acceptance.
+
+## Liquid Glass native continuity
+
+R049.2.1/R005.4/R049.1.3: the idle native assistant reserves no bottom strip or
+side column. The contextual Agent entry preserves real running/approval cues;
+explicit in-place expansion reveals the same mounted input and transcript. Repeated expand/restore, Escape, pending approval,
+options, mode and live stop controls must preserve focus and the mounted Chat.
+Selected evidence and query remain unchanged through all presentation changes.
+Real browser geometry, readable glass pixels and native motion are separate
+acceptance evidence from mounted source fixtures.

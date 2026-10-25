@@ -48,22 +48,28 @@ secondary foreground. Decorative `--border` is `#C5CFC1` in light/glass and
 
 ### Material and glass
 
-The shared workspace uses a static sage/ivory atmosphere, translucent header and
-map chrome, and solid card/reading surfaces. `--shell-alpha` is **92%** in light
-and glass and **90%** in dark. `WorkspaceFrame.css` composites `--card` with that
-alpha for chrome; text is never made transparent through container opacity.
-Measure actual foreground and muted text over the resulting backgrounds,
-including selection and hover. Token pairs alone do not qualify rendered glass.
+The shared workspace uses a static sage/blue/ivory light field. Header and map
+framing transmit that field through 58% ivory and 54% sage glass; primary panels
+use 65% white glass, with 80% reading-card fills. The independent material
+preference applies to light and the legacy glass alias. Dark uses 72–88% deep
+surfaces. Text never inherits container opacity. `--glass-muted` is `#2C4034` in
+light and `#E1EBDC` in dark. Contrast tests composite every material over the
+authored field floor and white; real browser pixel review remains necessary.
 
-Unsupported blur starts with an opaque surface. Reduced-transparency preference,
-the in-app opaque choice and forced colors remove backdrop blur. Forced colors
-use system surfaces, selection and text. Keep information, controls and focus
-available when effects disappear; do not add nested blur or decorative panels.
-The existing logo and same-origin fonts remain the product identity.
+Only sibling framing panels use backdrop blur. Nested cards and controls use
+alpha fills without more blur. Unsupported blur starts opaque; reduced
+transparency, the in-app opaque choice and forced colors remove effects. Forced
+colors use system surfaces and text. All modes retain the same capabilities.
+The existing Arbora artwork and same-origin fonts remain the product identity.
 
-The full-width workspace header keeps labelled Work/Explore/Operate, context, search/commands and main actions visible. It wraps into useful rows. Secondary
-appearance utilities may use a disclosure. A resizable map yields space to the working center. Explore shows detail for selected evidence, not an empty placeholder. These are the bounded shared-shell/Explore changes, not evidence
-that every route has completed the redesign.
+A thin full-width floating header keeps labelled Work/Explore/Operate, context,
+search/commands and main actions visible. It wraps into useful rows rather than
+becoming a capsule. The resizable map yields space to the evidence center.
+Explore shows real selected detail or a collection without a placeholder rail.
+The Agent entry lives in existing chrome and expands the mounted conversation
+in place. It reserves no idle column or bottom bar and is not a floating bubble.
+Running and approval cues come from the real conversation state. These are
+bounded shell/Explore changes, not evidence of an all-route redesign.
 
 ## Typography
 
@@ -76,7 +82,7 @@ not fetched from a remote font service.
 
 `--radius` is `0.75rem` (12px at the default root size). The `-sm`, `-md`,
 `-lg` and `-xl` corner tokens derive from it, giving 8px, 10px, 12px and 16px
-respectively. Use aligned rows, modest padding and fewer nested containers for
+respectively. Workspace glass panels use 20–24px corners. Use aligned rows, modest padding and fewer nested containers for
 density, not tiny text or fixed-height boxes that clip wrapping content.
 
 | Workspace density token | Compact (default) | Comfortable | Coarse pointer |
