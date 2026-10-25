@@ -1152,3 +1152,10 @@ Reuse the same reading material for the Usage section, KPI cards and messages.
 Keep one blurred section, not a blur per item. Preserve charts, measured values,
 status badges, authority checks, filters, history and keyboard/touch behavior.
 This presentation continuation adds no analytics functionality or acceptance claim.
+
+## Amendment 2026-10-25: display name
+
+Use Overstory as the client display name in the primary UI, package description,
+and documentation entry points. Keep repository, distribution, import, command,
+protocol and storage identifiers unchanged. Arbora remains the backend and
+ecosystem name. Existing image assets and capture provenance remain unchanged.

@@ -1,4 +1,4 @@
-site_name: Arbora web UI
+site_name: Overstory
 site_description: The browser workspace for governed agents, workflows, and knowledge in Arbora.
 site_url: https://knuckles-team.github.io/agent-webui/
 repo_name: Knuckles-Team/agent-webui
@@ -73,7 +73,7 @@ extra:
     current: agent-webui
     sites:
       - slug: agent-webui
-        name: Arbora Agent Web UI
+        name: Overstory
         role: operator experience
         url: https://knuckles-team.github.io/agent-webui/
       - slug: arbora
@@ -81,7 +81,7 @@ extra:
         role: public runtime gateway
         url: https://knuckles-team.github.io/arbora/
       - slug: agent-utilities
-        name: Agent Utilities
+        name: Trellis
         role: agent control plane
         url: https://knuckles-team.github.io/agent-utilities/
       - slug: epistemic-graph
@@ -89,7 +89,7 @@ extra:
         role: durable multimodal knowledge and reasoning engine
         url: https://knuckles-team.github.io/epistemic-graph/
       - slug: agent-connector-sdk
-        name: Agent Connector SDK
+        name: Scion SDK
         role: governed source integration boundary
         url: https://knuckles-team.github.io/agent-connector-sdk/
   social:

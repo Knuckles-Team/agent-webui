@@ -74,7 +74,7 @@ export function WorkspaceNavigation({ route, currentRole }: { route: RouteDef; c
             }}
             className="inline-flex min-h-11 items-center font-semibold"
           >
-            Arbora
+            Overstory
           </a>
           <span aria-hidden="true" className="text-muted-foreground">
             /
