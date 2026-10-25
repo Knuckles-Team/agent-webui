@@ -122,6 +122,8 @@ test.describe('Liquid Glass reference preview', () => {
     const contexts = page.getByRole('navigation', { name: 'Primary workspace contexts' })
     await contexts.getByRole('link', { name: 'Chat', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Chat & tasks', exact: true })).toBeVisible()
+    await expect(page.getByText('Tasks and conversations', { exact: true })).toBeVisible()
+    await expect(page.getByText('Loading…', { exact: true })).toHaveCount(0)
     await expect(page.getByRole('textbox', { name: 'Message input' })).toBeInViewport()
     await page.screenshot({ path: info.outputPath('liquid-glass-chat-desktop-preview.png'), animations: 'disabled' })
     await contexts.getByRole('link', { name: 'Knowledge', exact: true }).click()

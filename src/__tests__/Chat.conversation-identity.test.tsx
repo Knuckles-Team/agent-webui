@@ -1,3 +1,4 @@
+// spec: WEBUI-APPS-R005.4.1
 // spec: WEBUI-APPS-R049.1.5
 import { StrictMode } from 'react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
