@@ -883,8 +883,8 @@ remains unavailable, with no legacy fallback or fabricated graph.
 
 The bounded adapter validates the envelope, exact run/task identities, unique
 plan-step keys, explicit predecessor-to-dependent edges and evidence. The layout only places declared nodes; it does not schedule tasks or infer lineage.
-The inline diagram has an equivalent keyboard-accessible dependency list and
-wraps or scrolls within the existing Work panel at narrow widths. Labels remain
+The inline diagram has an equivalent keyboard-accessible dependency list.
+It wraps or scrolls within the existing Work panel at narrow widths. Labels remain
 plain text. Refresh, selection and identity changes retire the previous read;
 denied or malformed responses cannot reveal cached protected graph data.
 
@@ -1009,3 +1009,23 @@ Explicit retained-acceptance children now preserve those obligations in canonica
 Parent requirement text and qualified child evidence remain unchanged.
 Regenerate every spec status and audit ancestor states after source and receipt commits.
 The metadata regression must not create feature-acceptance bindings for retained work.
+
+
+## Contextual Work workflow continuation — 2026-10-25
+
+Extend the existing R049.1.2 migration owner with source child R049.1.15.
+Extract WorkflowEditorView into a contextual editor/controller that reuses the
+existing workflow client and graph-to-spec helpers. Retain the mounted editor
+while Work switches to task inspection. Workflow selection is independent of
+conversation, task and trace selections, and drafts stay out of URLs.
+
+The current host allows administrator workflow reads but does not implement the
+capabilities route. Save and Run explicitly report unavailable. Keep these
+effect controls disabled. Label each edit as an in-memory preview, never a durable save or successful run. Do not add endpoints or infer capability
+from a loaded list. Preserve errors instead of showing a successful empty catalog. Future effect activation still requires the existing authority and
+confirmation protocol and separate provider acceptance under WEBUI-API-R009.
+
+Scope source tests to retained draft/selection/validation, keyboard editing,
+failed or malformed reads, stale replies and admission replacement. Keep
+served, native-tool, performance and full responsive acceptance open under
+the original broad owners; source tests do not establish those outcomes.

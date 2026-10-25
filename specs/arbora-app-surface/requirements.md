@@ -313,3 +313,10 @@ The original R049.2 requirement remains unchanged.
 | ID | Requirement | Verification |
 |---|---|---|
 | `WEBUI-APPS-R049.2.2` | **Remaining measured redesign acceptance.** Complete every original R049.2 obligation beyond the bounded shell/Explore source slice. Include complete Work/Operate composition and identical-fixture before/after tasks. Record navigation counts, scrolling distances, all-leaf search and actual layout evidence. Preserve keyboard, touch and native WebMCP qualification. Do not clip content or hide features to improve measurements. | Planned: publish baseline/redesigned task results and complete native interaction evidence under the original R049.2 acceptance criteria. Scoped presentation tests cannot close this row. |
+
+
+## Contextual Work workflow source
+
+| ID | Requirement | Verification |
+|---|---|---|
+| `WEBUI-APPS-R049.1.15` | **Retained contextual workflow plan source.** Absorb the existing workflow serializer, palette, inspector and nodes into an administrator-only Work lens without nested legacy page chrome. Keep selected workflow identity, local draft, capability availability and validation through task inspection and return without retargeting conversation or task. Retire admission-owned state and fence stale read responses. Provide keyboard add/select/connect controls and narrow/short layout source for the palette and inspector. Label the in-memory preview and unavailable Save/Run authority honestly. | Mounted `WorkWorkflowLens.test.tsx`, `WorkflowEditorView.test.tsx` and typed Work-state fixtures cover retention, identity withdrawal, malformed/denied reads and keyboard alternatives. This bounded source row excludes served save/run, complete tool parity, real-browser accessibility and full migration; those remain under R049.1.2, R047, R048, WEBUI-DESIGN-R004.1.2/R004.2.2 and WEBUI-API-R009. |

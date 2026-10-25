@@ -628,3 +628,16 @@ Keep Work/Operate and unqualified native interactions visible as gaps rather tha
 
 The gate-wrapper metadata tests keep broad ancestor rollups open and preserve qualified source receipts.
 Those data-only guards do not establish product acceptance.
+
+## Contextual workflow source verification
+
+R049.1.15 reuses the existing workflow serializers and mounts the extracted
+editor within WorkWorkflowLens. Source fixtures cover typed URL identity, draft retention, validation, capability state and unchanged conversation/trace selections.
+They retain these states while inspecting a different task.
+They cover keyboard addition, selection, editing, connections and node removal.
+They also check admin refusal, admission replacement, late reads and malformed canvases. Save and Run remain disabled against the current unavailable host;
+no mock effect success counts as persistence or execution evidence.
+
+These fixtures do not close served workflow effects, complete WebMCP parity,
+real-browser narrow/short focus reachability or performance acceptance. Those
+remain under R049.1.2, R047/R048, WEBUI-DESIGN-R004.1.2/R004.2.2 and WEBUI-API-R009.

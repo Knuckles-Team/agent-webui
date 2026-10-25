@@ -30,7 +30,7 @@ function FieldLabel({ children }: { children: ReactNode }) {
 
 function EmptyInspector() {
   return (
-    <div className="flex h-full w-64 shrink-0 flex-col border-l border-border/40 bg-muted/10">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-border/40 bg-muted/10">
       <div className="border-b border-border/40 px-3 py-2">
         <h3 className="text-sm font-bold">Inspector</h3>
       </div>
@@ -64,6 +64,7 @@ function AgentFields({ config, patchConfig }: { config: WorkflowNodeConfig | und
       <div className="space-y-1.5">
         <FieldLabel>Model</FieldLabel>
         <Input
+          aria-label="Model"
           value={config?.model ?? ''}
           placeholder="anthropic:claude-..."
           onChange={(e) => {
@@ -75,6 +76,7 @@ function AgentFields({ config, patchConfig }: { config: WorkflowNodeConfig | und
       <div className="space-y-1.5">
         <FieldLabel>System Prompt</FieldLabel>
         <Textarea
+          aria-label="System prompt"
           value={config?.system_prompt ?? ''}
           placeholder="You are a helpful agent…"
           onChange={(e) => {
@@ -92,6 +94,7 @@ function ToolTagsField({ config, patchConfig }: { config: WorkflowNodeConfig | u
     <div className="space-y-1.5">
       <FieldLabel>Tool Tags</FieldLabel>
       <Input
+        aria-label="Tool tags"
         value={(config?.tools ?? []).join(', ')}
         placeholder="search, http, files"
         onChange={(e) => {
@@ -119,6 +122,7 @@ function RequiredCapabilityField({
     <div className="space-y-1.5">
       <FieldLabel>Required Capability</FieldLabel>
       <Input
+        aria-label="Required capability"
         value={config?.requiredCapability ?? ''}
         placeholder="e.g. web-search"
         onChange={(e) => {
@@ -141,17 +145,18 @@ export default function Inspector({ node, onPatch, onDelete }: InspectorProps) {
   }
 
   return (
-    <div className="flex h-full w-64 shrink-0 flex-col border-l border-border/40 bg-muted/10">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-border/40 bg-muted/10">
       <InspectorHeader
         onDelete={() => {
           onDelete(node.id)
         }}
       />
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-4 p-3">
           <div className="space-y-1.5">
             <FieldLabel>Label</FieldLabel>
             <Input
+              aria-label="Node label"
               value={node.data.label}
               onChange={(e) => {
                 onPatch(node.id, { label: e.target.value })
