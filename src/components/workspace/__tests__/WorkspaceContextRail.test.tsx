@@ -100,3 +100,10 @@ it('keeps primary navigation inline instead of placing it behind a compact discl
   expect(screen.queryByRole('link', { name: 'Privacy' })).not.toBeInTheDocument()
   expect(screen.getByText('Settings').closest('details')).not.toHaveAttribute('open')
 })
+
+// spec: WEBUI-APPS-R038
+it('shows Overstory as the primary client name without changing the home route', () => {
+  render(<WorkspaceContextRail role="user" active="work" />)
+  expect(screen.getByRole('link', { name: 'Overstory' })).toHaveAttribute('href', '/workspace/work')
+  expect(screen.getByText('Overstory')).toBeVisible()
+})
