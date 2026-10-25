@@ -130,7 +130,10 @@ test.describe('Liquid Glass reference preview', () => {
     await expect(attachment).toHaveCSS('background-color', 'rgba(184, 207, 185, 0.64)')
     await expect(attachment).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
     await attachment.focus()
-    await expect(attachment).toHaveCSS('outline-width', '2px')
+    await expect(attachment).toHaveCSS('outline-style', 'solid')
+    expect(
+      await attachment.evaluate((element) => parseFloat(getComputedStyle(element).outlineWidth)),
+    ).toBeGreaterThanOrEqual(2)
     await page.getByRole('textbox', { name: 'Message input' }).fill('Help me plan the next project step')
     await page.getByRole('heading', { name: 'Chat & tasks', exact: true }).click()
     await page.screenshot({ path: info.outputPath('liquid-glass-chat-controls-preview.png'), animations: 'disabled' })
