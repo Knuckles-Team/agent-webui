@@ -491,7 +491,8 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "4d0f9693e45d",
-        "d18ec8c78341"
+        "d18ec8c78341",
+        "e234cefa7db0"
       ],
       "verified_by": [
         "e2e/native-chat.browser.ts:1",
