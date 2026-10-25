@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "spec_id": "FIN-UI",
-  "owner_repo": "agent-webui",
+  "owner_repo": "overstory",
   "delivery_state": "LANDED",
   "requirement_ids": [
     "FIN-UI-R001",
