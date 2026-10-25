@@ -205,10 +205,14 @@ test('one native assistant retains draft, controls and context through navigatio
       'true',
     )
     await expect(panel).toBeVisible()
-    const expandedTaskBox = await page.locator('.workspace-context-content').boundingBox()
-    const expandedChatBox = await panel.boundingBox()
-    expect(expandedChatBox!.y).toBeGreaterThanOrEqual(expandedTaskBox!.y + expandedTaskBox!.height)
-    expect(Math.abs(expandedChatBox!.width - expandedTaskBox!.width)).toBeLessThanOrEqual(1)
+    // Sample both edges atomically: expansion can scroll between browser round trips.
+    const expanded = await page.locator('.workspace-chat-layout').evaluate((layout) => {
+      const task = layout.querySelector('.workspace-context-content')!.getBoundingClientRect()
+      const chat = layout.querySelector('.workspace-assistant')!.getBoundingClientRect()
+      return { taskBottom: task.bottom, chatTop: chat.top, widthDifference: Math.abs(chat.width - task.width) }
+    })
+    expect(expanded.chatTop).toBeGreaterThanOrEqual(expanded.taskBottom)
+    expect(expanded.widthDifference).toBeLessThanOrEqual(1)
     await reachComposerByWheel(page, input)
     await page.getByRole('button', { name: 'Focus message input' }).click()
     await expect(input).toBeFocused()

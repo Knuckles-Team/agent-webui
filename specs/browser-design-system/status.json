@@ -293,7 +293,7 @@
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
-        "e2e/canopy-glass.browser.ts:571",
+        "e2e/canopy-glass.browser.ts:574",
         "src/__tests__/design-tokens.test.ts:121",
         "src/__tests__/design-tokens.test.ts:172",
         "src/__tests__/design-tokens.test.ts:201"
@@ -363,7 +363,7 @@
         "24dca66c8a72"
       ],
       "verified_by": [
-        "e2e/canopy-glass.browser.ts:466",
+        "e2e/canopy-glass.browser.ts:467",
         "src/components/workspace/WorkspaceWallpaper.tsx:1",
         "src/components/workspace/__tests__/WorkspaceWallpaper.test.tsx:1"
       ]
@@ -374,7 +374,7 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [
-        "e2e/canopy-glass.browser.ts:467",
+        "e2e/canopy-glass.browser.ts:468",
         "src/components/workspace/WorkspaceWallpaper.tsx:1",
         "src/components/workspace/__tests__/WorkspaceWallpaper.test.tsx:1"
       ]

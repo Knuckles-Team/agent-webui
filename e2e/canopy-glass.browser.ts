@@ -3,6 +3,7 @@
 // spec: WEBUI-DESIGN-R005.2
 // spec: WEBUI-APPS-R049.2.1
 import { expect, test, type Page, type Locator } from '@playwright/test'
+import { writeFile } from 'node:fs/promises'
 import { baseURL, fixedTime, responses } from './fixtures/documentation-screenshots.mjs'
 
 // Video is worker-scoped. Record only the dedicated preview command, not the full suite.
@@ -558,13 +559,15 @@ test('manual wallpaper settings retain the rendered workspace and bounded backin
   await page.getByLabel('Surfaces').selectOption('glass')
   await expect(canvas).toBeVisible()
   await expect.poll(() => canvas.evaluate((element) => (element as HTMLCanvasElement).width)).toBeGreaterThan(1)
-  await info.attach('wallpaper-cadence-sample.json', {
-    body: JSON.stringify({
+  const samplePath = info.outputPath('wallpaper-cadence-sample.json')
+  await writeFile(
+    samplePath,
+    JSON.stringify({
       note: 'Synthetic fixture: one-second browser rAF/long-task samples, one trusted key-to-frame sample and optional Chromium JS heap snapshots. Not canvas FPS, total memory or long-run production acceptance.',
       measurements,
     }),
-    contentType: 'application/json',
-  })
+  )
+  await info.attach('wallpaper-cadence-sample.json', { path: samplePath, contentType: 'application/json' })
   expect(failures).toEqual([])
 })
 
@@ -634,8 +637,10 @@ for (const palette of ['Green', 'Blue', 'Red', 'Purple', 'Pink', 'Orange', 'Yell
         })
       }
     }
-    await info.attach('palette-computed-contrast.json', {
-      body: JSON.stringify(
+    const evidencePath = info.outputPath('palette-computed-contrast.json')
+    await writeFile(
+      evidencePath,
+      JSON.stringify(
         {
           note: 'Browser-resolved CSS ancestor compositing; screenshots separately require pixel review over the wallpaper.',
           evidence,
@@ -643,8 +648,8 @@ for (const palette of ['Green', 'Blue', 'Red', 'Purple', 'Pink', 'Orange', 'Yell
         null,
         2,
       ),
-      contentType: 'application/json',
-    })
+    )
+    await info.attach('palette-computed-contrast.json', { path: evidencePath, contentType: 'application/json' })
     expect(failures).toEqual([])
   })
 }
