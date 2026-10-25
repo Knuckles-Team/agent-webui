@@ -222,10 +222,9 @@
       "title": "Bounded workspace viewport continuity",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "38c8f13794ee",
         "4d0f9693e45d",
-        "ae46fe4be9a5",
-        "f91c2a3a3446",
-        "fbb47596cec2"
+        "f91c2a3a3446"
       ],
       "verified_by": [
         "e2e/native-chat.browser.ts:2",
@@ -266,8 +265,7 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "1cac40d60bc3",
-        "ae46fe4be9a5",
-        "fbb47596cec2"
+        "38c8f13794ee"
       ],
       "verified_by": [
         "e2e/documentation-screenshots.browser.ts:1",
@@ -280,8 +278,8 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "12b5f5624953",
+        "38c8f13794ee",
         "73051bf582bd",
-        "7dc17e5b2d4c",
         "93401c34a695",
         "ac86f2de9817"
       ],
@@ -300,9 +298,9 @@
       "landed_in": [
         "12b5f5624953",
         "19b439519a22",
+        "38c8f13794ee",
         "47885260902d",
-        "667aa894cc3d",
-        "73051bf582bd"
+        "667aa894cc3d"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
