@@ -726,6 +726,8 @@ test('Follow workspace resolves real page context without enabling motion and ma
   await input.fill('Synthetic context scene draft — do not send')
   await contexts.getByRole('link', { name: 'Tools', exact: true }).click()
   await expect(canvas).toHaveAttribute('data-scene', 'roots')
+  await expect(page.getByRole('heading', { name: 'Tools & connections', exact: true, level: 1 })).toBeVisible()
+  await expect(page.getByText('Loading…', { exact: true })).toHaveCount(0)
   await page.screenshot({ path: info.outputPath('wallpaper-context-tools.png') })
   await page.locator('.workspace-appearance > summary').click()
   await expect(page.getByLabel('Wallpaper motion')).toHaveValue('off')
