@@ -1,5 +1,6 @@
 import arboraLogo from '../../../docs/assets/brands/agent-webui-logo-v1.png'
 import { WorkspaceAppearance } from './WorkspaceAppearance'
+import { UserMenu } from '@/components/UserMenu'
 import { WorkspaceCommandPalette } from './WorkspaceCommands'
 import { useEffect, useState } from 'react'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
@@ -83,6 +84,9 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
         <div id="workspace-assistant-entry-slot" />
         <div className="workspace-header-utilities">
           <WorkspaceAppearance />
+          <div className="workspace-account-menu">
+            <UserMenu compact />
+          </div>
         </div>
       </div>
     </header>

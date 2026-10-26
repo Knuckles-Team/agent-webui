@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { toast } from 'sonner'
 import { screen, waitFor, within } from '@testing-library/react'
 import { UserMenu } from '@/components/UserMenu'
 import { SidebarProvider } from '@/components/ui/sidebar'
@@ -6,12 +7,12 @@ import type { Identity } from '@/lib/auth'
 import { renderWithProviders } from '@/__tests__/fixtures'
 
 // SidebarMenuButton reads `useSidebar()`, which throws outside a SidebarProvider
-// ancestor -- UserMenu is always mounted inside app-sidebar.tsx's <Sidebar>/
-// <SidebarProvider> in the real app (see App.tsx), so tests provide the same.
-function renderUserMenu() {
+// ancestor -- both the legacy sidebar and workspace header share App.tsx's
+// SidebarProvider, so tests provide the same owner.
+function renderUserMenu(compact = false) {
   return renderWithProviders(
     <SidebarProvider>
-      <UserMenu />
+      <UserMenu compact={compact} />
     </SidebarProvider>,
   )
 }
@@ -122,5 +123,73 @@ describe('UserMenu', () => {
     await waitFor(() => {
       expect(screen.getByText(/Your avatar and nickname below are local to this browser/)).toBeInTheDocument()
     })
+  })
+})
+
+// spec: WEBUI-IDENTITY-R004.1
+describe('workspace account control', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('offers a compact labeled trigger with keyboard opening, Escape dismissal and focus restoration', async () => {
+    identityResult = { identity: AUTHENTICATED, loading: false }
+    const { user } = renderUserMenu(true)
+    const trigger = screen.getByRole('button', { name: 'Account menu for Alice Example' })
+    expect(trigger).toHaveClass('min-h-11', 'w-11')
+    trigger.focus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('menu')).toBeVisible()
+    expect(screen.getByRole('menuitem', { name: 'Profile' })).toBeVisible()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+  })
+
+  it.each([200, 403])('uses the existing broker sign-out and only reloads after success (%s)', async (status) => {
+    const raw = AUTHENTICATED.raw
+    if (!raw) throw new Error('Authenticated fixture requires a session')
+    identityResult = { identity: { ...AUTHENTICATED, raw: { ...raw, mode: 'local' } }, loading: false }
+    const assign = vi.fn()
+    const failure = vi.spyOn(toast, 'error')
+    vi.stubGlobal('location', { assign, search: '', origin: window.location.origin, href: window.location.href })
+    const calls: { path: string; method?: string; proof: boolean; credentials?: RequestCredentials }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input)
+        if (path === '/auth/session') {
+          // The sanitizer recognizes mock-prefixed inert fixture values.
+          return Promise.resolve(Response.json({ authenticated: true, csrf_token: 'mock-session-proof' }))
+        }
+        calls.push({
+          path,
+          method: init?.method,
+          proof: new Headers(init?.headers).get('X-CSRF-Token') === 'mock-session-proof',
+          credentials: init?.credentials,
+        })
+        return Promise.resolve(Response.json({ outcome: 'ok' }, { status }))
+      }),
+    )
+    const { user } = renderUserMenu(true)
+    await user.click(screen.getByRole('button', { name: 'Account menu for Alice Example' }))
+    const action = await screen.findByRole('menuitem', { name: 'Log out' })
+    expect(action.tagName).not.toBe('A')
+    await user.click(action)
+    await waitFor(() => {
+      expect(calls).toEqual([{ path: '/auth/logout', method: 'POST', proof: true, credentials: 'same-origin' }])
+    })
+    if (status === 200)
+      await waitFor(() => {
+        expect(assign).toHaveBeenCalledWith('/')
+      })
+    else {
+      await waitFor(() => {
+        expect(failure).toHaveBeenCalledWith('Sign-out was refused. Your session may still be active.')
+      })
+      expect(assign).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Account menu for Alice Example' })).toBeVisible()
+    }
   })
 })
