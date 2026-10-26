@@ -208,6 +208,7 @@
       "title": "OIDC configuration source refusal",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "1b2935f757ce",
         "7fae4bf34f52"
       ],
       "verified_by": [
