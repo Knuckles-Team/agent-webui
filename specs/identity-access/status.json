@@ -211,7 +211,8 @@
         "7fae4bf34f52"
       ],
       "verified_by": [
-        "tests/test_explicit_auth_modes.py:177"
+        "tests/test_explicit_auth_modes.py:177",
+        "tests/test_oidc_configuration_intent.py:18"
       ]
     },
     {
