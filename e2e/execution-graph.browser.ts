@@ -2,6 +2,7 @@
 // spec: WEBUI-DESIGN-R004.1.1
 // Real Work route with synthetic producer data, not installed-provider qualification.
 import { test, expect } from '@playwright/test'
+import { operation, taskPage } from './fixtures/work-task-operations'
 import fixture from '../src/lib/__tests__/fixtures/execution-graph.json' with { type: 'json' }
 
 for (const viewport of [
@@ -32,9 +33,11 @@ for (const viewport of [
       if (path === '/api/configure') return route.fulfill({ json: { models: [], builtinTools: [] } })
       if (path === '/api/enhanced/models') return route.fulfill({ json: { models: [], default_id: '' } })
       if (path === '/api/chats') return route.fulfill({ json: [] })
-      if (path === '/api/enhanced/sessions') return route.fulfill({ json: [{ id: fixture.task_id }] })
-      if (decodeURIComponent(path) === `/api/enhanced/sessions/${fixture.task_id}`)
-        return route.fulfill({ json: { id: fixture.task_id, metadata: { arbora: { runId: fixture.run_id } } } })
+      if (path === '/api/v1/ops/agents.tasks.list') return route.fulfill({ json: taskPage([{ id: fixture.task_id }]) })
+      if (path === '/api/v1/ops/agents.tasks.get')
+        return route.fulfill({
+          json: operation({ id: fixture.task_id, metadata: { arbora: { runId: fixture.run_id } } }),
+        })
       if (path === '/api/v1/ops/runs.execution_graph') {
         graphRequests.push(route.request().postDataJSON())
         if (refused)

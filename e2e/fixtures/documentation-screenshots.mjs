@@ -35,7 +35,10 @@ export const responses = {
   '/api/chats': [],
   '/api/chats/': { messages: [] },
   '/api/enhanced/mcp/servers/arbora/tools': { tools: [], total: 0, offset: 0, limit: 200, has_more: false },
-  '/api/enhanced/sessions': [{ id: 'synthetic-research', status: { state: 'completed' } }],
+  '/api/v1/ops/agents.tasks.list': operation({
+    tasks: [{ id: 'synthetic-research', status: { state: 'completed' } }],
+    nextCursor: null,
+  }),
   '/api/graph/traces': { result: [{ id: 'synthetic-trace', name: 'Synthetic project task', status: 'completed' }] },
   '/api/enhanced/ontology/object-set/search': {
     count: 2,

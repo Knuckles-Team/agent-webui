@@ -1,5 +1,6 @@
 // spec: WEBUI-APPS-R049.1.3
 import { test, expect } from '@playwright/test'
+import { operation, taskPage, refusal, taskReadFixture } from './fixtures/work-task-operations'
 
 for (const viewport of [
   { width: 320, height: 740 },
@@ -22,6 +23,7 @@ for (const viewport of [
           tenant: 'task-tenant',
           webui_role: 'user',
           roles: ['kg:read'],
+          csrf_token: taskReadFixture,
         },
       }),
     )
@@ -30,10 +32,10 @@ for (const viewport of [
       if (path.startsWith('/api/configure')) return route.fulfill({ json: { models: [], builtinTools: [] } })
       if (path === '/api/enhanced/models') return route.fulfill({ json: { models: [], default_id: '' } })
       if (path === '/api/chats') return route.fulfill({ json: [] })
-      if (path === '/api/enhanced/sessions')
-        return route.fulfill({ json: [{ id: 'task-a', status: { state: taskState } }] })
-      if (path === '/api/enhanced/sessions/task-a')
-        return route.fulfill({ json: { id: 'task-a', status: { state: taskState } } })
+      if (path === '/api/v1/ops/agents.tasks.list')
+        return route.fulfill({ json: taskPage([{ id: 'task-a', status: { state: taskState } }]) })
+      if (path === '/api/v1/ops/agents.tasks.get')
+        return route.fulfill({ json: operation({ id: 'task-a', status: { state: taskState } }) })
       if (path === '/api/enhanced/sessions/task-a/cancel') {
         expect(route.request().method()).toBe('POST')
         cancellations++
@@ -81,6 +83,7 @@ test('trace inspection preserves Work context through parent, history and refres
         tenant: 'trace-tenant',
         webui_role: 'user',
         roles: ['kg:read'],
+        csrf_token: taskReadFixture,
       },
     }),
   )
@@ -89,9 +92,9 @@ test('trace inspection preserves Work context through parent, history and refres
     if (path.startsWith('/api/configure')) return route.fulfill({ json: { models: [], builtinTools: [] } })
     if (path === '/api/enhanced/models') return route.fulfill({ json: { models: [], default_id: '' } })
     if (path === '/api/chats') return route.fulfill({ json: [] })
-    if (path === '/api/enhanced/sessions') return route.fulfill({ json: [{ id: 'task-a' }] })
-    if (path === '/api/enhanced/sessions/task-a')
-      return route.fulfill({ json: { id: 'task-a', status: { state: 'completed' } } })
+    if (path === '/api/v1/ops/agents.tasks.list') return route.fulfill({ json: taskPage([{ id: 'task-a' }]) })
+    if (path === '/api/v1/ops/agents.tasks.get')
+      return route.fulfill({ json: operation({ id: 'task-a', status: { state: 'completed' } }) })
     if (path.endsWith('/traces')) {
       const body = route.request().postDataJSON() as { action: string }
       if (body.action === 'waterfall' && refuseDetail)
@@ -146,6 +149,7 @@ for (const viewport of [
           tenant: 'journey-tenant',
           webui_role: 'user',
           roles: ['kg:read'],
+          csrf_token: taskReadFixture,
         },
       }),
     )
@@ -180,10 +184,10 @@ for (const viewport of [
           },
         })
       }
-      if (path === '/api/enhanced/sessions/task-a') {
-        if (denyTask) return route.fulfill({ status: 403, json: { detail: 'Denied' } })
+      if (path === '/api/v1/ops/agents.tasks.get') {
+        if (denyTask) return route.fulfill({ status: 403, json: refusal() })
         return route.fulfill({
-          json: {
+          json: operation({
             id: 'task-a',
             status: { state: 'completed' },
             contextId: 'opaque-context',
@@ -195,7 +199,7 @@ for (const viewport of [
                 parts: [{ kind: 'text', text: 'Task output: investigated the synthetic issue.' }],
               },
             ],
-          },
+          }),
         })
       }
       if (path.endsWith('/traces')) {
@@ -219,7 +223,7 @@ for (const viewport of [
         '/api/enhanced/models': { models: [], default_id: '' },
         '/api/chats': [],
         '/api/chats/journey': { messages: [] },
-        '/api/enhanced/sessions': [{ id: 'task-a', status: { state: 'completed' } }],
+        '/api/v1/ops/agents.tasks.list': taskPage([{ id: 'task-a', status: { state: 'completed' } }]),
       }
       if (path in fixtures) return route.fulfill({ json: fixtures[path] })
       return route.fulfill({ status: 501, json: { detail: 'Unavailable in the journey fixture' } })
@@ -281,6 +285,7 @@ for (const viewport of [
           tenant: 'lifecycle-tenant',
           webui_role: 'user',
           roles: ['kg:read'],
+          csrf_token: taskReadFixture,
         },
       }),
     )
@@ -331,8 +336,8 @@ for (const viewport of [
           builtinTools: [],
         },
         '/api/enhanced/models': { models: [], default_id: '' },
-        '/api/enhanced/sessions': [{ id: 'task-a', status: { state: 'completed' } }],
-        '/api/enhanced/sessions/task-a': { id: 'task-a', status: { state: 'completed' }, artifacts: [] },
+        '/api/v1/ops/agents.tasks.list': taskPage([{ id: 'task-a', status: { state: 'completed' } }]),
+        '/api/v1/ops/agents.tasks.get': operation({ id: 'task-a', status: { state: 'completed' }, artifacts: [] }),
       }
       if (path in fixtures) return route.fulfill({ json: fixtures[path] })
       return route.fulfill({ status: 501, json: { detail: 'Unavailable fixture surface' } })
@@ -413,6 +418,7 @@ for (const viewport of [
           tenant: 'prompt-tenant',
           webui_role: 'admin',
           roles: ['kg:admin'],
+          csrf_token: taskReadFixture,
         },
       }),
     )
@@ -431,9 +437,10 @@ for (const viewport of [
         }
         return route.fulfill({ json: { title: 'Sample prompt', identity: { role }, tools: [] } })
       }
-      if (path === '/api/chats' || path === '/api/enhanced/sessions') return route.fulfill({ json: [] })
-      if (path === '/api/enhanced/sessions/task-a')
-        return route.fulfill({ json: { id: 'task-a', status: { state: 'completed' } } })
+      if (path === '/api/chats') return route.fulfill({ json: [] })
+      if (path === '/api/v1/ops/agents.tasks.list') return route.fulfill({ json: taskPage([]) })
+      if (path === '/api/v1/ops/agents.tasks.get')
+        return route.fulfill({ json: operation({ id: 'task-a', status: { state: 'completed' } }) })
       if (path === '/api/configure') return route.fulfill({ json: { models: [], builtinTools: [] } })
       if (path === '/api/enhanced/models') return route.fulfill({ json: { models: [], default_id: '' } })
       return route.fulfill({ status: 501, json: { detail: 'Unavailable fixture surface' } })

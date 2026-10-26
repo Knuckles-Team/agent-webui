@@ -506,7 +506,7 @@ it('keeps inspection secondary by default and opens real task deep links', async
   expect(await screen.findByText('Status: working')).toBeVisible()
   expect(screen.getByText('Tasks and conversations').closest('details')).toHaveAttribute('open')
   expect(
-    screen.getByText('Tasks you can access. They are not automatically linked to this conversation.'),
+    screen.getByText('Up to 50 tasks you can access. They are not automatically linked to this conversation.'),
   ).toBeVisible()
   view.unmount()
 })

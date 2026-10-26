@@ -2065,7 +2065,7 @@
       "landed_in": [],
       "verified_by": [
         "e2e/workspace-catalog.browser.ts:17",
-        "e2e/workspace-task-lifecycle.spec.ts:400",
+        "e2e/workspace-task-lifecycle.spec.ts:405",
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:203",
         "src/components/views/__tests__/ArboraReadinessView.test.tsx:1"
@@ -2087,7 +2087,7 @@
         "e2e/native-chat.browser.ts:1",
         "e2e/work-task-refresh.browser.ts:1",
         "e2e/workspace-task-lifecycle.spec.ts:1",
-        "e2e/workspace-task-lifecycle.spec.ts:132"
+        "e2e/workspace-task-lifecycle.spec.ts:135"
       ]
     },
     {
