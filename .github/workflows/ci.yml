@@ -210,6 +210,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/bootstrap.sh --no-hooks
 
+      - name: Route census architecture gate
+        run: pnpm run gate:route-census
+
       - name: Bootstrap-dependent hooks (siblings, lockfile, Node toolchain)
         timeout-minutes: 15
         env:

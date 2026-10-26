@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit",
     "arbora:client:gen": "openapi-typescript src/lib/arbora-api/generated/openapi.json -o src/lib/arbora-api/generated/schema.ts",
     "gate:no-fabrication": "node scripts/no_fabrication_gate.mjs",
+    "gate:route-census": "node --experimental-strip-types scripts/route_census_gate.mjs",
     "site:assets": "node --experimental-strip-types scripts/generate-site-assets.mjs",
     "site:assets:check": "node --experimental-strip-types scripts/check-site-assets.mjs",
     "site:assets:test": "node scripts/site-assets-contract.test.mjs",

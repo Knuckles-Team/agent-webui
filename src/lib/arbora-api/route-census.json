@@ -1,0 +1,1613 @@
+[
+  {
+    "route": "GET /api/enhanced/info",
+    "disposition": "ui-local",
+    "owning_operation": null,
+    "caller": "src/components/app-sidebar.tsx",
+    "scope": "browser capability and identity metadata; explicit UI-local owner; preserve sidebar caller until a replacement identity operation is served",
+    "effect_class": "read",
+    "migration_state": "browser-local"
+  },
+  {
+    "route": "GET /api/enhanced/files",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/FilesView.tsx",
+    "scope": "workspace file domain; retirement is pending a generated Arbora operation; preserve FilesView callers until parity and cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/files/{filename:path}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/FilesView.tsx",
+    "scope": "workspace file domain; retirement is pending a generated Arbora operation; preserve FilesView callers until parity and cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "PUT /api/enhanced/files/{filename:path}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/FilesView.tsx",
+    "scope": "workspace file domain; retirement is pending a generated Arbora operation; preserve FilesView callers until parity and cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "DELETE /api/enhanced/files/{filename:path}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/FilesView.tsx",
+    "scope": "workspace file domain; retirement is pending a generated Arbora operation; preserve FilesView callers until parity and cutover proof",
+    "effect_class": "delete",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/editor-context",
+    "disposition": "session-protocol",
+    "owning_operation": null,
+    "caller": "src/components/views/WorkspaceIDEView.tsx; agent/agent_webui bridge extension",
+    "scope": "served editor-context protocol; preserve bridge and WorkspaceIDEView callers until a browser-safe context operation replaces the host store",
+    "effect_class": "write",
+    "migration_state": "host-session-protocol"
+  },
+  {
+    "route": "GET /api/enhanced/editor-context",
+    "disposition": "session-protocol",
+    "owning_operation": null,
+    "caller": "src/components/views/WorkspaceIDEView.tsx; agent/agent_webui bridge extension",
+    "scope": "served editor-context protocol; preserve bridge and WorkspaceIDEView callers until a browser-safe context operation replaces the host store",
+    "effect_class": "read",
+    "migration_state": "host-session-protocol"
+  },
+  {
+    "route": "GET /api/enhanced/config-files",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "scope": "workspace configuration domain; retirement is pending a generated Arbora operation; preserve any host integration until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/agents",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "scope": "agent registry domain; retirement is pending a generated Arbora operation; preserve any host integration until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/mcp/servers/{server_name}/tools",
+    "disposition": "session-protocol",
+    "owning_operation": null,
+    "caller": "src/lib/mcp-client.ts; src/lib/mcp-context.tsx; src/components/views/McpAppsView.tsx; src/components/views/SkillsView.tsx",
+    "scope": "served MCP protocol; preserve existing mcp-client, SkillsView and MCP Apps callers until fleet operations replace the host facade",
+    "effect_class": "read",
+    "migration_state": "served-protocol"
+  },
+  {
+    "route": "GET /api/enhanced/mcp/server-schema",
+    "disposition": "session-protocol",
+    "owning_operation": null,
+    "caller": "src/lib/mcp-client.ts; src/lib/mcp-context.tsx; src/components/views/McpAppsView.tsx; src/components/views/SkillsView.tsx",
+    "scope": "served MCP protocol; preserve existing mcp-client, SkillsView and MCP Apps callers until fleet operations replace the host facade",
+    "effect_class": "read",
+    "migration_state": "served-protocol"
+  },
+  {
+    "route": "GET /api/enhanced/mcp/servers/{server_name}/config",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SkillsView.tsx",
+    "scope": "MCP server management domain; retirement is pending generated Arbora fleet operations; preserve SkillsView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "legacy-host"
+  },
+  {
+    "route": "POST /api/enhanced/mcp/servers",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/mcp-client.ts; src/lib/mcp-context.tsx; src/components/views/McpAppsView.tsx; src/components/views/SkillsView.tsx",
+    "scope": "MCP server management domain; retirement is pending generated Arbora fleet operations; preserve SkillsView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "legacy-host"
+  },
+  {
+    "route": "PUT /api/enhanced/mcp/servers/{server_name}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SkillsView.tsx",
+    "scope": "MCP server management domain; retirement is pending generated Arbora fleet operations; preserve SkillsView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "legacy-host"
+  },
+  {
+    "route": "DELETE /api/enhanced/mcp/servers/{server_name}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SkillsView.tsx",
+    "scope": "MCP server management domain; retirement is pending generated Arbora fleet operations; preserve SkillsView callers until cutover proof",
+    "effect_class": "delete",
+    "migration_state": "legacy-host"
+  },
+  {
+    "route": "POST /api/enhanced/mcp/tools/call",
+    "disposition": "session-protocol",
+    "owning_operation": null,
+    "caller": "src/lib/mcp-client.ts; src/lib/mcp-context.tsx; src/components/views/McpAppsView.tsx; src/components/views/SkillsView.tsx",
+    "scope": "served MCP protocol; preserve existing mcp-client, SkillsView and MCP Apps callers until fleet operations replace the host facade",
+    "effect_class": "write",
+    "migration_state": "served-protocol"
+  },
+  {
+    "route": "POST /api/enhanced/mcp/apps/resource",
+    "disposition": "session-protocol",
+    "owning_operation": null,
+    "caller": "src/lib/mcp-client.ts; src/lib/mcp-context.tsx; src/components/views/McpAppsView.tsx; src/components/views/SkillsView.tsx",
+    "scope": "served MCP protocol; preserve existing mcp-client, SkillsView and MCP Apps callers until fleet operations replace the host facade",
+    "effect_class": "read",
+    "migration_state": "served-protocol"
+  },
+  {
+    "route": "POST /api/enhanced/tools/toggle",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SkillsView.tsx",
+    "scope": "tool/skill administration domain; retirement is pending a generated Arbora operation; preserve SkillsView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/skills/{skill_id}/toggle",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SkillsView.tsx",
+    "scope": "skill administration domain; retirement is pending a generated Arbora operation; preserve SkillsView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/reload",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py (/reload)",
+    "scope": "domain route; retirement is pending a generated Arbora operation; preserve current caller until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/cron/calendar",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SchedulingView.tsx",
+    "scope": "scheduled-task domain; retirement is pending a generated Arbora operation; preserve SchedulingView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/cron/logs",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SchedulingView.tsx",
+    "scope": "scheduled-task domain; retirement is pending a generated Arbora operation; preserve SchedulingView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/upload",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/FilesView.tsx",
+    "scope": "workspace file mutation domain; retirement is pending a generated Arbora operation; preserve FilesView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/agent-icon",
+    "disposition": "ui-local",
+    "owning_operation": null,
+    "caller": "browser asset consumer; explicit host asset owner agent/agent_webui/api_extensions.py",
+    "scope": "browser branding asset; explicit UI-local owner; preserve host asset serving until a packaged asset boundary replaces it",
+    "effect_class": "read",
+    "migration_state": "browser-local"
+  },
+  {
+    "route": "GET /api/enhanced/download/{filename:path}",
+    "disposition": "ui-local",
+    "owning_operation": null,
+    "caller": "src/components/views/FilesView.tsx",
+    "scope": "browser file-download asset; explicit UI-local owner; preserve FilesView caller until a browser-safe asset boundary replaces it",
+    "effect_class": "read",
+    "migration_state": "browser-local"
+  },
+  {
+    "route": "GET /api/enhanced/graph/nodes",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/graph/relationships",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/graph/graph3d",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/graph/graph3d/scope",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/graph/graph3d/refresh",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/graph/graph3d/clusters",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/graph/graph3d/expand",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/graph/stats",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/graph/node-types",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/graph/memory",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/graph/memory/{memory_id}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "PUT /api/enhanced/graph/memory/{memory_id}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "DELETE /api/enhanced/graph/memory/{memory_id}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "delete",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/graph/link",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/graph/search",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/graph/impact/{symbol}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/graph/query",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/graph/viz/capabilities",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/graph/viz/render",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/code/nav",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/CodeGraphView.tsx",
+    "scope": "code graph domain; retirement is pending a generated Arbora operation; preserve CodeGraphView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/code/instances",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/CodeGraphView.tsx",
+    "scope": "code graph domain; retirement is pending a generated Arbora operation; preserve CodeGraphView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/kb/ingest",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/KnowledgeBaseView.tsx",
+    "scope": "knowledge-base domain; retirement is pending a generated Arbora operation; preserve KnowledgeBaseView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/kb/list",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/KnowledgeBaseView.tsx",
+    "scope": "knowledge-base domain; retirement is pending a generated Arbora operation; preserve KnowledgeBaseView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/kb/search",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/KnowledgeBaseView.tsx",
+    "scope": "knowledge-base domain; retirement is pending a generated Arbora operation; preserve KnowledgeBaseView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/kb/article/{article_id}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/KnowledgeBaseView.tsx",
+    "scope": "knowledge-base domain; retirement is pending a generated Arbora operation; preserve KnowledgeBaseView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/kb/health",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/KnowledgeBaseView.tsx",
+    "scope": "knowledge-base domain; retirement is pending a generated Arbora operation; preserve KnowledgeBaseView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/kb/update",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/KnowledgeBaseView.tsx",
+    "scope": "knowledge-base domain; retirement is pending a generated Arbora operation; preserve KnowledgeBaseView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/sdd/constitution",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SDDView.tsx",
+    "scope": "spec-driven-development domain; retirement is pending a generated Arbora operation; preserve SDDView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/sdd/constitution",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SDDView.tsx",
+    "scope": "spec-driven-development domain; retirement is pending a generated Arbora operation; preserve SDDView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/sdd/specs",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SDDView.tsx",
+    "scope": "spec-driven-development domain; retirement is pending a generated Arbora operation; preserve SDDView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/sdd/spec",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SDDView.tsx",
+    "scope": "spec-driven-development domain; retirement is pending a generated Arbora operation; preserve SDDView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/sdd/plans",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SDDView.tsx",
+    "scope": "spec-driven-development domain; retirement is pending a generated Arbora operation; preserve SDDView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/sdd/tasks",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SDDView.tsx",
+    "scope": "spec-driven-development domain; retirement is pending a generated Arbora operation; preserve SDDView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/sdd/sync",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SDDView.tsx",
+    "scope": "spec-driven-development domain; retirement is pending a generated Arbora operation; preserve SDDView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/graph/magma",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GraphView.tsx; src/components/views/Graph3DView.tsx; src/components/knowledge-graph/; src/lib/atlas/adapters/",
+    "scope": "graph domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve graph callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/resources",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/OpsPanelView.tsx",
+    "scope": "resource lifecycle domain; retirement is pending a generated Arbora operation; preserve OpsPanelView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/resources/spawn",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/OpsPanelView.tsx",
+    "scope": "resource lifecycle domain; retirement is pending a generated Arbora operation; preserve OpsPanelView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/agent-library/agents",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/AgentLibraryView.tsx",
+    "scope": "agent library domain; retirement is pending a generated Arbora operation; preserve AgentLibraryView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/agent-library/tools",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/AgentLibraryView.tsx",
+    "scope": "agent library domain; retirement is pending a generated Arbora operation; preserve AgentLibraryView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/agent-library/suggestions",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/AgentLibraryView.tsx",
+    "scope": "agent library domain; retirement is pending a generated Arbora operation; preserve AgentLibraryView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/agent-library/agents/{agent_id:path}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/AgentLibraryView.tsx",
+    "scope": "agent library domain; retirement is pending a generated Arbora operation; preserve AgentLibraryView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/agent-library/agents",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/AgentLibraryView.tsx",
+    "scope": "agent library domain; retirement is pending a generated Arbora operation; preserve AgentLibraryView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "PUT /api/enhanced/agent-library/agents/{agent_id:path}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/AgentLibraryView.tsx",
+    "scope": "agent library domain; retirement is pending a generated Arbora operation; preserve AgentLibraryView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "DELETE /api/enhanced/agent-library/agents/{agent_id:path}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/AgentLibraryView.tsx",
+    "scope": "agent library domain; retirement is pending a generated Arbora operation; preserve AgentLibraryView callers until cutover proof",
+    "effect_class": "delete",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/agent-library/a2a",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/AgentLibraryView.tsx",
+    "scope": "agent library domain; retirement is pending a generated Arbora operation; preserve AgentLibraryView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/agent-library/config-summary",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/AgentLibraryView.tsx",
+    "scope": "agent library domain; retirement is pending a generated Arbora operation; preserve AgentLibraryView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/maintenance/status",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/OpsPanelView.tsx",
+    "scope": "maintenance domain; retirement is pending a generated Arbora operation; preserve OpsPanelView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/maintenance/trigger",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/OpsPanelView.tsx",
+    "scope": "maintenance domain; retirement is pending a generated Arbora operation; preserve OpsPanelView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/pipeline/status",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/OpsPanelView.tsx",
+    "scope": "pipeline domain; retirement is pending a generated Arbora operation; preserve OpsPanelView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/pipeline/trigger",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/OpsPanelView.tsx",
+    "scope": "pipeline domain; retirement is pending a generated Arbora operation; preserve OpsPanelView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/models",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/Chat.tsx; src/components/views/DefaultOverviewPanel.tsx",
+    "scope": "model registry domain; retirement is pending a generated Arbora operation; preserve Chat and overview callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/config/backend",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/ConfigurationView.tsx; src/lib/api.ts",
+    "scope": "configuration domain; retirement is pending a generated Arbora operation; preserve ConfigurationView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "PUT /api/enhanced/config/backend",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/ConfigurationView.tsx; src/lib/api.ts",
+    "scope": "configuration domain; retirement is pending a generated Arbora operation; preserve ConfigurationView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/prompts/graph",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/Chat.tsx; src/components/views/PromptsView.tsx; src/components/views/LLMTemplatesView.tsx",
+    "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/prompts/graph/{prompt_id}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/prompts/graph",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/Chat.tsx; src/components/views/PromptsView.tsx; src/components/views/LLMTemplatesView.tsx",
+    "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "PUT /api/enhanced/prompts/graph/{prompt_id}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/prompts/graph/{prompt_id}/versions",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/prompts/graph/{prompt_id}/rollback/{version_id}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/prompts/graph/{prompt_id}/diff/{version_a}/{version_b}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/tools/graph",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SkillsView.tsx",
+    "scope": "tool/skill administration domain; retirement is pending a generated Arbora operation; preserve SkillsView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/tools/graph/{tool_id}/toggle",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/SkillsView.tsx",
+    "scope": "tool/skill administration domain; retirement is pending a generated Arbora operation; preserve SkillsView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/sessions",
+    "disposition": "session-protocol",
+    "owning_operation": null,
+    "caller": "src/components/views/SessionsView.tsx; src/lib/work-workspace.ts",
+    "scope": "served session protocol; preserve SessionsView and work-workspace callers until task/session operations replace the host facade",
+    "effect_class": "read",
+    "migration_state": "served-protocol"
+  },
+  {
+    "route": "GET /api/enhanced/sessions/{session_id}",
+    "disposition": "session-protocol",
+    "owning_operation": null,
+    "caller": "src/components/views/SessionsView.tsx; src/lib/work-workspace.ts",
+    "scope": "served session protocol; preserve SessionsView and work-workspace callers until task/session operations replace the host facade",
+    "effect_class": "read",
+    "migration_state": "served-protocol"
+  },
+  {
+    "route": "DELETE /api/enhanced/sessions/{session_id}",
+    "disposition": "session-protocol",
+    "owning_operation": null,
+    "caller": "src/components/views/SessionsView.tsx; src/lib/work-workspace.ts",
+    "scope": "served session protocol; preserve SessionsView and work-workspace callers until task/session operations replace the host facade",
+    "effect_class": "delete",
+    "migration_state": "served-protocol"
+  },
+  {
+    "route": "POST /api/enhanced/sessions/{session_id}/reply",
+    "disposition": "session-protocol",
+    "owning_operation": null,
+    "caller": "src/components/views/SessionsView.tsx; src/lib/work-workspace.ts",
+    "scope": "served session protocol; preserve SessionsView and work-workspace callers until task/session operations replace the host facade",
+    "effect_class": "write",
+    "migration_state": "served-protocol"
+  },
+  {
+    "route": "POST /api/enhanced/sessions/{session_id}/cancel",
+    "disposition": "session-protocol",
+    "owning_operation": null,
+    "caller": "src/components/views/SessionsView.tsx; src/lib/work-workspace.ts",
+    "scope": "served session protocol; preserve SessionsView and work-workspace callers until task/session operations replace the host facade",
+    "effect_class": "write",
+    "migration_state": "served-protocol"
+  },
+  {
+    "route": "POST /api/enhanced/goals",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GoalsView.tsx",
+    "scope": "goal execution domain; retirement is pending a generated Arbora operation; preserve GoalsView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/goals",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GoalsView.tsx",
+    "scope": "goal execution domain; retirement is pending a generated Arbora operation; preserve GoalsView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/goals/{goal_id}/iterations",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GoalsView.tsx",
+    "scope": "goal execution domain; retirement is pending a generated Arbora operation; preserve GoalsView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/goals/{goal_id}/cancel",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/GoalsView.tsx",
+    "scope": "goal execution domain; retirement is pending a generated Arbora operation; preserve GoalsView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/config",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/ConfigurationView.tsx; src/lib/api.ts",
+    "scope": "configuration domain; retirement is pending a generated Arbora operation; preserve ConfigurationView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/config/groups",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/ConfigurationView.tsx; src/lib/api.ts",
+    "scope": "configuration domain; retirement is pending a generated Arbora operation; preserve ConfigurationView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/config/schema",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/ConfigurationView.tsx; src/lib/api.ts",
+    "scope": "configuration domain; retirement is pending a generated Arbora operation; preserve ConfigurationView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/config/secret-status",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/ConfigurationView.tsx; src/lib/api.ts",
+    "scope": "configuration domain; retirement is pending a generated Arbora operation; preserve ConfigurationView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "PUT /api/enhanced/config",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/ConfigurationView.tsx; src/lib/api.ts",
+    "scope": "configuration domain; retirement is pending a generated Arbora operation; preserve ConfigurationView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/llm/models",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/LLMTemplatesView.tsx",
+    "scope": "LLM model-management domain; retirement is pending a generated Arbora operation; preserve LLMTemplatesView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/llm/embedding-models",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/LLMTemplatesView.tsx",
+    "scope": "LLM model-management domain; retirement is pending a generated Arbora operation; preserve LLMTemplatesView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/llm/model-schema",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/LLMTemplatesView.tsx",
+    "scope": "LLM model-management domain; retirement is pending a generated Arbora operation; preserve LLMTemplatesView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/llm/model-detail",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/LLMTemplatesView.tsx",
+    "scope": "LLM model-management domain; retirement is pending a generated Arbora operation; preserve LLMTemplatesView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "PUT /api/enhanced/llm/models",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/LLMTemplatesView.tsx",
+    "scope": "LLM model-management domain; retirement is pending a generated Arbora operation; preserve LLMTemplatesView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "PUT /api/enhanced/llm/embedding-models",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/LLMTemplatesView.tsx",
+    "scope": "LLM model-management domain; retirement is pending a generated Arbora operation; preserve LLMTemplatesView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/prompts",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/Chat.tsx; src/components/views/PromptsView.tsx; src/components/views/LLMTemplatesView.tsx",
+    "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/prompts/{name}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/Chat.tsx; src/components/views/PromptsView.tsx; src/components/views/LLMTemplatesView.tsx",
+    "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "PUT /api/enhanced/prompts/{name}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/Chat.tsx; src/components/views/PromptsView.tsx; src/components/views/LLMTemplatesView.tsx",
+    "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/services",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/tunnel-manager/hosts",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "tunnel-manager connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/tunnel-manager/hosts",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "tunnel-manager connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/systems-manager/resources",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "systems-manager connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/systems-manager/processes",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "systems-manager connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/container-manager/containers",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "container-manager connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/repository-manager/repos",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "repository-manager connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/repository-manager/bulk",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "repository-manager connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/voice/transcribe",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/VoiceDictationButton.tsx; src/hooks/useVoiceDictation.ts",
+    "scope": "voice transcription domain; retirement is pending a generated Arbora operation; preserve voice callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/atlassian/kanban",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/github/prs",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/gitlab/mrs",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/portainer/stacks",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/datascience/training",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/scholarx/papers",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/uptime/status",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/searxng/search",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/homeassistant/devices",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/nextcloud/events",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/microsoft/emails",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/mediadownloader/downloads",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/qbittorrent/torrents",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ecosystem/stirlingpdf/jobs",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/components/views/EcosystemView.tsx",
+    "scope": "ecosystem connector domain; retirement is pending a generated Arbora operation; preserve EcosystemView callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/system",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/Chat.tsx",
+    "scope": "system command domain; retirement is pending a generated Arbora operation; preserve Chat callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/commands/execute",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/Chat.tsx",
+    "scope": "command execution domain; retirement is pending a generated Arbora operation; preserve Chat callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/commands/autocomplete",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/Chat.tsx",
+    "scope": "command execution domain; retirement is pending a generated Arbora operation; preserve Chat callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/workflows",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/WorkflowsView.tsx",
+    "scope": "workflow domain; retirement is pending a generated Arbora operation; preserve workflow callers until cutover proof",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/workflows",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/WorkflowsView.tsx",
+    "scope": "workflow domain; retirement is pending a generated Arbora operation; preserve workflow callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/workflows/{wid:path}/run",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/WorkflowsView.tsx",
+    "scope": "workflow domain; retirement is pending a generated Arbora operation; preserve workflow callers until cutover proof",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/atlas/sources",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/atlas/sources/{source_id}/connection",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/atlas/sources/{source_id}/connection",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/atlas/sync/preview",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/atlas/sync/runs",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/atlas/sync/runs",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/atlas/sync/runs/{run_id}/cancel",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/atlas/sources/providers",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/atlas/sources/connections",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/atlas/sources/connections",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "DELETE /api/enhanced/atlas/sources/connections/{connection_id}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "delete",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/atlas/sources/connections/{connection_id}/discover",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/atlas/sources/connections/{connection_id}/mapping",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/atlas/sources/connections/{connection_id}/mapping/propose",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/atlas/sources/connections/{connection_id}/mapping/approve",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/atlas/sources/connections/{connection_id}/status",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/atlas/sources/sync/preview",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/atlas/sources/sync",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/atlas/sources/runs/{run_id}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/atlas/sources/runs/{run_id}/cancel",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/atlas/sources/api.ts; src/components/views/",
+    "scope": "Atlas domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve Atlas callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ontology/object-types",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ontology/property-types",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ontology/interfaces",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ontology/interfaces/{name}/implementers",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/ontology/object-set/search",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/ontology/object-set/search-around",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/ontology/object-set/pivot",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/ontology/object-set/aggregate",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/ontology/object-set/save",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ontology/object-set/list",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ontology/actions",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/ontology/object-set/action",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ontology/object/{object_id}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/ontology/object/{object_id}/edit",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/ontology/object/{object_id}/revert",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/ontology/function/invoke",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/ontology/derive",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/ontology/document/process",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "GET /api/enhanced/ontology/object-view/{object_type}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "read",
+    "migration_state": "pending-arbora-operation"
+  },
+  {
+    "route": "POST /api/enhanced/ontology/object-view/{object_type}",
+    "disposition": "retire",
+    "owning_operation": null,
+    "caller": "src/lib/api.ts; src/components/views/ObjectView.tsx; src/components/views/VertexView.tsx",
+    "scope": "ontology and object-set domain; retirement is pending generated Arbora operations and tenant/purpose parity proof; preserve ontology callers until cutover",
+    "effect_class": "write",
+    "migration_state": "pending-arbora-operation"
+  }
+]
