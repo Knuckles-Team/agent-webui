@@ -27,3 +27,10 @@ No task above names a requirement ID individually; together they must close ever
 - [ ] WEBUI-IDENTITY-R003.2.2: Installed EG identity journeys. Installed real producer/browser qualification remains required; source configuration refusal is not login support.
 - [ ] WEBUI-IDENTITY-R003.3.1: OIDC configuration source refusal. Source factory tests reject incompatible owners and incomplete browser OIDC configuration.
 - [ ] WEBUI-IDENTITY-R003.3.2: External provider interoperability qualification. Protocol fixtures and each claimed live provider remain required; configuration tests do not qualify provider interoperability.
+
+## Workspace account source and remaining session acceptance
+
+- [ ] WEBUI-IDENTITY-R004.1: Deliver the shared workspace account menu and its rendered source regressions. Keep fixture identity and mocked HTTP evidence separate from installed acceptance.
+- [ ] WEBUI-IDENTITY-R004.2: Qualify all original local account flows, session fixation, CSRF, logout/replay and credential-storage guarantees on the exact installed stack.
+
+The parent WEBUI-IDENTITY-R004 remains incomplete while its installed child is open. Source component checks do not close WEBUI-IDENTITY-R009 accessibility acceptance.

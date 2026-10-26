@@ -3,6 +3,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceContextRail } from '../WorkspaceContextRail'
+// Route/account tests exercise the real menu; these tests isolate navigation.
+vi.mock('@/components/UserMenu', () => ({ UserMenu: () => null }))
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
 function Surface() {
   const location = useWorkspaceLocation()

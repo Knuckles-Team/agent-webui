@@ -134,6 +134,10 @@
   align-items: center;
   gap: 0.5rem;
 }
+.workspace-account-menu {
+  flex: 0 0 auto;
+  width: 2.75rem;
+}
 .workspace-appearance summary {
   display: flex;
   align-items: center;
@@ -840,7 +844,7 @@
 @media (max-width: 40rem) {
   .workspace-header-row {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     gap: 0.25rem 0.375rem;
   }
   .workspace-context-rail #workspace-home {
@@ -861,6 +865,10 @@
   .workspace-header-utilities .workspace-appearance {
     grid-row: 1;
     grid-column: 3;
+  }
+  .workspace-account-menu {
+    grid-row: 1;
+    grid-column: 4;
   }
   .workspace-context-navigation {
     grid-row: 2;
@@ -933,7 +941,8 @@
     order: 1;
   }
   .workspace-header-utilities .workspace-appearance,
-  .workspace-header-utilities > a {
+  .workspace-header-utilities > a,
+  .workspace-account-menu {
     order: 2;
   }
   .workspace-context-navigation {

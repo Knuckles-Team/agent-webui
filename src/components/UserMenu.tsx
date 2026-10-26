@@ -121,7 +121,7 @@ function AuthMenuItem({ identity }: { identity: Identity }) {
   )
 }
 
-export function UserMenu() {
+export function UserMenu({ compact = false }: { compact?: boolean }) {
   const { identity } = useIdentity()
   const { displayName, email, avatarSrc } = useAccountDisplay(identity)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -132,15 +132,31 @@ export function UserMenu() {
         <SidebarMenuItem>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent">
+              <SidebarMenuButton
+                size={compact ? 'default' : 'lg'}
+                aria-label={`Account menu for ${displayName}`}
+                className={
+                  compact
+                    ? 'min-h-11 w-11 justify-center p-0 data-[state=open]:bg-sidebar-accent'
+                    : 'data-[state=open]:bg-sidebar-accent'
+                }
+              >
                 <UserAvatar avatarSrc={avatarSrc} displayName={displayName} size="sm" />
-                <span className="flex flex-col items-start min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+                <span
+                  className={
+                    compact
+                      ? 'sr-only'
+                      : 'flex flex-col items-start min-w-0 flex-1 group-data-[collapsible=icon]:hidden'
+                  }
+                >
                   <span className="truncate text-sm font-medium w-full">{displayName}</span>
                   <span className="truncate text-xs text-muted-foreground w-full">
                     {email ?? (identity.needsSignIn ? 'Not signed in' : identity.role)}
                   </span>
                 </span>
-                <ChevronsUpDown className="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
+                {!compact && (
+                  <ChevronsUpDown className="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
+                )}
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" className="w-64">

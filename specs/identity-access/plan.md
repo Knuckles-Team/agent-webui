@@ -78,3 +78,17 @@ Only its fixed WebSocket path bypasses the ordinary no-grant route gate.
 The anonymous actor and outer Host and security middleware remain unchanged.
 The optional port is imported lazily; absent mode keeps standalone compatibility.
 No session-boundary, anonymous read policy or operation admission is widened.
+
+## Amendment: 2026-10-26 workspace account access
+
+Preserve the full WEBUI-IDENTITY-R004 account/session requirement. Track its
+workspace menu source interactions as WEBUI-IDENTITY-R004.1 and all remaining
+installed account/session acceptance as WEBUI-IDENTITY-R004.2. Reuse the existing
+account menu and sign-out implementation in the shared Work header; do not add
+a second authentication policy or require a legacy navigation detour.
+
+The source child uses fixture identity and mocked HTTP responses. Its passing
+component tests do not qualify native revocation, cookie replay, provider
+interoperability or full desktop/mobile accessibility. Keep the installed child
+and parent incomplete until their exact-version journeys pass. Do not bind these
+source tests to the broad parent or WEBUI-IDENTITY-R009.
