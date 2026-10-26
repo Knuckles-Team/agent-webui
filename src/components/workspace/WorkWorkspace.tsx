@@ -1,6 +1,7 @@
 import { workspaceButtonClass as button } from '@/components/ui/button'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { ArboraApiError } from '@/lib/arbora-api/invoke'
 import { ApiError } from '@/lib/api-validation'
 import { currentPlanRunId } from '@/lib/current-plan'
 import { CurrentPlanPanel } from './CurrentPlanPanel'
@@ -254,12 +255,13 @@ function AuthorizedWork({
               </button>
             </div>
             <p className="my-2 text-sm">
-              Tasks you can access. They are not automatically linked to this conversation.
+              Up to 50 tasks you can access. They are not automatically linked to this conversation.
             </p>
             {tasks.isFetching && <p role="status">Loading tasks…</p>}
             {tasks.isError && (
               <p role="alert">
-                {tasks.error instanceof ApiError && [404, 501].includes(tasks.error.status)
+                {(tasks.error instanceof ApiError || tasks.error instanceof ArboraApiError) &&
+                [404, 501].includes(tasks.error.status)
                   ? 'Task inspection is unavailable on this backend.'
                   : 'Task listing failed. Refresh to retry.'}
               </p>

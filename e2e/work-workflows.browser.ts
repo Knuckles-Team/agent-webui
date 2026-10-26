@@ -1,6 +1,7 @@
 // Planned browser coverage for WEBUI-APPS-R049.1.2; not a completed acceptance receipt.
 // Synthetic browser journey only. Served workflow effects remain unavailable and unqualified.
 import { test, expect } from '@playwright/test'
+import { operation, taskPage } from './fixtures/work-task-operations'
 
 for (const viewport of [
   { width: 1440, height: 900 },
@@ -27,9 +28,9 @@ for (const viewport of [
       if (path === '/api/configure') return route.fulfill({ json: { models: [], builtinTools: [] } })
       if (path === '/api/enhanced/models') return route.fulfill({ json: { models: [], default_id: '' } })
       if (path === '/api/chats') return route.fulfill({ json: [] })
-      if (path === '/api/enhanced/sessions') return route.fulfill({ json: [{ id: 'task-a' }] })
-      if (path === '/api/enhanced/sessions/task-a')
-        return route.fulfill({ json: { id: 'task-a', status: { state: 'working' } } })
+      if (path === '/api/v1/ops/agents.tasks.list') return route.fulfill({ json: taskPage([{ id: 'task-a' }]) })
+      if (path === '/api/v1/ops/agents.tasks.get')
+        return route.fulfill({ json: operation({ id: 'task-a', status: { state: 'working' } }) })
       if (path === '/api/enhanced/workflows' && request.method() === 'GET')
         return route.fulfill({ json: [{ id: 'workflow:demo', name: 'Demo', steps: ['Check'], orchestrates: [] }] })
       if (path === '/api/enhanced/workflows/capabilities')

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { canonicalJson } from '@/lib/webmcp/canonical'
 import { ApiError, fetchValidated } from '@/lib/api-validation'
+import { ArboraApiError, invoke } from '@/lib/arbora-api/invoke'
 import { gatewayPost } from '@/lib/gateway'
 import { roleAtLeast, type Role } from '@/lib/nav-registry'
 
@@ -104,16 +105,35 @@ export type WorkRun = z.infer<typeof TraceRowSchema>
 export type WorkRunDetail = z.infer<typeof RunDetailSchema>['result']
 /** Existing read-only trace surface. No invented conversation-to-run association. */
 const AgentTaskSchema = z.object({ id, status: z.object({ state: z.string() }).optional() }).loose()
+const TaskPageSchema = z
+  .object({ tasks: z.array(AgentTaskSchema).max(100), nextCursor: z.string().min(1).max(1024).nullable() })
+  .strict()
+/** Keep the provider cursor opaque; no inferred task/run identities or legacy fallback. */
+async function listTaskPage(signal?: AbortSignal, cursor?: string) {
+  const params = z
+    .object({ limit: z.literal(50), cursor: z.string().min(1).max(1024).optional() })
+    .parse({ limit: 50, cursor })
+  const result = await invoke('agents.tasks.list', params, z.object({ value: TaskPageSchema }).strict(), { signal })
+  return result.value
+}
 /** Explicit refusal is final for this read; the caller can request a new read. */
 export function retryWorkTaskRead(failureCount: number, error: unknown): boolean {
-  if (error instanceof ApiError && [401, 403, 404, 501].includes(error.status)) return false
+  if ((error instanceof ApiError || error instanceof ArboraApiError) && [401, 403, 404, 501].includes(error.status))
+    return false
   return failureCount < 3
 }
 export const workApi = {
-  listTasks: (signal?: AbortSignal) =>
-    fetchValidated('/api/enhanced/sessions?limit=50', z.array(AgentTaskSchema), { signal }),
-  getTask: (taskId: string, signal?: AbortSignal) =>
-    fetchValidated(`/api/enhanced/sessions/${encodeURIComponent(id.parse(taskId))}`, AgentTaskSchema, { signal }),
+  listTaskPage,
+  // The existing Work list is a bounded first page, not a complete task census.
+  listTasks: async (signal?: AbortSignal) => (await listTaskPage(signal)).tasks,
+  getTask: async (taskId: string, signal?: AbortSignal) => {
+    const task_id = id.max(80).parse(taskId)
+    const result = await invoke('agents.tasks.get', { task_id }, z.object({ value: AgentTaskSchema }).strict(), {
+      signal,
+    })
+    if (result.value.id !== task_id) throw new Error('Served task identity does not match this read')
+    return result.value
+  },
   cancelTask: (taskId: string) =>
     fetchValidated(
       `/api/enhanced/sessions/${encodeURIComponent(id.parse(taskId))}/cancel`,

@@ -1,6 +1,7 @@
 // spec: WEBUI-APPS-R049.1.3
 // Native keyboard acceptance with synthetic reads, not installed-provider qualification.
 import { expect, test } from '@playwright/test'
+import { operation, taskPage, refusal } from './fixtures/work-task-operations'
 
 test('records Chromium native disabled-button focus behavior', async ({ page }, info) => {
   await page.setContent('<button id="refresh">Refresh</button>')
@@ -47,22 +48,22 @@ for (const outcome of ['renewed', 'refused'] as const) {
       if (path === '/api/configure') return route.fulfill({ json: { models: [], builtinTools: [] } })
       if (path === '/api/enhanced/models') return route.fulfill({ json: { models: [], default_id: '' } })
       if (path === '/api/chats') return route.fulfill({ json: [] })
-      if (path === '/api/enhanced/sessions') return route.fulfill({ json: [{ id: 'refresh-task' }] })
-      if (path === '/api/enhanced/sessions/refresh-task') {
+      if (path === '/api/v1/ops/agents.tasks.list') return route.fulfill({ json: taskPage([{ id: 'refresh-task' }]) })
+      if (path === '/api/v1/ops/agents.tasks.get') {
         if (refreshing) {
           reads++
           await pending
-          if (outcome === 'refused') return route.fulfill({ status: 403, json: { detail: 'Denied' } })
+          if (outcome === 'refused') return route.fulfill({ status: 403, json: refusal() })
         }
         return route.fulfill({
-          json: {
+          json: operation({
             id: 'refresh-task',
             status: { state: 'working' },
             contextId: 'retained-context',
             artifacts: [
               { artifactId: 'reply', parts: [{ kind: 'text', text: refreshing ? 'Renewed output' : 'Old output' }] },
             ],
-          },
+          }),
         })
       }
       return route.fulfill({ status: 501, json: { detail: 'Unavailable in read-only fixture' } })
