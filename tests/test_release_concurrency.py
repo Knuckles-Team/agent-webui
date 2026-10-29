@@ -14,7 +14,7 @@ class CiConcurrencyTests(unittest.TestCase):
     def test_ci_cancels_stale_pull_request_and_main_runs(self) -> None:
         self.assertIn('  cancel-in-progress: true', CI)
         self.assertIn("format('pr-{0}-{1}'", CI)
-        self.assertIn("format('main-{0}'", CI)
+        self.assertIn("format('main-{0}-{1}'", CI)
 
     def test_release_is_tag_or_dispatch_only_and_never_cancelled(self) -> None:
         self.assertIn("    tags:\n      - 'v*'\n  workflow_dispatch:", RELEASE)
