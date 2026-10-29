@@ -227,14 +227,31 @@ def load_settings() -> OIDCSettings | None:
 
     client_id = _env('WEBUI_OIDC_CLIENT_ID')
     client_secret = _env('WEBUI_OIDC_CLIENT_SECRET')
-    issuer = _env('WEBUI_OIDC_ISSUER') or _env('AUTH_JWT_ISSUER')
+    browser_issuer = _env('WEBUI_OIDC_ISSUER')
     redirect_uri = _env('WEBUI_OIDC_REDIRECT_URI')
     session_key = _env('WEBUI_SESSION_KEY')
-    scope = _env('WEBUI_OIDC_SCOPE') or 'openid profile email'
+    configured_scope = _env('WEBUI_OIDC_SCOPE')
     attended_acr = _attended_acr_values()
+    # A shared bearer verifier is not a browser SSO opt-in. Optional browser
+    # settings still express intent and must not hide incomplete configuration.
+    browser_intent = (
+        client_id,
+        client_secret,
+        browser_issuer,
+        redirect_uri,
+        session_key,
+        configured_scope,
+        _env('WEBUI_OIDC_ATTENDED_ACR_VALUES'),
+    )
+    if not any(browser_intent):
+        return None
+    issuer = browser_issuer or _env('AUTH_JWT_ISSUER')
+    scope = configured_scope or 'openid profile email'
     required = (client_id, client_secret, issuer, redirect_uri, session_key)
     if not _configuration_is_complete(required):
-        return None
+        raise OIDCConfigurationError(
+            'Explicit browser SSO settings require complete OIDC configuration'
+        )
     for label, url in (('issuer', issuer), ('redirect URI', redirect_uri)):
         _validate_oidc_url(label, url)
     return OIDCSettings(

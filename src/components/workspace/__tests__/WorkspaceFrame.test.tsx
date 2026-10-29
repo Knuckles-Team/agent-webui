@@ -167,7 +167,7 @@ it('reflows the automatic map default but preserves an explicit expansion and re
     },
   })
   Object.defineProperty(media, 'matches', { get: () => wide })
-  const original = window.matchMedia
+  const original = vi.mocked(window.matchMedia).getMockImplementation()!
   const match = vi
     .spyOn(window, 'matchMedia')
     .mockImplementation((query) => (query === '(min-width: 64rem)' ? (media as MediaQueryList) : original(query)))

@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: '.',
-  testMatch: 'workspace-identity.browser.ts',
+  testMatch: ['workspace-identity.browser.ts', 'work-task-refresh.browser.ts'],
   workers: 1,
   reporter: 'list',
   use: {

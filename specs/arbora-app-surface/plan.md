@@ -1260,3 +1260,43 @@ Implement producer history and fork admission first, then the existing client
 adapter and controls, then served acceptance. Fixtures may prove presentation
 but cannot close durable-fork acceptance. No functional fork is claimed by this
 spec-only change. Existing history, transport and checkpoint obligations stay open.
+
+## Tools reading-surface consistency — 2026-10-25
+
+Extend R049.2.1 in place: give the retained Tools readiness, catalog and fleet
+sections the existing Knowledge glass material and shared control typography.
+Reuse palette-aware neutral buttons for catalog navigation. Preserve readiness
+evidence, status and disabled states, native links, focus and filtering. Keep
+opaque, reduced-transparency and forced-color fallbacks; no new layout, routing
+or backend behavior. Scoped browser captures do not close R049.2 acceptance.
+
+## Usage control and evidence consistency — 2026-10-25
+
+Extend R049.2.1 in place after the Tools section polish. Apply existing neutral
+action classes to Usage refresh, filtering, session navigation and result links.
+Reuse the same reading material for the Usage section, KPI cards and messages.
+Keep one blurred section, not a blur per item. Preserve charts, measured values,
+status badges, authority checks, filters, history and keyboard/touch behavior.
+This presentation continuation adds no analytics functionality or acceptance claim.
+
+## Amendment 2026-10-25: display name
+
+Use Overstory as the client display name in the primary UI, package description,
+and documentation entry points. Keep repository, distribution, import, command,
+protocol and storage identifiers unchanged. Arbora remains the backend and
+ecosystem name. Existing image assets and capture provenance remain unchanged.
+
+## Amendment 2026-10-25: Understory and shared zoom direction
+
+Understory is the display name of the existing Atlas knowledge explorer. Keep
+`atlas` route, component, API and storage identifiers unchanged. Overstory Studio
+names the existing dashboard-authoring surface owned by `agent-dashboards`.
+
+The Understory conversion should share the ecosystem architecture explorer’s
+infinite-zoom visual direction: a continuous semantic journey from ecosystem
+to branch to entity, with readable controls and the existing map/list state,
+URLs, history, focus, keyboard navigation and accessible table/list alternatives.
+Respect reduced motion and reuse the existing renderer and design-system seams;
+do not introduce a competing renderer in this naming patch. This records a
+requested direction, not delivered zoom behavior or completed conversion.
+Outstanding R049.1.2 destination and native-provider acceptance remains open.

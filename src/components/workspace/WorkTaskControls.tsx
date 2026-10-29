@@ -1,3 +1,4 @@
+import { workspaceButtonClass as button, workspaceDestructiveButtonClass } from '@/components/ui/button'
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react'
 import { z } from 'zod'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -9,7 +10,6 @@ import { ApiError } from '@/lib/api-validation'
 const cancellable = new Set(['submitted', 'working', 'input-required', 'auth-required', 'running', 'pending'])
 const empty = z.object({}).strict()
 const reviewResult = z.object({ reviewRequired: z.literal(true) }).strict()
-const button = 'min-h-11 rounded border px-3 py-2 text-sm'
 
 /** Review changes local state. Only visible attended confirmation requests cancellation. */
 interface Props {
@@ -33,7 +33,10 @@ function OwnedTaskControls({
   cancellation,
   isAttendedGesture = (event) => event.nativeEvent.isTrusted,
 }: Props) {
-  const generation = useMemo(() => ({ taskId, taskState, context }), [taskId, taskState, context])
+  const generation = useMemo(
+    () => ({ taskId, taskState, context, refreshing }),
+    [taskId, taskState, context, refreshing],
+  )
   const live = useRef<typeof generation | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const focusTarget = useRef<HTMLElement>(null)
@@ -56,12 +59,12 @@ function OwnedTaskControls({
       live.current = null
     }
   }, [generation])
-  const canCancel = cancellable.has(taskState ?? '')
+  const canCancel = !refreshing && cancellable.has(taskState ?? '')
   const requestReview = useCallback(() => {
     if (live.current !== generation) throw new Error('Task context is stale')
     if (!canCancel) throw new Error('This task state does not support cancellation')
     if (cancellation.isPending(taskId)) throw new Error('A cancellation request is already pending')
-    if (currentReview.current) throw new Error('A task review is already open')
+    if (currentReview.current?.generation === generation) throw new Error('A task review is already open')
     const next = { generation, token: Symbol('task-review') }
     currentReview.current = next
     setError(null)
@@ -118,10 +121,11 @@ function OwnedTaskControls({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          className={button}
-          disabled={refreshing || running}
+          className={`${button} aria-disabled:pointer-events-none aria-disabled:bg-muted aria-disabled:text-muted-foreground aria-disabled:border-input`}
+          aria-disabled={refreshing || running}
+          aria-busy={refreshing}
           onClick={() => {
-            if (live.current !== generation) return
+            if (refreshing || cancellation.isPending(taskId) || live.current !== generation) return
             close()
             onRefresh()
           }}
@@ -143,10 +147,10 @@ function OwnedTaskControls({
         running={running}
         message={message}
         error={error}
-        reviewing={review !== null}
+        reviewing={review?.generation === generation}
       />
       <Dialog
-        open={review !== null}
+        open={review?.generation === generation}
         onOpenChange={(open) => {
           if (!open) close()
         }}
@@ -171,7 +175,7 @@ function OwnedTaskControls({
             </button>
             <button
               type="button"
-              className={button}
+              className={workspaceDestructiveButtonClass}
               disabled={review?.generation !== generation || running}
               onClick={(event) => {
                 void confirm(event)

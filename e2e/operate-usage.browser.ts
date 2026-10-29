@@ -1,3 +1,4 @@
+// spec: WEBUI-APPS-R049.2.1
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 // Browser qualification for WEBUI-APPS-R049.1.16; not a local verification receipt.
@@ -104,6 +105,19 @@ for (const viewport of [
     await page.goto('/workspace/operate?lens=usage&usagePanel=sessions&usageProject=retained-project')
     const usage = page.getByRole('region', { name: 'Usage analysis', exact: true })
     await expect(usage.getByText('$0.00', { exact: true }).first()).toBeVisible()
+    const appearance = page.locator('.workspace-appearance summary')
+    await appearance.click()
+    await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('light')
+    await page.getByRole('combobox', { name: 'Motion', exact: true }).selectOption('reduce')
+    await page.getByRole('combobox', { name: 'Surfaces', exact: true }).selectOption('glass')
+    await page.keyboard.press('Escape')
+    await expect(usage).toHaveCSS('backdrop-filter', 'blur(16px) saturate(1.15)')
+    const refresh = usage.getByRole('button', { name: 'Refresh usage' })
+    await expect(refresh).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
+    await expect(refresh).toHaveCSS('background-color', 'rgba(184, 207, 185, 0.64)')
+    await refresh.focus()
+    await expect(refresh).toHaveCSS('outline-style', 'solid')
+
     const open = usage.getByRole('button', { name: 'Open session Usage fixture project' })
     await tabTo(page, open)
     await expect(open).toBeFocused()
@@ -127,8 +141,24 @@ for (const viewport of [
     expect(await usage.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     const path = info.outputPath(`usage-${viewport.width}x${viewport.height}.png`)
-    await page.screenshot({ path })
+    await page.screenshot({ path, animations: 'disabled' })
     await info.attach('Contextual usage', { path, contentType: 'image/png' })
+    if (viewport.width === 1440) {
+      await appearance.click()
+      await page.getByRole('combobox', { name: 'Palette', exact: true }).selectOption({ label: 'Purple' })
+      await page.keyboard.press('Escape')
+      await page.screenshot({ path: info.outputPath('usage-purple.png'), animations: 'disabled' })
+      await appearance.click()
+      await page.getByRole('combobox', { name: 'Surfaces', exact: true }).selectOption('opaque')
+      await page.keyboard.press('Escape')
+      await expect(usage).toHaveCSS('backdrop-filter', 'none')
+      await page.screenshot({ path: info.outputPath('usage-opaque.png'), animations: 'disabled' })
+      await page.emulateMedia({ forcedColors: 'active' })
+      await expect(usage).toHaveCSS('backdrop-filter', 'none')
+      await expect(usage).toHaveCSS('box-shadow', 'none')
+      await page.emulateMedia({ forcedColors: 'none' })
+      await expect(usage.getByText('Synthetic timeline evidence')).toBeVisible()
+    }
     denied = true
     await usage.getByRole('button', { name: 'Refresh usage' }).tap()
     await expect(usage.getByRole('alert')).toContainText('Usage access was denied')

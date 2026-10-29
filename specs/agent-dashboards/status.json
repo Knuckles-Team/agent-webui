@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "spec_id": "WEBUI-DASH",
-  "owner_repo": "agent-webui",
+  "owner_repo": "overstory",
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
     "WEBUI-DASH-R001",
@@ -166,6 +166,7 @@
       "title": "Dashboards route wiring",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "0bd0c3f909c2",
         "fd405f9d0a6b"
       ],
       "verified_by": [

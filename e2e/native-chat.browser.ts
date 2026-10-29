@@ -3,6 +3,7 @@
 // Partial parent evidence only; retained acceptance children keep both parent rollups open.
 // Rendered synthetic app evidence only, not native WebMCP or live provider acceptance.
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { writeFile } from 'node:fs/promises'
 import { baseURL, responses } from './fixtures/documentation-screenshots.mjs'
 
 test.use({ hasTouch: true })
@@ -79,7 +80,7 @@ async function reachComposerByWheel(page: Page, input: Locator) {
     await page.waitForTimeout(50)
   }
   const reached = await visible()
-  if (!reached) {
+  {
     const geometry = await input.evaluate((element) => {
       function describe(node: Element) {
         const style = getComputedStyle(node)
@@ -100,6 +101,7 @@ async function reachComposerByWheel(page: Page, input: Locator) {
           maxHeight: style.maxHeight,
           gridTemplateRows: style.gridTemplateRows,
           fontSize: style.fontSize,
+          position: style.position,
         }
       }
       const box = element.getBoundingClientRect()
@@ -119,8 +121,12 @@ async function reachComposerByWheel(page: Page, input: Locator) {
         ),
       }
     })
+    const path = test
+      .info()
+      .outputPath(`native-composer-wheel-${geometry.viewport.width}x${geometry.viewport.height}.json`)
+    await writeFile(path, JSON.stringify({ ...geometry, reached }, null, 2))
     await test.info().attach('native-composer-wheel-geometry', {
-      body: JSON.stringify(geometry, null, 2),
+      path,
       contentType: 'application/json',
     })
   }
@@ -205,10 +211,14 @@ test('one native assistant retains draft, controls and context through navigatio
       'true',
     )
     await expect(panel).toBeVisible()
-    const expandedTaskBox = await page.locator('.workspace-context-content').boundingBox()
-    const expandedChatBox = await panel.boundingBox()
-    expect(expandedChatBox!.y).toBeGreaterThanOrEqual(expandedTaskBox!.y + expandedTaskBox!.height)
-    expect(Math.abs(expandedChatBox!.width - expandedTaskBox!.width)).toBeLessThanOrEqual(1)
+    // Sample both edges atomically: expansion can scroll between browser round trips.
+    const expanded = await page.locator('.workspace-chat-layout').evaluate((layout) => {
+      const task = layout.querySelector('.workspace-context-content')!.getBoundingClientRect()
+      const chat = layout.querySelector('.workspace-assistant')!.getBoundingClientRect()
+      return { taskBottom: task.bottom, chatTop: chat.top, widthDifference: Math.abs(chat.width - task.width) }
+    })
+    expect(expanded.chatTop).toBeGreaterThanOrEqual(expanded.taskBottom)
+    expect(expanded.widthDifference).toBeLessThanOrEqual(1)
     await reachComposerByWheel(page, input)
     await page.getByRole('button', { name: 'Focus message input' }).click()
     await expect(input).toBeFocused()
@@ -435,7 +445,22 @@ test('native composer and task remain reachable with enlarged text at narrow and
     { width: 320, height: 740 },
     { width: 844, height: 390 },
   ]) {
+    const retainedFocus = await page.locator(':focus').elementHandle()
+    expect(retainedFocus).not.toBeNull()
     await page.setViewportSize(size)
+    // Resize updates the viewport in one frame, then restores retained focus in the next.
+    // Wait for that lifecycle before deliberately revealing the task for ordinary wheel access.
+    await expect
+      .poll(() =>
+        page
+          .locator('.workspace-viewport')
+          .evaluate((element) => element.style.getPropertyValue('--workspace-visible-height')),
+      )
+      .toBe(`${size.height}px`)
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+    )
+    expect(await retainedFocus!.evaluate((element) => document.activeElement === element)).toBe(true)
     const context = page.locator('.workspace-context-content')
     const input = page.locator('#chat-message-input')
     await context.scrollIntoViewIfNeeded()

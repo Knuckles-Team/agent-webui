@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "spec_id": "WEBUI-API",
-  "owner_repo": "agent-webui",
+  "owner_repo": "overstory",
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
     "WEBUI-API-R001",
@@ -57,9 +57,10 @@
     {
       "id": "WEBUI-API-R003",
       "title": "Remaining domain routes migrate to generated operations with a route census (rollup)",
-      "delivery_state": "SPECIFIED",
+      "delivery_state": "LANDED",
       "landed_in": [
         "1509bdb19bd4",
+        "8966e673216b",
         "98dd7d8a354e"
       ],
       "verified_by": [],
@@ -80,9 +81,13 @@
     {
       "id": "WEBUI-API-R003.2",
       "title": "Route-census data file and lint rule (remaining)",
-      "delivery_state": "SPECIFIED",
-      "landed_in": [],
-      "verified_by": []
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "8966e673216b"
+      ],
+      "verified_by": [
+        "src/lib/arbora-api/__tests__/route-census-lint.test.ts:1"
+      ]
     },
     {
       "id": "WEBUI-API-R004",

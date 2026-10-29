@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "spec_id": "WEBUI-APPS",
-  "owner_repo": "agent-webui",
+  "owner_repo": "overstory",
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
     "WEBUI-APPS-R038",
@@ -234,14 +234,18 @@
   "requirements": [
     {
       "id": "WEBUI-APPS-R038",
-      "title": "Browser identity consistently reads Arbora across titles and assets",
-      "delivery_state": "LANDED",
+      "title": "Client display identity consistently reads Overstory",
+      "delivery_state": "VERIFIED",
       "landed_in": [
+        "0bd0c3f909c2",
         "4f0952b82845",
         "82a4f84c98e6",
-        "dd43c178542b"
+        "dd43c178542b",
+        "e4f557cb74de"
       ],
-      "verified_by": []
+      "verified_by": [
+        "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:106"
+      ]
     },
     {
       "id": "WEBUI-APPS-R039",
@@ -337,7 +341,7 @@
     },
     {
       "id": "WEBUI-APPS-R002",
-      "title": "Arbora brand layer covers user-visible strings",
+      "title": "Overstory is the client display brand",
       "delivery_state": "LANDED",
       "landed_in": [
         "19e4264b5f66",
@@ -1920,7 +1924,7 @@
       "landed_in": [],
       "verified_by": [
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
-        "src/lib/__tests__/nav-registry.test.ts:192"
+        "src/lib/__tests__/nav-registry.test.ts:193"
       ]
     },
     {
@@ -2066,9 +2070,9 @@
       "landed_in": [],
       "verified_by": [
         "e2e/workspace-catalog.browser.ts:17",
-        "e2e/workspace-task-lifecycle.spec.ts:400",
+        "e2e/workspace-task-lifecycle.spec.ts:405",
         "src/components/__tests__/AppWorkspaceEntry.test.tsx:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:203",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:204",
         "src/components/views/__tests__/ArboraReadinessView.test.tsx:1"
       ]
     },
@@ -2077,18 +2081,18 @@
       "title": "Retained Work source slice",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "14c637ce2d13",
         "158591a6bcef",
+        "1dca15b53d26",
         "213863471869",
-        "38c8f13794ee",
-        "4d0f9693e45d",
-        "6592af62bedb"
+        "38c8f13794ee"
       ],
       "verified_by": [
         "e2e/conversation-first.browser.ts:1",
         "e2e/native-chat.browser.ts:1",
+        "e2e/work-task-refresh.browser.ts:1",
         "e2e/workspace-task-lifecycle.spec.ts:1",
-        "e2e/workspace-task-lifecycle.spec.ts:132",
-        "e2e/workspace-task-lifecycle.spec.ts:267"
+        "e2e/workspace-task-lifecycle.spec.ts:135"
       ]
     },
     {
@@ -2140,7 +2144,7 @@
       "verified_by": [
         "src/components/__tests__/ConsentBanner.test.tsx:204",
         "src/components/__tests__/ConsentBanner.test.tsx:23",
-        "src/components/__tests__/WorkspaceNavigation.test.tsx:51"
+        "src/components/__tests__/WorkspaceNavigation.test.tsx:55"
       ]
     },
     {
@@ -2237,15 +2241,15 @@
         "38c8f13794ee",
         "73051bf582bd",
         "93401c34a695",
-        "ac86f2de9817",
-        "fe8996c4e4d8"
+        "a6f6ee3874b2",
+        "ac86f2de9817"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:4",
         "e2e/conversation-first.browser.ts:1",
-        "src/__tests__/Chat.conversation-identity.test.tsx:870",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:292",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:327"
+        "e2e/operate-usage.browser.ts:1",
+        "e2e/workspace-catalog.browser.ts:87",
+        "src/__tests__/Chat.conversation-identity.test.tsx:870"
       ]
     },
     {
@@ -2265,7 +2269,7 @@
       ],
       "verified_by": [
         "e2e/explore-graph.browser.ts:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:238",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:239",
         "src/components/knowledge-graph/__tests__/GraphCanvas.engineMode.test.tsx:158",
         "src/components/workspace/__tests__/ExploreGraphLens.test.tsx:1",
         "src/components/workspace/__tests__/WorkspaceCommands.test.tsx:206"
@@ -2281,7 +2285,7 @@
         "fc03d1807ace"
       ],
       "verified_by": [
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:238",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:239",
         "src/components/__tests__/ResponsiveLimitation.test.tsx:54",
         "src/components/views/__tests__/WorkflowEditorView.test.tsx:1",
         "src/components/workspace/__tests__/WorkWorkflowLens.test.tsx:1",
@@ -2298,7 +2302,7 @@
         "fc03d1807ace"
       ],
       "verified_by": [
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:238",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:239",
         "src/components/workspace/__tests__/LoadedWorkspaceCommands.test.tsx:204",
         "src/components/workspace/__tests__/OperateUsageLens.test.tsx:1",
         "src/components/workspace/__tests__/WorkspaceCommands.test.tsx:206",

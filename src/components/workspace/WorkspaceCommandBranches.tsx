@@ -1,3 +1,4 @@
+import { workspaceButtonClass } from '@/components/ui/button'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { workspaceBranchPath, workspaceCommandBranches, type WorkspaceBranch } from './workspace-command-branches'
 import type { WorkspaceCommand } from './WorkspaceCommands'
@@ -56,7 +57,7 @@ export function WorkspaceCommandBranches({
       </ul>
       {current && (
         <button
-          className="min-h-11 rounded border px-3"
+          className={workspaceButtonClass}
           onClick={() => {
             browse(path.at(-2)?.command.href ?? null)
           }}
@@ -94,7 +95,7 @@ function BranchCard({
       </a>
       {!isCurrent && node.children.length > 0 && (
         <button
-          className="mt-1 min-h-11 w-full rounded border px-2 text-left break-words"
+          className={`${workspaceButtonClass} mt-1 w-full justify-start text-left`}
           aria-label={`Browse ${node.command.label}`}
           onClick={() => {
             onBrowse(node.command.href)
@@ -119,7 +120,7 @@ function BranchBreadcrumbs({
       <ol className="flex flex-wrap items-center gap-1 text-sm">
         <li>
           <button
-            className="min-h-11 rounded border px-3"
+            className={workspaceButtonClass}
             aria-current={path.length === 0 ? 'location' : undefined}
             onClick={() => {
               onBrowse(null)
@@ -132,7 +133,7 @@ function BranchBreadcrumbs({
           <li key={command.href} className="flex min-w-0 items-center gap-1">
             <span aria-hidden="true">/</span>
             <button
-              className="min-h-11 min-w-0 rounded border px-3 break-words"
+              className={workspaceButtonClass}
               aria-current={index === path.length - 1 ? 'location' : undefined}
               onClick={() => {
                 onBrowse(command.href)

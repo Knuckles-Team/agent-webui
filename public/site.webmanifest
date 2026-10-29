@@ -1,6 +1,6 @@
 {
-  "name": "Arbora",
-  "short_name": "Arbora",
+  "name": "Overstory",
+  "short_name": "Overstory",
   "description": "A governed web interface for Arbora agents, knowledge, and workflows.",
   "start_url": "/",
   "scope": "/",

@@ -1,3 +1,4 @@
+import { workspaceButtonClass } from '@/components/ui/button'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { z } from 'zod'
@@ -54,7 +55,7 @@ export function OperateCatalogPanel({
     }
   }, [arrival, data, state.connector])
   return (
-    <section aria-label="Connector catalog" className="min-w-0 space-y-2 rounded border p-3">
+    <section aria-label="Connector catalog" className="operate-panel min-w-0 space-y-2">
       <h2 className="font-medium">Connector catalog</h2>
       <p className="text-sm text-muted-foreground">
         Arbora catalog registrations. Registration availability does not establish a provider connection or permission
@@ -88,7 +89,7 @@ export function OperateCatalogPanel({
       )}
       <button
         type="button"
-        className="min-h-11 rounded border px-3"
+        className={workspaceButtonClass}
         disabled={catalog.isFetching}
         onClick={() => {
           void catalog.refetch()
@@ -160,7 +161,7 @@ function CatalogConnector({
   return (
     <article
       aria-label={`Catalog connector ${server.name}`}
-      className="min-w-0 rounded border p-3 [overflow-wrap:anywhere]"
+      className="operate-reading min-w-0 rounded border p-3 [overflow-wrap:anywhere]"
     >
       <h3>{server.name}</h3>
       <p>Registration: {server.status}</p>

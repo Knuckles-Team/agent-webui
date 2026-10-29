@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "captures": [
     {
       "file": "work-wide.png",
@@ -9,14 +9,14 @@
         "height": 900
       },
       "theme": "light",
-      "fixture": "workspace-docs-v1",
+      "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
+      "sourceRevision": "aeb9d63307a363027d6c0f022297232f1bdac632",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "55be1cc158bebe0dd344ac6f81ac62a4bf35d35b79326b346810a3668666438f"
+      "sha256": "c541fc77991acfd618641890264b1c0e6a7a8cb778dd6e64929aa34820500204"
     },
     {
       "file": "work-narrow.png",
@@ -26,48 +26,58 @@
         "height": 740
       },
       "theme": "light",
-      "fixture": "workspace-docs-v1",
+      "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
+      "sourceRevision": "aeb9d63307a363027d6c0f022297232f1bdac632",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "4b053347698c246980c7ed28559f9e2a848032711fbd48b62e742351fb7d698b"
+      "sha256": "3acdc97933db19fc32d56a0ca40ad7cc3c2bd2781d09ac48096188a90050c470"
     },
     {
       "file": "explore-wide.png",
-      "path": "/workspace/explore?q=research&entity=doc%3Aresearch",
+      "path": "/workspace/explore?q=project&entity=doc%3Aresearch",
       "viewport": {
         "width": 1440,
         "height": 900
       },
       "theme": "light",
-      "fixture": "workspace-docs-v1",
+      "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
+      "sourceRevision": "aeb9d63307a363027d6c0f022297232f1bdac632",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "9a522f2809872a281aec7a86217504fd0f31f36b24369004e9203c873defbde8"
+      "sha256": "e1b87da13c3336e9313d16001166641fdb6195b1137398cd5b67c41745ce0814",
+      "delivery": {
+        "file": "explore-wide.webp",
+        "sha256": "e666fdff237f9bc16e7c7361d6275aee0a7238e71f5c655f32403d4d2e5a0479",
+        "encoding": "lossless-webp",
+        "rgbaSha256": "097773207872f7910afaa3944b53573c06a1d6282c4ee5d31475f7ad7b360d22",
+        "optimizer": {
+          "pillow": "12.3.0",
+          "libwebp": "1.6.0"
+        }
+      }
     },
     {
       "file": "explore-narrow.png",
-      "path": "/workspace/explore?q=research&entity=doc%3Aresearch",
+      "path": "/workspace/explore?q=project&entity=doc%3Aresearch",
       "viewport": {
         "width": 320,
         "height": 740
       },
       "theme": "light",
-      "fixture": "workspace-docs-v1",
+      "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
+      "sourceRevision": "aeb9d63307a363027d6c0f022297232f1bdac632",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "d524d305439339ef83e4ca49fe83a8a95398b4caf8596a86d5a50442347fc62a"
+      "sha256": "894642067dd4d76cd38c2c8df945fc52ef128d87655757454807e36327f67f52"
     },
     {
       "file": "operate-wide.png",
@@ -77,14 +87,14 @@
         "height": 900
       },
       "theme": "light",
-      "fixture": "workspace-docs-v1",
+      "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
+      "sourceRevision": "aeb9d63307a363027d6c0f022297232f1bdac632",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "f06e9e47061014b19b094031a9c54637057d93f4728109d493408dcd248d3666"
+      "sha256": "05c0cec2a7f70da34fd1aa24e9ea87ebb8510b9a5a6057a370f5633818518a11"
     },
     {
       "file": "operate-narrow.png",
@@ -94,14 +104,14 @@
         "height": 740
       },
       "theme": "light",
-      "fixture": "workspace-docs-v1",
+      "fixture": "workspace-docs-v2",
       "fixedTime": "2026-01-15T12:00:00.000Z",
-      "sourceRevision": "d615e1c629fc8bb1fad05cbfd5246b38f984ff42",
+      "sourceRevision": "aeb9d63307a363027d6c0f022297232f1bdac632",
       "sourceDirty": false,
       "browser": "Chromium 156.0.8078.4",
       "platform": "linux",
       "deviceScaleFactor": 1,
-      "sha256": "797222c4cf9853b9021ba6516e5a65bd67e94cce942a22bf33f5d04e0db39ad7"
+      "sha256": "df45a0ac5bb62969c95e5fb3bb6baee5784c16ace14ca9354e02a842ee1ab2e0"
     }
   ]
 }

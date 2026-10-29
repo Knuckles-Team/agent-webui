@@ -62,3 +62,12 @@ The qualification files must retain collected items when opt-in is absent.
 A diff-scoped run must report explicit skips instead of no tests.
 Runner regressions check source/config isolation and propagate protocol failures, including empty collection.
 Explicit opt-in with missing prerequisites must fail, not skip.
+
+## Workspace account evidence boundaries
+
+| Child | Required proof |
+|---|---|
+| WEBUI-IDENTITY-R004.1 | Render the real Work entry with the existing account menu. Verify its labeled compact trigger, keyboard opening, Escape and focus restoration. With fixture identity and mocked HTTP responses, verify sign-out posts with same-origin credentials and CSRF, redirects only after success and visibly reports refusal. |
+| WEBUI-IDENTITY-R004.2 | Exercise every original parent account flow against installed browser and native producer versions. Prove session-fixation resistance, CSRF refusal, logout and cookie replay refusal, bounded one-use recovery and no browser-persisted credentials. |
+
+The R004.1 source tests are in `UserMenu.test.tsx` and `AppWorkspaceEntry.test.tsx`. They do not establish native session revocation, installed authentication, measured mobile layout or full screen-reader/accessibility acceptance. The R004 parent and R009 retain those separate obligations.

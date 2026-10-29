@@ -1,45 +1,83 @@
 name: CI
 
-# PR and main checks (CI-STANDARD). Never publishes: publication is
-# release.yml, triggered only by a v* tag or a manual dispatch.
+# The fleet fast-PR standard (pipelines reference/ci-standard.md). Never
+# publishes: publication is release.yml, triggered only by a v* tag or a
+# manual dispatch.
 #
-#   hooks -- the shared Knuckles-Team/pipelines gates workflow: this repo's
-#            .config/pre-commit.yaml at the commit and pre-push stages
-#            (diff-scoped on a PR, every file on main), which includes the
-#            spec-status / spec-decomposition / spec-trailers hooks.
-#   tests -- WebUI-specific: bootstrap (gate tooling, locked Python and
-#            frontend deps), full type check and lint, then the
-#            pr-test-scope subset (PR) or the full suite (main).
-#   gates -- the single required check: succeeds only when hooks and tests do.
-#   build -- main only: frontend bundle and wheel/sdist build, no upload.
-#
-# Docs/spec-only changes skip this workflow; gates-skip.yml reports the same
-# required `gates` check for them.
+#   changes           -- classifies the PR diff (docs-only, UI paths).
+#   hooks             -- the shared Knuckles-Team/pipelines gates workflow: this
+#                        repo's .config/pre-commit.yaml at the commit and
+#                        pre-push stages (diff-scoped on a PR, every file on
+#                        main), including the spec hooks. A docs-only PR passes
+#                        in seconds (docs-only-paths).
+#   tests             -- WebUI-specific: bootstrap, type check and lint, then
+#                        the pr-test-scope subset (PR) or the full suite (main).
+#   workspace-browser -- Playwright journeys; on a PR only when UI paths change.
+#   backward-python   -- Python 3.12 floor smoke; main and nightly only.
+#   build             -- frontend bundle and wheel/sdist build; main and nightly.
+#   ci-required       -- the one required check (`CI required`).
+#   gates             -- alias kept so the `gates` ruleset check keeps reporting
+#                        until the ruleset requires `CI required`.
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore: &ignored
-      - 'specs/**'
-      - 'docs/**'
-      - '**/*.md'
-      - 'plans/**'
-      - 'LICENSE'
   pull_request:
-    paths-ignore: *ignored
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('pr-{0}-{1}', github.workflow, github.event.pull_request.number) || format('main-{0}', github.workflow) }}
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}-{1}', github.workflow, github.event.pull_request.number) || format('main-{0}-{1}', github.workflow, github.ref) }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    name: changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+      ui: ${{ steps.scope.outputs.ui }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Classify the diff
+        id: scope
+        run: |
+          set -euo pipefail
+          # checkout tests GitHub's synthetic merge; its first parent is the target.
+          files="$(git diff --name-only HEAD^1 HEAD)"
+          code=false
+          ui=false
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            case "$f" in
+              specs/*|docs/*|*.md|plans/*|LICENSE) ;;
+              *) code=true ;;
+            esac
+            case "$f" in
+              src/*|e2e/*|public/*|patches/*|scripts/*|index.html|package.json|pnpm-lock.yaml|vite.config.ts|vitest.config.ts|playwright.config.ts|tsconfig.json|.github/workflows/ci.yml) ui=true ;;
+            esac
+          done <<< "$files"
+          echo "code=$code ui=$ui"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "ui=$ui" >> "$GITHUB_OUTPUT"
+
   hooks:
     name: hooks
+    permissions:
+      contents: read
     uses: Knuckles-Team/pipelines/.github/workflows/gates_pipeline.yml@main
     with:
       config: .config/pre-commit.yaml
@@ -55,15 +93,19 @@ jobs:
       # report-only (operator gate cut).
       skip-hooks: check-stubs,check-sprawl,okf-no-legacy-concepts,uv-lock,eslint-staged,no-fabrication-gate,ste-staged
       all-files: ${{ github.event_name != 'pull_request' }}
+      # Bash patterns (`*` crosses `/`); replaces the retired skip companion.
+      docs-only-paths: 'specs/* docs/* *.md plans/* LICENSE'
       timeout-minutes: ${{ github.event_name == 'pull_request' && 15 || 60 }}
 
   workspace-browser:
     name: workspace-browser
     # Synthetic workspace identity/contrast, modal cancellation and catalog navigation.
     # Hosted Chromium avoids the cloud editor's isolated loopback namespace.
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    needs: [changes]
+    if: ${{ always() && (github.event_name != 'push' && (github.event_name != 'pull_request' || needs.changes.outputs.ui == 'true')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Allow measured dependency-download overhead without reducing browser coverage.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -104,7 +146,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: workspace-identity-browser
-          path: test-results/workspace-identity*/
+          path: |
+            test-results/workspace-identity*/
+            test-results/work-task-refresh*/
           retention-days: 14
           if-no-files-found: error
       - name: Catalog destination history and responsive navigation
@@ -127,6 +171,13 @@ jobs:
           path: test-results/canopy-glass/
           retention-days: 14
           if-no-files-found: error
+      - name: Install pinned documentation image helper
+        if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/screenshot-tools"
+          "$RUNNER_TEMP/screenshot-tools/bin/python" -m pip install -r scripts/screenshot-requirements.txt
+          echo "SCREENSHOT_PYTHON=$RUNNER_TEMP/screenshot-tools/bin/python" >> "$GITHUB_ENV"
+
       - name: Documentation screenshot contract
         id: documentation_contract
         if: ${{ !cancelled() && steps.browser_dependencies.outcome == 'success' && steps.browser_engine.outcome == 'success' }}
@@ -166,6 +217,8 @@ jobs:
 
   tests:
     name: tests
+    needs: [changes]
+    if: ${{ always() && (github.event_name != 'pull_request' || needs.changes.outputs.code == 'true') }}
     # Cold runs measured ~12m before full lint/tests; the hostile-route file
     # alone takes ~3m. Budget for those gates plus setup/cache-save variance.
     timeout-minutes: ${{ github.event_name == 'pull_request' && 25 || 60 }}
@@ -199,6 +252,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/bootstrap.sh --no-hooks
+
+      - name: Route census architecture gate
+        run: pnpm run gate:route-census
 
       - name: Bootstrap-dependent hooks (siblings, lockfile, Node toolchain)
         timeout-minutes: 15
@@ -336,7 +392,8 @@ jobs:
 
   build:
     name: build
-    if: github.event_name != 'pull_request'
+    needs: [hooks, tests]
+    if: ${{ always() && github.event_name != 'pull_request' && needs.hooks.result == 'success' && needs.tests.result == 'success' }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
@@ -367,14 +424,12 @@ jobs:
       - name: Build Python distributions (no upload)
         run: uv build
 
-  # The one required check (branch ruleset context `gates`): an aggregate so
-  # the required name is stable while the work is split across `hooks`
-  # (shared workflow) and `tests` (needs the bootstrap).
   backward-python:
     # The one backward-support leg (pipelines reference/gate-standard.md
     # "Python version"): the environment is 3.14, requires-python keeps a 3.12
     # floor, so install the lock on 3.12 and import the package.
     name: backward-python (3.12)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -392,28 +447,33 @@ jobs:
           uv sync --frozen --no-dev --python 3.12
           uv run --frozen --no-sync python -c 'import sys, agent_webui; print(sys.version)'
 
-  gates:
-    name: gates
+  ci-required:
+    name: CI required
     if: always()
-    needs: [hooks, tests, workspace-browser]
+    needs: [changes, hooks, tests, workspace-browser, backward-python, build]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require hooks, tests and applicable browser qualification
+      - name: Fail on any failed or cancelled job (skipped is fine)
         env:
-          HOOKS: ${{ needs.hooks.result }}
-          TESTS: ${{ needs.tests.result }}
-          BROWSER: ${{ needs.workspace-browser.result }}
-          EVENT: ${{ github.event_name }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          set -euo pipefail
-          echo "hooks=$HOOKS tests=$TESTS browser=$BROWSER event=$EVENT"
-          [ "$HOOKS" = success ]
-          [ "$TESTS" = success ]
-          if [ "$EVENT" = pull_request ] || [ "$EVENT" = workflow_dispatch ]; then
-            [ "$BROWSER" = success ]
-          elif [ "$EVENT" = push ]; then
-            [ "$BROWSER" = skipped ]
-          else
-            exit 1
-          fi
+          echo "needed job results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in failure|cancelled) echo "::error::a required job ended $r"; exit 1;; esac
+          done
+
+  gates:
+    # Alias of `CI required` for the ruleset that still requires `gates`.
+    name: gates
+    if: always()
+    needs: [ci-required]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mirror CI required
+        env:
+          RESULT: ${{ needs.ci-required.result }}
+        run: |
+          echo "ci-required=$RESULT"
+          [ "$RESULT" = success ]

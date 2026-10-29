@@ -1,0 +1,71 @@
+/* Retained Tools sections use Knowledge's existing material, not another theme. */
+.operate-workspace {
+  font-size: var(--workspace-control-size);
+  line-height: 1.5;
+}
+.operate-workspace h1 {
+  font-size: 1.25rem;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+.operate-workspace h2 {
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+.operate-workspace h3 {
+  font-size: inherit;
+  font-weight: 500;
+}
+.operate-panel,
+.operate-workspace > .usage-analysis {
+  padding: clamp(1rem, 2cqw, 1.5rem);
+  border: 1px solid var(--glass-edge);
+  border-radius: 1.5rem;
+  background: var(--card);
+  box-shadow: var(--glass-shadow);
+}
+@supports (backdrop-filter: blur(12px)) {
+  .operate-panel,
+  .operate-workspace > .usage-analysis {
+    background: var(--glass-primary);
+    backdrop-filter: blur(16px) saturate(115%);
+  }
+}
+.operate-reading,
+.operate-workspace .usage-reading {
+  background: var(--glass-reading);
+  border-color: var(--glass-edge);
+  border-radius: 1rem;
+}
+.operate-workspace .workspace-control {
+  border-radius: 0.875rem;
+}
+.operate-workspace input {
+  background: var(--glass-control);
+  border-color: var(--glass-edge);
+  border-radius: 0.875rem;
+  font: inherit;
+}
+:root[data-transparency='opaque'] .operate-panel,
+:root[data-transparency='opaque'] .operate-workspace > .usage-analysis {
+  background: var(--card);
+  backdrop-filter: none;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .operate-panel,
+  .operate-workspace > .usage-analysis {
+    background: var(--card);
+    backdrop-filter: none;
+  }
+}
+@media (forced-colors: active) {
+  .operate-panel,
+  .operate-workspace > .usage-analysis,
+  .operate-reading,
+  .operate-workspace .usage-reading {
+    background: Canvas;
+    border-color: CanvasText;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+}

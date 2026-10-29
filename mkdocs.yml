@@ -1,8 +1,8 @@
-site_name: Arbora web UI
+site_name: Overstory
 site_description: The browser workspace for governed agents, workflows, and knowledge in Arbora.
-site_url: https://knuckles-team.github.io/agent-webui/
-repo_name: Knuckles-Team/agent-webui
-repo_url: https://github.com/Knuckles-Team/agent-webui
+site_url: https://knuckles-team.github.io/overstory/
+repo_name: Knuckles-Team/overstory
+repo_url: https://github.com/Knuckles-Team/overstory
 edit_uri: edit/main/docs/
 docs_dir: docs
 copyright: Copyright &copy; Knuckles-Team — MIT licensed
@@ -73,28 +73,28 @@ extra:
     current: agent-webui
     sites:
       - slug: agent-webui
-        name: Arbora Agent Web UI
+        name: Overstory
         role: operator experience
-        url: https://knuckles-team.github.io/agent-webui/
+        url: https://knuckles-team.github.io/overstory/
       - slug: arbora
         name: Arbora
         role: public runtime gateway
         url: https://knuckles-team.github.io/arbora/
       - slug: agent-utilities
-        name: Agent Utilities
+        name: Trellis
         role: agent control plane
-        url: https://knuckles-team.github.io/agent-utilities/
+        url: https://knuckles-team.github.io/meristem/
       - slug: epistemic-graph
         name: Epistemic Graph
         role: durable multimodal knowledge and reasoning engine
-        url: https://knuckles-team.github.io/epistemic-graph/
+        url: https://knuckles-team.github.io/medulla/
       - slug: agent-connector-sdk
-        name: Agent Connector SDK
+        name: Scion SDK
         role: governed source integration boundary
-        url: https://knuckles-team.github.io/agent-connector-sdk/
+        url: https://knuckles-team.github.io/scion-sdk/
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/Knuckles-Team/agent-webui
+      link: https://github.com/Knuckles-Team/overstory
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/agent-webui/
 
@@ -105,7 +105,7 @@ nav:
   - Guides:
       - Architecture: architecture.md
       - Agents and events: agents.md
-      - Atlas workspace: atlas.md
+      - Understory workspace: atlas.md
       - Apps and Markets: apps.md
       - Capability Workbench: capability-workbench.md
       - Design system: design-system.md

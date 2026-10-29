@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "spec_id": "WEBUI-IDENTITY",
-  "owner_repo": "agent-webui",
+  "owner_repo": "overstory",
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
     "WEBUI-IDENTITY-R003",
@@ -22,7 +22,9 @@
     "WEBUI-IDENTITY-R003.2.1",
     "WEBUI-IDENTITY-R003.2.2",
     "WEBUI-IDENTITY-R003.3.1",
-    "WEBUI-IDENTITY-R003.3.2"
+    "WEBUI-IDENTITY-R003.3.2",
+    "WEBUI-IDENTITY-R004.1",
+    "WEBUI-IDENTITY-R004.2"
   ],
   "requirements": [
     {
@@ -43,11 +45,15 @@
     {
       "id": "WEBUI-IDENTITY-R004",
       "title": "Local account flows use server sessions with no stored credentials",
-      "delivery_state": "LANDED",
+      "delivery_state": "SPECIFIED",
       "landed_in": [
         "099127294433"
       ],
-      "verified_by": []
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-IDENTITY-R004.1",
+        "WEBUI-IDENTITY-R004.2"
+      ]
     },
     {
       "id": "WEBUI-IDENTITY-R005",
@@ -208,15 +214,36 @@
       "title": "OIDC configuration source refusal",
       "delivery_state": "VERIFIED",
       "landed_in": [
+        "1b2935f757ce",
         "7fae4bf34f52"
       ],
       "verified_by": [
-        "tests/test_explicit_auth_modes.py:177"
+        "tests/test_explicit_auth_modes.py:177",
+        "tests/test_oidc_configuration_intent.py:18"
       ]
     },
     {
       "id": "WEBUI-IDENTITY-R003.3.2",
       "title": "External provider interoperability qualification",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-IDENTITY-R004.1",
+      "title": "Workspace account menu source interactions",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "8d6191cd4e0a"
+      ],
+      "verified_by": [
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:108",
+        "src/components/__tests__/UserMenu.test.tsx:129"
+      ]
+    },
+    {
+      "id": "WEBUI-IDENTITY-R004.2",
+      "title": "Complete installed local account and session flows",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []

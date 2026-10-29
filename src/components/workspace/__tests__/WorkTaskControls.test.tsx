@@ -1,6 +1,6 @@
 // spec: WEBUI-APPS-R049.1.3
 import { Children, isValidElement, type ComponentProps, type ReactNode } from 'react'
-import { act, fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'
 import type { WebMcpToolDefinition } from '@/lib/webmcp/types'
@@ -136,6 +136,62 @@ describe('Work task lifecycle', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     await expect(held.execute({}, { signal: new AbortController().signal })).rejects.toThrow('stale')
     expect(workApi.cancelTask).not.toHaveBeenCalled()
+  })
+  it('retires held review and confirmation across refresh without replacing its refresh control', async () => {
+    const cancellation = createTaskCancellation()
+    cancellation.activate()
+    const props = {
+      taskId: 'task-a',
+      taskState: 'working',
+      context: 'work-a',
+      refreshing: false,
+      onRefresh: vi.fn(),
+      cancellation,
+      isAttendedGesture: () => true,
+    }
+    const { rerender } = render(<WorkTaskControls {...props} />)
+    const held = state.tools[0]
+    const refresh = screen.getByRole('button', { name: 'Refresh task' })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel task…' }))
+    const oldConfirm = state.confirm
+    rerender(<WorkTaskControls {...props} refreshing />)
+    expect(screen.getByRole('button', { name: 'Refresh task' })).toBe(refresh)
+    expect(refresh).not.toBeDisabled()
+    expect(refresh).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(refresh)
+    expect(props.onRefresh).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(state.tools).toEqual([])
+    expect(screen.getByRole('button', { name: 'Cancel task…' })).toBeDisabled()
+    await expect(held.execute({}, { signal: new AbortController().signal })).rejects.toThrow('stale')
+    rerender(<WorkTaskControls {...props} />)
+    expect(screen.getByRole('button', { name: 'Refresh task' })).toBe(refresh)
+    await expect(held.execute({}, { signal: new AbortController().signal })).rejects.toThrow('stale')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel task…' }))
+    await act(async () => {
+      oldConfirm()
+    })
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(workApi.cancelTask).not.toHaveBeenCalled()
+    await act(async () => {
+      state.confirm()
+    })
+    expect(workApi.cancelTask).toHaveBeenCalledExactlyOnceWith('task-a')
+  })
+  it('ignores refresh activation while cancellation is pending', async () => {
+    const pending = deferred()
+    vi.mocked(workApi.cancelTask).mockReturnValueOnce(pending.promise)
+    const { props } = setup()
+    await confirm()
+    const refresh = screen.getByRole('button', { name: 'Refresh task' })
+    expect(refresh).not.toBeDisabled()
+    expect(refresh).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(refresh)
+    expect(props.onRefresh).not.toHaveBeenCalled()
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
   })
   it('does not offer cancellation for terminal or unknown states', () => {
     const { props, rerender } = setup()

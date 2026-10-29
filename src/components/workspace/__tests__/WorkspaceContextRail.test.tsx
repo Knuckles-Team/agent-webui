@@ -3,6 +3,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceContextRail } from '../WorkspaceContextRail'
+// Route/account tests exercise the real menu; these tests isolate navigation.
+vi.mock('@/components/UserMenu', () => ({ UserMenu: () => null }))
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
 function Surface() {
   const location = useWorkspaceLocation()
@@ -85,8 +87,8 @@ describe('anchored workspace context rail', () => {
     expect(screen.getByRole('link', { name: 'Knowledge' })).toHaveAttribute('aria-disabled', 'true')
     fireEvent.click(screen.getByRole('link', { name: 'Tools' }))
     expect(window.location.pathname).toBe('/workspace/operate')
-    expect(screen.getByRole('link', { name: 'Arbora' })).toHaveAttribute('href', '/workspace/operate')
-    fireEvent.click(screen.getByRole('link', { name: 'Arbora' }))
+    expect(screen.getByRole('link', { name: 'Overstory' })).toHaveAttribute('href', '/workspace/operate')
+    fireEvent.click(screen.getByRole('link', { name: 'Overstory' }))
     expect(window.location.pathname).toBe('/workspace/operate')
   })
 })
@@ -99,4 +101,11 @@ it('keeps primary navigation inline instead of placing it behind a compact discl
   expect(screen.queryByRole('button', { name: 'More workspace controls' })).not.toBeInTheDocument()
   expect(screen.queryByRole('link', { name: 'Privacy' })).not.toBeInTheDocument()
   expect(screen.getByText('Settings').closest('details')).not.toHaveAttribute('open')
+})
+
+// spec: WEBUI-APPS-R038
+it('shows Overstory as the primary client name without changing the home route', () => {
+  render(<WorkspaceContextRail role="user" active="work" />)
+  expect(screen.getByRole('link', { name: 'Overstory' })).toHaveAttribute('href', '/workspace/work')
+  expect(screen.getByText('Overstory')).toBeVisible()
 })

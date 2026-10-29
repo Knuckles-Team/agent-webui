@@ -63,7 +63,6 @@ vi.mock('@/Chat', () => ({
     )
   },
 }))
-vi.mock('@/components/UserMenu', () => ({ UserMenu: () => null }))
 vi.mock('@/components/mode-toggle', () => ({ ModeToggle: () => null }))
 vi.mock('@/components/PageHead', () => ({ PageHead: () => null }))
 vi.mock('@/lib/mcp-context', () => ({ MCPProvider: ({ children }: { children: ReactNode }) => children }))
@@ -106,12 +105,14 @@ function visit(path: string) {
     window.dispatchEvent(new Event('history-state-changed'))
   })
 }
+// spec: WEBUI-IDENTITY-R004.1
 it('mounts Work by default, replaces only the entry, and retains query/hash/history state', async () => {
   window.history.replaceState({ retained: true }, '', '/?conversation=existing#context')
   const length = window.history.length
   render(<App />)
   const heading = await screen.findByRole('heading', { name: 'Tasks and conversations' })
   expect(heading).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Account menu for entry-user' })).toBeVisible()
   expect(heading.closest('.workspace-route-content')).toHaveAttribute('data-workspace-route', 'workspace.work-proof')
   expect(window.location.pathname + window.location.search + window.location.hash).toBe(
     '/workspace/work?conversation=existing#context',

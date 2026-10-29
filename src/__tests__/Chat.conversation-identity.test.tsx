@@ -872,6 +872,7 @@ it('explains the first task and fills an example draft without sending or overwr
   const { user } = renderWithProviders(<Chat pageContext={pageContext} />)
   const input = await screen.findByRole('textbox', { name: /message input/i })
   expect(screen.getByRole('heading', { name: 'Give your agent a task' })).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Plan from notes' })).toHaveAttribute('data-variant', 'secondary')
   await user.click(screen.getByRole('button', { name: 'Plan from notes' }))
   expect(input).toHaveValue('Turn these notes into a three-step plan:\n\n')
   expect(input).toHaveFocus()

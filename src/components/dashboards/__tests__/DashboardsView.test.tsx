@@ -61,6 +61,9 @@ describe('DashboardsView (WEBUI-DASH-R002, R006, R009, R014, R015)', () => {
 
   it('is mounted by the workspace.dashboards route', () => {
     expect(ROUTES.find((r) => r.id === 'workspace.dashboards')?.path).toBe('/data-dashboards')
+    expect(ROUTES.find((r) => r.id === 'workspace.dashboards')?.label).toBe('Overstory Studio')
+    renderView()
+    expect(screen.getByRole('heading', { level: 1, name: 'Overstory Studio' })).toBeInTheDocument()
   })
 
   it('lets a person create a dashboard and add a KPI and a bar panel', async () => {

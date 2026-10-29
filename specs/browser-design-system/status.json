@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "spec_id": "WEBUI-DESIGN",
-  "owner_repo": "agent-webui",
+  "owner_repo": "overstory",
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
     "WEBUI-DESIGN-R001",
@@ -25,7 +25,12 @@
     "WEBUI-DESIGN-R004.1.1",
     "WEBUI-DESIGN-R005.2",
     "WEBUI-DESIGN-R002.1.2",
-    "WEBUI-DESIGN-R004.1.2"
+    "WEBUI-DESIGN-R004.1.2",
+    "WEBUI-DESIGN-R005.3",
+    "WEBUI-DESIGN-R005.3.1",
+    "WEBUI-DESIGN-R005.3.2",
+    "WEBUI-DESIGN-R005.4",
+    "WEBUI-DESIGN-R005.5"
   ],
   "requirements": [
     {
@@ -105,7 +110,10 @@
       ],
       "rollup_of": [
         "WEBUI-DESIGN-R005.1",
-        "WEBUI-DESIGN-R005.2"
+        "WEBUI-DESIGN-R005.2",
+        "WEBUI-DESIGN-R005.3",
+        "WEBUI-DESIGN-R005.4",
+        "WEBUI-DESIGN-R005.5"
       ]
     },
     {
@@ -175,7 +183,7 @@
       ],
       "verified_by": [
         "e2e/workspace-density.spec.ts:1",
-        "src/components/__tests__/AppWorkspaceEntry.test.tsx:203",
+        "src/components/__tests__/AppWorkspaceEntry.test.tsx:204",
         "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:1"
       ],
       "rollup_of": [
@@ -267,6 +275,7 @@
       "landed_in": [
         "1cac40d60bc3",
         "38c8f13794ee",
+        "4f81b9a23327",
         "dc30239b2938"
       ],
       "verified_by": [
@@ -280,17 +289,17 @@
       "delivery_state": "VERIFIED",
       "landed_in": [
         "12b5f5624953",
+        "24dca66c8a72",
         "38c8f13794ee",
-        "73051bf582bd",
-        "93401c34a695",
-        "ac86f2de9817"
+        "456eeca84961",
+        "512d3e28f9d8"
       ],
       "verified_by": [
         "e2e/canopy-glass.browser.ts:1",
+        "e2e/canopy-glass.browser.ts:574",
         "src/__tests__/design-tokens.test.ts:121",
         "src/__tests__/design-tokens.test.ts:172",
-        "src/__tests__/design-tokens.test.ts:201",
-        "src/__tests__/design-tokens.test.ts:215"
+        "src/__tests__/design-tokens.test.ts:201"
       ]
     },
     {
@@ -307,7 +316,7 @@
       "verified_by": [
         "e2e/canopy-glass.browser.ts:2",
         "e2e/execution-graph.browser.ts:2",
-        "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:94",
+        "src/components/workspace/__tests__/WorkspaceContextRail.test.tsx:96",
         "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:161"
       ]
     },
@@ -339,6 +348,69 @@
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
+    },
+    {
+      "id": "WEBUI-DESIGN-R005.3",
+      "title": "Contextual scenes preserve product meaning",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [
+        "04c4742838cb"
+      ],
+      "verified_by": [
+        "e2e/canopy-glass.browser.ts:714"
+      ],
+      "rollup_of": [
+        "WEBUI-DESIGN-R005.3.1",
+        "WEBUI-DESIGN-R005.3.2"
+      ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R005.3.1",
+      "title": "Route-derived scene selection and manual overrides",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "22fe6f99d8ec"
+      ],
+      "verified_by": [
+        "e2e/canopy-glass.browser.ts:714",
+        "src/components/workspace/WorkspaceWallpaper.tsx:1",
+        "src/components/workspace/__tests__/WorkspaceWallpaper.test.tsx:1"
+      ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R005.3.2",
+      "title": "Evidence-bound activity and topology",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-DESIGN-R005.4",
+      "title": "Wallpaper effects remain bounded and optional",
+      "delivery_state": "VERIFIED",
+      "landed_in": [
+        "20ae6b09afb8",
+        "24dca66c8a72",
+        "e039a440a145"
+      ],
+      "verified_by": [
+        "e2e/canopy-glass.browser.ts:467",
+        "e2e/canopy-glass.browser.ts:683",
+        "e2e/canopy-glass.browser.ts:746",
+        "src/__tests__/design-tokens.test.ts:336",
+        "src/components/workspace/WorkspaceWallpaper.tsx:1"
+      ]
+    },
+    {
+      "id": "WEBUI-DESIGN-R005.5",
+      "title": "Weather ambience uses explicit consent and truthful conditions",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [
+        "e2e/canopy-glass.browser.ts:468",
+        "src/components/workspace/WorkspaceWallpaper.tsx:1",
+        "src/components/workspace/__tests__/WorkspaceWallpaper.test.tsx:1"
+      ]
     }
   ]
 }

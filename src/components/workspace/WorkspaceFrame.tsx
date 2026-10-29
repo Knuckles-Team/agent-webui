@@ -5,6 +5,7 @@ import { WorkspaceMap } from './WorkspaceMap'
 import { WorkspaceMapResize } from './WorkspaceMapResize'
 import { useWorkspaceMapWidth } from './useWorkspaceMapWidth'
 import './WorkspaceFrame.css'
+import { WorkspaceWallpaper } from './WorkspaceWallpaper'
 
 function useHeaderSlots(enabled: boolean, owner: string) {
   const [slots, setSlots] = useState<{ toggle: HTMLElement | null; focus: HTMLElement | null }>({
@@ -107,7 +108,15 @@ function useMapDisclosure() {
 }
 
 /** Stable task/chat subtree with presentation controls hosted in the single rail. */
-export function WorkspaceFrame({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+export function WorkspaceFrame({
+  enabled,
+  routeId,
+  children,
+}: {
+  enabled: boolean
+  routeId?: string
+  children: ReactNode
+}) {
   const catalog = useWorkspaceCommandNavigation()
   const slots = useHeaderSlots(enabled, catalog.owner)
   const { showMap, setShowMap, map, focusMap } = useMapDisclosure()
@@ -121,6 +130,7 @@ export function WorkspaceFrame({ enabled, children }: { enabled: boolean; childr
       className={enabled ? 'workspace-frame' : 'contents'}
       style={{ '--workspace-map-size': `${width.width}rem` } as CSSProperties}
     >
+      {enabled && <WorkspaceWallpaper routeId={routeId} />}
       <FrameControls
         slots={slots}
         showMap={showMap}

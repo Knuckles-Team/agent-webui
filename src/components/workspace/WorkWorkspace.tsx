@@ -1,5 +1,7 @@
+import { workspaceButtonClass as button } from '@/components/ui/button'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { ArboraApiError } from '@/lib/arbora-api/invoke'
 import { ApiError } from '@/lib/api-validation'
 import { currentPlanRunId } from '@/lib/current-plan'
 import { CurrentPlanPanel } from './CurrentPlanPanel'
@@ -32,7 +34,6 @@ import { WorkTaskInspector } from './WorkTaskInspector'
 import { createTaskCancellation } from './task-cancellation'
 import { useWorkspaceAdmission } from './useWorkspaceAdmission'
 import { loadedWorkCommands } from './loaded-workspace-commands'
-const button = 'min-h-11 rounded border px-3 py-2 text-sm'
 const EMPTY: WorkState = { conversation: null, task: null, run: null, node: null }
 function destination(location: string) {
   try {
@@ -254,12 +255,13 @@ function AuthorizedWork({
               </button>
             </div>
             <p className="my-2 text-sm">
-              Tasks you can access. They are not automatically linked to this conversation.
+              Up to 50 tasks you can access. They are not automatically linked to this conversation.
             </p>
             {tasks.isFetching && <p role="status">Loading tasks…</p>}
             {tasks.isError && (
               <p role="alert">
-                {tasks.error instanceof ApiError && [404, 501].includes(tasks.error.status)
+                {(tasks.error instanceof ApiError || tasks.error instanceof ArboraApiError) &&
+                [404, 501].includes(tasks.error.status)
                   ? 'Task inspection is unavailable on this backend.'
                   : 'Task listing failed. Refresh to retry.'}
               </p>
@@ -307,7 +309,7 @@ function AuthorizedWork({
                 {taskData && !task.isError && (
                   <>
                     <h3 className="break-all font-medium">Task {taskData.id}</h3>
-                    <p>Status: {taskData.status?.state ?? 'Not reported'}</p>
+                    {!task.isFetching && <p>Status: {taskData.status?.state ?? 'Not reported'}</p>}
                     <WorkTaskControls
                       taskId={taskData.id}
                       taskState={taskData.status?.state}
@@ -319,7 +321,7 @@ function AuthorizedWork({
                         void tasks.refetch()
                       }}
                     />
-                    <WorkTaskInspector task={taskData} />
+                    {!task.isFetching && <WorkTaskInspector task={taskData} />}
                     {!task.isFetching && (
                       <>
                         <CurrentPlanPanel

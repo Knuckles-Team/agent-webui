@@ -214,3 +214,41 @@ Do not infer that authored test bindings complete those journeys.
 The original parent obligations and qualified source-child receipts remain intact.
 The generated ancestor state must remain open while either retained acceptance child remains open.
 Metadata guard tests preserve this distinction; they are not feature-acceptance evidence.
+
+## Context-aware wallpaper delivery
+
+- [ ] WEBUI-DESIGN-R005.3: Add context/manual scene selection through the existing provider and shared frame. Qualify Canopy/Fluid first, then evidence-bound connector roots, harness trunk and knowledge branches/leaves.
+- [ ] WEBUI-DESIGN-R005.4: Add wallpaper motion controls and lifecycle safeguards. Prove reduction, interruption, contrast and static fallback through real controls. Record exact-candidate R010 resource evidence without closing broader acceptance.
+- [ ] WEBUI-DESIGN-R005.5: Add opt-in weather following and labelled manual previews after the scene proof. Qualify provider/location scope, freshness states and glass-safe effects. Keep default idle tests and all broader acceptance open.
+
+## Named palette source continuation
+
+- Extended R002.1.1 before implementation; reused the colorizer and legacy accent
+  storage rather than adding another theme wrapper or preference store.
+- Added seven named Settings choices, bounded shared state/focus tokens, green
+  reset and material/accessibility fallbacks. Semantic statuses stay independent.
+- Scoped deterministic token, colorizer, Settings/provider and consent tests pass.
+  Exact-candidate browser gallery and aggregate gates remain outstanding; this
+  bounded implementation does not close parent design acceptance.
+
+### Route-derived scene follow-on
+
+- [x] Extend R005.3 through the existing appearance selector and canonical route ID, preserving manual overrides and Off by default.
+- [x] Add scoped mapping, static lifecycle and manual override coverage.
+- [ ] Qualify exact-head rendered navigation, draft retention and unchanged default glass in hosted browser CI before merge.
+- [ ] Keep evidence-bound activity and broader R010 performance acceptance open; page selection alone supplies neither.
+
+- [x] WEBUI-DESIGN-R005.3.1: Implement route-derived selection and manual overrides; exact-head hosted qualification remains required.
+- [ ] WEBUI-DESIGN-R005.3.2: Connect current Arbora evidence before adding activity or topology; qualify all rejection cases.
+
+## Overstory documentation capture refresh — 2026-10-25
+
+- WEBUI-DESIGN-R011: Import the six successful synthetic browser captures from
+  CI run `40230399141`, artifact `12613176256`. The recorded clean source is
+  `aeb9d63307a363027d6c0f022297232f1bdac632`, the tested merge of final naming
+  head `8cb5d30ae7490fa5cf25e7b8630c723d0505b395` with `e310d997`.
+- Review all six initial viewports. Preserve shared README/gallery asset paths,
+  original PNG digests and the lossless Knowledge WebP delivery receipt.
+  All delivered images remain below one million bytes and match captured pixels.
+- This refresh illustrates the branded interface. It does not establish live
+  provider availability or close broader design acceptance.

@@ -1,8 +1,8 @@
 <section class="site-hero" aria-labelledby="webui-hero-title">
-  <p class="site-hero__eyebrow">Operator experience for Arbora</p>
+  <p class="site-hero__eyebrow">Overstory: operator experience for Arbora</p>
   <h1 class="site-hero__title" id="webui-hero-title">See the work. Guide the agent. Explore the evidence.</h1>
   <p class="site-hero__summary">
-    Arbora brings conversations, governed actions, workflows, fleet activity,
+    Overstory brings conversations, governed actions, workflows, fleet activity,
     and epistemic knowledge into one role-aware browser workspace.
   </p>
   <div class="site-hero__actions">
@@ -12,7 +12,7 @@
   </div>
 </section>
 
-![Canopy light Explore workspace with a synthetic research brief and the persistent assistant.](assets/screenshots/explore-wide.png)
+![Canopy light Explore workspace with a synthetic research brief and the persistent assistant.](assets/screenshots/explore-wide.webp)
 
 Canopy light with synthetic demo data and the persistent assistant. Open
 **Appearance** to choose Canopy light or dark and Glass or Opaque framing.
@@ -42,7 +42,7 @@ See the [workspace gallery and screenshot refresh guide](screenshots.md).
 <div class="site-card-grid">
   <article class="site-card">
     <h3 class="site-card__title">Try it</h3>
-    <p class="site-card__body">Install the Arbora WebUI integration, start one local composition, and open the browser workspace.</p>
+    <p class="site-card__body">Install the Overstory integration, start one local composition, and open the browser workspace.</p>
     <p><a href="start/">Open the start guide →</a></p>
   </article>
   <article class="site-card">
@@ -61,7 +61,7 @@ See the [workspace gallery and screenshot refresh guide](screenshots.md).
 
 - Hold agent conversations with sources, tool activity, and approval prompts.
 - Build workflows and inspect active sessions, goals, schedules, and fleet health.
-- Use Atlas to move between graph, RDF, schema, object, table, document, code,
+- Use Understory to move between graph, RDF, schema, object, table, document, code,
   and memory views.
 - Discover MCP Apps and connector capabilities through the Arbora boundary.
 - Apply the same role-aware navigation and server authorization model across
@@ -90,7 +90,7 @@ See the [workspace gallery and screenshot refresh guide](screenshots.md).
 
 ## Explore the interface
 
-- [Atlas workspace](atlas.md) — guided and expert knowledge exploration.
+- [Understory workspace](atlas.md) — guided and expert knowledge exploration.
 - [Capability Workbench](capability-workbench.md) — discover, preflight, invoke,
   and follow governed capabilities.
 - [Agents and events](agents.md) — event types, routing, and graph activity.

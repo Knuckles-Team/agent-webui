@@ -1,3 +1,4 @@
+import { workspaceButtonClass } from '@/components/ui/button'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { focusReadinessOnArrival } from '@/lib/operate-compatibility'
@@ -16,17 +17,14 @@ export function OperateReadinessPanel({ generation }: { generation: string }) {
   const busy = query.isFetching || reprobing
   const snapshot = query.isError || busy ? undefined : query.data
   return (
-    <section
-      aria-label="Readiness diagnosis"
-      className="min-w-0 space-y-3 rounded border p-3 [overflow-wrap:anywhere]"
-    >
+    <section aria-label="Readiness diagnosis" className="operate-panel min-w-0 space-y-3 [overflow-wrap:anywhere]">
       <h2 ref={focusReadinessOnArrival} tabIndex={-1} className="font-medium">
         Readiness diagnosis
       </h2>
       <p>Inspect the checks reported by this deployment. Absent checks provide no evidence of readiness.</p>
       <button
         type="button"
-        className="min-h-11 rounded border px-3 py-2 text-sm"
+        className={workspaceButtonClass}
         disabled={busy}
         onClick={() => {
           setReprobing(true)
@@ -64,7 +62,7 @@ function ReadinessDiagnosis({ snapshot }: { snapshot: OperateReadiness }) {
           <button
             key={name}
             type="button"
-            className="min-h-11 min-w-0 max-w-full rounded border px-3 py-2 break-words"
+            className={workspaceButtonClass}
             aria-pressed={selected === name}
             onClick={() => {
               setSelected(name)
@@ -75,7 +73,7 @@ function ReadinessDiagnosis({ snapshot }: { snapshot: OperateReadiness }) {
         ))}
       </div>
       {selected && (
-        <section aria-label={`Readiness check ${selected}`} className="min-w-0 rounded border p-3">
+        <section aria-label={`Readiness check ${selected}`} className="operate-reading min-w-0 rounded border p-3">
           <h3>{selected}</h3>
           <p>Evidence from snapshot {snapshot.snapshot_id}</p>
           <pre className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">

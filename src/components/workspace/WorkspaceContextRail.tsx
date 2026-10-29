@@ -1,5 +1,6 @@
 import arboraLogo from '../../../docs/assets/brands/agent-webui-logo-v1.png'
 import { WorkspaceAppearance } from './WorkspaceAppearance'
+import { UserMenu } from '@/components/UserMenu'
 import { WorkspaceCommandPalette } from './WorkspaceCommands'
 import { useEffect, useState } from 'react'
 import { useWorkspaceLocation } from '@/lib/workspace-navigation'
@@ -35,6 +36,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
       <div className="workspace-header-row">
         <a
           id="workspace-home"
+          aria-label="Overstory"
           className="inline-flex min-h-11 items-center font-semibold"
           href={roleAtLeast(role, 'user') ? remembered.work : remembered.operate}
           onClick={(event) => {
@@ -45,7 +47,7 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
           }}
         >
           <img src={arboraLogo} alt="Arbora" className="workspace-brand-logo" />
-          <span aria-hidden="true">Arbora</span>
+          <span aria-hidden="true">Overstory</span>
         </a>
         <div className="workspace-context-navigation">
           <nav aria-label="Primary workspace contexts" className="flex flex-wrap gap-1">
@@ -82,6 +84,9 @@ export function WorkspaceContextRail({ active, role }: { active: 'work' | 'explo
         <div id="workspace-assistant-entry-slot" />
         <div className="workspace-header-utilities">
           <WorkspaceAppearance />
+          <div className="workspace-account-menu">
+            <UserMenu compact />
+          </div>
         </div>
       </div>
     </header>
