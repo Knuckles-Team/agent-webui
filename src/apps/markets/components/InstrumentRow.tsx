@@ -1,6 +1,6 @@
 /**
  * @file InstrumentRow.tsx
- * @description A single instrument's price row (FIN-UI-R007): price with session
+ * @description A single instrument's price row (OVERSTORY-R007): price with session
  * and source provenance, previous close, change, a sparkline, a licensed
  * logo or text fallback, and a separately labeled after-hours value. A
  * missing price renders an explicit "Price unavailable" state — never `0`.

@@ -1,11 +1,11 @@
 /**
  * @file InstrumentGroups.tsx
  * @description User-defined instrument group tabs plus a Basic/Holdings
- * mode toggle (FIN-UI-R005). The selected group and mode persist across
+ * mode toggle (OVERSTORY-R005). The selected group and mode persist across
  * navigation and refresh via the URL (`instrument-groups-state.ts`), and
  * the six fetch outcomes below each get their own distinct, text-labeled
  * rendering — never collapsed into one "no data" view. This depends on
- * `EG-FINANCE-PRIMITIVES-R004` (epistemic-graph finance-v1 accounts and
+ * `MEDULLA-FINANCE-PRIMITIVES-R004` (epistemic-graph finance-v1 accounts and
  * reference sessions), which is PENDING; the component is built now,
  * ahead of that backend, against a typed `InstrumentGroupsTransport`
  * fixture (see `MarketsPortfolio.tsx`/`Availability.tsx` for this

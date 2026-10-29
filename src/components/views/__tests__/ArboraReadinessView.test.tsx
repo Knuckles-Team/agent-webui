@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.2
+// spec: OVERSTORY-APPS-R049.1.2
 import { StrictMode } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'

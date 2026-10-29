@@ -93,7 +93,7 @@ describe('DefaultOverviewPanel', () => {
     expect(screen.getAllByText('unavailable')).toHaveLength(1)
   })
 
-  it('shows the shared loading status message (WEBUI-DESIGN-R006), not a textless skeleton, before any tile resolves', () => {
+  it('shows the shared loading status message (OVERSTORY-DESIGN-R006), not a textless skeleton, before any tile resolves', () => {
     global.fetch = vi.fn(() => new Promise(() => undefined)) as unknown as typeof fetch
 
     render(<DefaultOverviewPanel />)

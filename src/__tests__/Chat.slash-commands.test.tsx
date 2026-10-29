@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R005.4.1
+// spec: OVERSTORY-APPS-R005.4.1
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 

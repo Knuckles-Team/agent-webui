@@ -1,11 +1,11 @@
 /**
  * @file chart-a11y.ts
  * @description Typed accessibility contract for charts and controls
- * (FIN-UI-R016.1): every chart needs a screen-reader-accessible text summary
+ * (OVERSTORY-R016.1): every chart needs a screen-reader-accessible text summary
  * independent of its visual rendering, and every control's state must be
  * describable in text/icon labels rather than color alone. Wiring this
  * summary into ChartPanel/OhlcChart `aria-label`s and verifying keyboard
- * operation, 200% zoom, and reduced-motion in the live DOM is FIN-UI-R016.2.
+ * operation, 200% zoom, and reduced-motion in the live DOM is OVERSTORY-R016.2.
  */
 
 import type { Direction, OhlcBar } from './schemas'

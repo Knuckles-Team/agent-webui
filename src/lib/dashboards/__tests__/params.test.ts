@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { placeholders, resolveQuery } from '../params'
 
-// spec: WEBUI-DASH-R013
-describe('dashboard parameters (WEBUI-DASH-R013)', () => {
+// spec: OVERSTORY-DASH-R013
+describe('dashboard parameters (OVERSTORY-DASH-R013)', () => {
   const params = [
     { name: 'kind', label: 'Kind', type: 'text' as const, value: 'Agent' },
     { name: 'top', label: 'Top', type: 'number' as const, value: 5 },

@@ -51,7 +51,7 @@ describe('ResponsiveLimitation', () => {
     expect(screen.queryByRole('heading', { name: /needs a larger screen/i })).not.toBeInTheDocument()
   })
 
-  // spec: WEBUI-APPS-R049.1.15
+  // spec: OVERSTORY-APPS-R049.1.15
   it('does not block the adapted workflow compatibility entry on mobile', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390, writable: true })
     const workflows = route('control-plane.workflows')

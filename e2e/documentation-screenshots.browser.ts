@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R011
+// spec: OVERSTORY-DESIGN-R011
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'

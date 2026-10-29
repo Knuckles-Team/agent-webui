@@ -1,6 +1,6 @@
 /**
  * @file ChartSvg.tsx
- * @description A small accessible SVG line or bar chart (WEBUI-DASH-R014). Series use
+ * @description A small accessible SVG line or bar chart (OVERSTORY-DASH-R014). Series use
  * theme tokens (`currentColor` from `text-primary`), line charts add point markers, and
  * the figure carries a text summary, so no meaning rests on color alone.
  */

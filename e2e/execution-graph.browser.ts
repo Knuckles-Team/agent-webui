@@ -1,5 +1,5 @@
-// spec: WEBUI-APPS-R049.1.13, WEBUI-API-R011.4
-// spec: WEBUI-DESIGN-R004.1.1
+// spec: OVERSTORY-APPS-R049.1.13, OVERSTORY-API-R011.4
+// spec: OVERSTORY-DESIGN-R004.1.1
 // Real Work route with synthetic producer data, not installed-provider qualification.
 import { test, expect } from '@playwright/test'
 import { operation, taskPage } from './fixtures/work-task-operations'

@@ -33,7 +33,7 @@ export interface DecisionAggregateOptions {
   toMs?: number
 }
 
-/** One eliminated candidate to explain, with a caller-chosen solve budget (WEBUI-DECIDE-R004). */
+/** One eliminated candidate to explain, with a caller-chosen solve budget (OVERSTORY-DECIDE-R004). */
 export interface WhyNotOnDemandRequest {
   componentId: string
   slot: string
@@ -41,7 +41,7 @@ export interface WhyNotOnDemandRequest {
 }
 
 /**
- * The on-demand why-not outcome (WEBUI-DECIDE-R004): a freshly computed explanation, a
+ * The on-demand why-not outcome (OVERSTORY-DECIDE-R004): a freshly computed explanation, a
  * budget timeout, or a server refusal. Never the original decision record —
  * callers render this beside the record, never into it.
  */
@@ -61,6 +61,6 @@ export interface DecisionsTransport {
   getDecisionEvalReceipts(after?: string, signal?: AbortSignal): Promise<DecisionEvalReceiptPage>
   /** The same receipts, server-submission-time ordered, with threshold status. */
   getDecisionEvalTimeline(after?: string, signal?: AbortSignal): Promise<DecisionEvalTimelinePage>
-  /** Compute one why-not explanation on demand, within the caller's solve budget (WEBUI-DECIDE-R004). */
+  /** Compute one why-not explanation on demand, within the caller's solve budget (OVERSTORY-DECIDE-R004). */
   getWhyNotOnDemand(recordId: string, request: WhyNotOnDemandRequest, signal?: AbortSignal): Promise<WhyNotOutcome>
 }

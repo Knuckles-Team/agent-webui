@@ -4,8 +4,8 @@ import { runPanelQuery } from '../query'
 const signal = new AbortController().signal
 const panel = { query: { kind: 'uql' as const, text: 'MATCH (:Agent) |> LIMIT 5' } }
 
-// spec: WEBUI-DASH-R004
-describe('panel queries go through arbora (WEBUI-DASH-R004)', () => {
+// spec: OVERSTORY-DASH-R004
+describe('panel queries go through arbora (OVERSTORY-DASH-R004)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })

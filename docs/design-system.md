@@ -176,7 +176,7 @@ new color.
 
 Loading, empty, stale, denied, error, success and pending states are each
 written out in text; color reinforces but never carries the distinction alone
-(WEBUI-DESIGN-R006). `src/components/ui/status-message.tsx` (`StatusMessage`) is the
+(OVERSTORY-DESIGN-R006). `src/components/ui/status-message.tsx` (`StatusMessage`) is the
 shared primitive for exactly this seven-state vocabulary, covering the one
 case `BlockedState.tsx` does not (whole-panel/integration availability) —
 the outcome of a single item, field or operation. Each state's label is
@@ -241,7 +241,7 @@ its license is checked, and never pulled in as a live or copied dependency.
 
 ## Qualification boundary
 
-Canopy Glass extends `WEBUI-DESIGN-R002.1.1`, `WEBUI-DESIGN-R004.1.1` and `WEBUI-DESIGN-R005.2`. The shared-shell/Explore slice extends `WEBUI-APPS-R049.2.1`. This page documents source defaults
+Canopy Glass extends `OVERSTORY-DESIGN-R002.1.1`, `OVERSTORY-DESIGN-R004.1.1` and `OVERSTORY-DESIGN-R005.2`. The shared-shell/Explore slice extends `OVERSTORY-APPS-R049.2.1`. This page documents source defaults
 and interaction requirements, not full theme acceptance. Complete graph, editor,
 run, administration and authentication review, all-route mobile parity, manual
 accessibility, measured performance and installed-provider evidence remain open

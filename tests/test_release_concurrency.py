@@ -26,7 +26,7 @@ class CiConcurrencyTests(unittest.TestCase):
         )
 
     def test_release_publishes_only_to_pypi(self) -> None:
-        # spec: WEBUI-APPS-R039
+        # spec: OVERSTORY-APPS-R039
         self.assertIn('publish-pypi:', RELEASE)
         self.assertNotIn('publish-docker', RELEASE)
         self.assertNotIn('docker/', RELEASE)

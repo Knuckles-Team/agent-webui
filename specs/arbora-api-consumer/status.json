@@ -1,36 +1,36 @@
 {
   "schema_version": 2,
-  "spec_id": "WEBUI-API",
+  "spec_id": "OVERSTORY-API",
   "owner_repo": "overstory",
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
-    "WEBUI-API-R001",
-    "WEBUI-API-R002",
-    "WEBUI-API-R003",
-    "WEBUI-API-R003.1",
-    "WEBUI-API-R003.2",
-    "WEBUI-API-R004",
-    "WEBUI-API-R006",
-    "WEBUI-API-R007",
-    "WEBUI-API-R008",
-    "WEBUI-API-R008.1",
-    "WEBUI-API-R008.2",
-    "WEBUI-API-R008.3",
-    "WEBUI-API-R008.4",
-    "WEBUI-API-R009",
-    "WEBUI-API-R010",
-    "WEBUI-API-R011",
-    "WEBUI-API-R005",
-    "WEBUI-API-R011.1",
-    "WEBUI-API-R011.2",
-    "WEBUI-API-R011.2.1",
-    "WEBUI-API-R011.2.2",
-    "WEBUI-API-R011.3",
-    "WEBUI-API-R011.4"
+    "OVERSTORY-API-R001",
+    "OVERSTORY-API-R002",
+    "OVERSTORY-API-R003",
+    "OVERSTORY-API-R003.1",
+    "OVERSTORY-API-R003.2",
+    "OVERSTORY-API-R004",
+    "OVERSTORY-API-R006",
+    "OVERSTORY-API-R007",
+    "OVERSTORY-API-R008",
+    "OVERSTORY-API-R008.1",
+    "OVERSTORY-API-R008.2",
+    "OVERSTORY-API-R008.3",
+    "OVERSTORY-API-R008.4",
+    "OVERSTORY-API-R009",
+    "OVERSTORY-API-R010",
+    "OVERSTORY-API-R011",
+    "OVERSTORY-API-R005",
+    "OVERSTORY-API-R011.1",
+    "OVERSTORY-API-R011.2",
+    "OVERSTORY-API-R011.2.1",
+    "OVERSTORY-API-R011.2.2",
+    "OVERSTORY-API-R011.3",
+    "OVERSTORY-API-R011.4"
   ],
   "requirements": [
     {
-      "id": "WEBUI-API-R001",
+      "id": "OVERSTORY-API-R001",
       "title": "Generated Arbora API client with typed decisions and confirmation flows",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -45,7 +45,7 @@
       ]
     },
     {
-      "id": "WEBUI-API-R002",
+      "id": "OVERSTORY-API-R002",
       "title": "Typed ontology, graph, Atlas and object-set operations replace host routes",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -55,7 +55,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R003",
+      "id": "OVERSTORY-API-R003",
       "title": "Remaining domain routes migrate to generated operations with a route census (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -65,12 +65,12 @@
       ],
       "verified_by": [],
       "rollup_of": [
-        "WEBUI-API-R003.1",
-        "WEBUI-API-R003.2"
+        "OVERSTORY-API-R003.1",
+        "OVERSTORY-API-R003.2"
       ]
     },
     {
-      "id": "WEBUI-API-R003.1",
+      "id": "OVERSTORY-API-R003.1",
       "title": "Route-census typed model",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -79,7 +79,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R003.2",
+      "id": "OVERSTORY-API-R003.2",
       "title": "Route-census data file and lint rule (remaining)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -90,7 +90,7 @@
       ]
     },
     {
-      "id": "WEBUI-API-R004",
+      "id": "OVERSTORY-API-R004",
       "title": "Each request carries its own correlation id",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -102,7 +102,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R006",
+      "id": "OVERSTORY-API-R006",
       "title": "Generated TypeScript client from a pinned Arbora schema",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -113,7 +113,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R007",
+      "id": "OVERSTORY-API-R007",
       "title": "Typed operations preserve preview-confirm-step-up for effects",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -123,7 +123,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R008",
+      "id": "OVERSTORY-API-R008",
       "title": "Ontology, graph, Atlas and object-set operations preserve tenant semantics (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -131,14 +131,14 @@
       ],
       "verified_by": [],
       "rollup_of": [
-        "WEBUI-API-R008.1",
-        "WEBUI-API-R008.2",
-        "WEBUI-API-R008.3",
-        "WEBUI-API-R008.4"
+        "OVERSTORY-API-R008.1",
+        "OVERSTORY-API-R008.2",
+        "OVERSTORY-API-R008.3",
+        "OVERSTORY-API-R008.4"
       ]
     },
     {
-      "id": "WEBUI-API-R008.1",
+      "id": "OVERSTORY-API-R008.1",
       "title": "Ontology reads and writes use typed Arbora operations with preserved tenant semantics",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -147,7 +147,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R008.2",
+      "id": "OVERSTORY-API-R008.2",
       "title": "Graph reads and writes use typed Arbora operations with preserved tenant semantics",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -156,7 +156,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R008.3",
+      "id": "OVERSTORY-API-R008.3",
       "title": "Atlas reads and writes use typed Arbora operations with preserved tenant semantics",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -165,7 +165,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R008.4",
+      "id": "OVERSTORY-API-R008.4",
       "title": "Object-set reads and writes use typed Arbora operations with preserved tenant semantics",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -174,7 +174,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R009",
+      "id": "OVERSTORY-API-R009",
       "title": "Prompts, SDD, knowledge base, sessions and goals migrate to typed calls",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -183,7 +183,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R010",
+      "id": "OVERSTORY-API-R010",
       "title": "Host drops direct internal imports once replacement operations are proven",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -192,7 +192,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R011",
+      "id": "OVERSTORY-API-R011",
       "title": "Shared auth and streaming are preserved without exposing a service bearer",
       "delivery_state": "SPECIFIED",
       "landed_in": [
@@ -208,14 +208,14 @@
         "src/lib/arbora-api/__tests__/invoke-no-bearer.test.ts:56"
       ],
       "rollup_of": [
-        "WEBUI-API-R011.1",
-        "WEBUI-API-R011.2",
-        "WEBUI-API-R011.3",
-        "WEBUI-API-R011.4"
+        "OVERSTORY-API-R011.1",
+        "OVERSTORY-API-R011.2",
+        "OVERSTORY-API-R011.3",
+        "OVERSTORY-API-R011.4"
       ]
     },
     {
-      "id": "WEBUI-API-R005",
+      "id": "OVERSTORY-API-R005",
       "title": "Failure logs carry a sanitized typed error code",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -233,7 +233,7 @@
       ]
     },
     {
-      "id": "WEBUI-API-R011.1",
+      "id": "OVERSTORY-API-R011.1",
       "title": "Host composition without an engine",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -249,18 +249,18 @@
       ]
     },
     {
-      "id": "WEBUI-API-R011.2",
+      "id": "OVERSTORY-API-R011.2",
       "title": "Chat preserves explicit conversation and admitted task identities",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [],
       "rollup_of": [
-        "WEBUI-API-R011.2.1",
-        "WEBUI-API-R011.2.2"
+        "OVERSTORY-API-R011.2.1",
+        "OVERSTORY-API-R011.2.2"
       ]
     },
     {
-      "id": "WEBUI-API-R011.2.1",
+      "id": "OVERSTORY-API-R011.2.1",
       "title": "Conversation and admitted-identity source preservation",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -273,21 +273,21 @@
       ]
     },
     {
-      "id": "WEBUI-API-R011.2.2",
+      "id": "OVERSTORY-API-R011.2.2",
       "title": "Composed conversation identity qualification",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R011.3",
+      "id": "OVERSTORY-API-R011.3",
       "title": "Adapt the shared public execution contract",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
     },
     {
-      "id": "WEBUI-API-R011.4",
+      "id": "OVERSTORY-API-R011.4",
       "title": "Flat execution read source adapter",
       "delivery_state": "VERIFIED",
       "landed_in": [

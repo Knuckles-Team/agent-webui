@@ -1,24 +1,24 @@
-# FIN-UI — Delivery and evidence tracker
+# OVERSTORY — Delivery and evidence tracker
 
 **Spec status:** SPECIFIED. **Implementation status:** UNVERIFIED. **Owner:** `agent-webui`. The related cross-repository requirement IDs below are stable identifiers, each defined in its owning repository's own `requirements.md`. Status changes only when linked merged code and the tests in [test-spec.md](test-spec.md) prove the behavior.
 
 | Work package | Owner | IDs | Current state | Required evidence |
 |---|---|---|---|---|
-| Finance ontology, accounting, sessions and golden fixtures | epistemic-graph | EG-FINANCE-PRIMITIVES-R004–EG-FINANCE-PRIMITIVES-R006, EG-FINANCE-PRIMITIVES-R013 | PENDING | Merged owner spec/code, fixed-point and provenance fixture output |
-| Provider data, account reads and CSV import | agent-connector-sdk / emerald-exchange | SDK-FINANCE-SOURCES-R002, SDK-FINANCE-SOURCES-R003, SDK-FINANCE-SOURCES-R004 | PENDING | Qualified source coverage, entitlement, preview/idempotency contract tests |
-| Strategy, backtest, recommendation and leverage | epistemic-graph / agent-utilities | EG-FINANCE-PRIMITIVES-R007–EG-FINANCE-PRIMITIVES-R009, EG-FINANCE-PRIMITIVES-R010 | PENDING | Versioned deterministic outputs, abstention, scorecard and risk-policy proof |
-| DCA scheduling and alert delivery | arbora / emerald-exchange | ARBORA-DATA-MARKET-R006, EG-FINANCE-PRIMITIVES-R011 | PENDING | Replay-safe event and delivery receipts |
+| Finance ontology, accounting, sessions and golden fixtures | epistemic-graph | MEDULLA-FINANCE-PRIMITIVES-R004–MEDULLA-FINANCE-PRIMITIVES-R006, MEDULLA-FINANCE-PRIMITIVES-R013 | PENDING | Merged owner spec/code, fixed-point and provenance fixture output |
+| Provider data, account reads and CSV import | agent-connector-sdk / emerald-exchange | SCION-FINANCE-SOURCES-R002, SCION-FINANCE-SOURCES-R003, SCION-FINANCE-SOURCES-R004 | PENDING | Qualified source coverage, entitlement, preview/idempotency contract tests |
+| Strategy, backtest, recommendation and leverage | epistemic-graph / agent-utilities | MEDULLA-FINANCE-PRIMITIVES-R007–MEDULLA-FINANCE-PRIMITIVES-R009, MEDULLA-FINANCE-PRIMITIVES-R010 | PENDING | Versioned deterministic outputs, abstention, scorecard and risk-policy proof |
+| DCA scheduling and alert delivery | arbora / emerald-exchange | ARBORA-DATA-MARKET-R006, MEDULLA-FINANCE-PRIMITIVES-R011 | PENDING | Replay-safe event and delivery receipts |
 | Source intake and leverage guide | media-downloader / emerald-exchange | EMERALD-GUIDE-R001, EMERALD-MEDIA-R001 | PENDING | Public citations, source capture time, claims separated from executable rules |
-| Responsive Markets route and views | agent-webui | FIN-UI-R001 | SPECIFIED | PR/commit, FIN-T01–T04, T07–T14, served-path and visual evidence |
-| Shared Finance/Atlas ChartRenderer | agent-webui | FIN-UI-R002 | SPECIFIED | PR/commit, FIN-T05–T06, T13–T14 and mobile performance evidence |
-| Detail-tab/ChartRenderer/supportedChartMode contracts (PR #59) | agent-webui | FIN-UI-R001.1, FIN-UI-R002.1, FIN-UI-R008.1 | LANDED | `chart-contract.test.ts`, `detail-support.test.ts` — 11 passed |
-| Overlay/performance/strategy/delivery contracts (PR #60) | agent-webui | FIN-UI-R010.1, FIN-UI-R011.1, FIN-UI-R012.1, FIN-UI-R013.1 | LANDED | 4 new vitest files — 19 passed |
-| CSV import/offline-cache/a11y contracts (PR #61) | agent-webui | FIN-UI-R014.1, FIN-UI-R015.1, FIN-UI-R016.1 | LANDED | vitest — 13 passed |
-| Live wiring of detail-tab/ChartRenderer/supportedChartMode (remaining) | agent-webui | FIN-UI-R001.2, FIN-UI-R002.2, FIN-UI-R008.2 | SPECIFIED | Live ChartPage/ChartRenderer component wiring, PR pending |
-| Live wiring of overlay/performance/strategy (remaining) | agent-webui | FIN-UI-R010.2, FIN-UI-R011.2, FIN-UI-R012.2 | SPECIFIED | `overlay-wiring.test.ts`, `PerformanceCardView.test.tsx`, `StrategyPanel.test.tsx` — 10 passed, PR pending |
-| Live wiring of delivery (remaining) | agent-webui | FIN-UI-R013.2 | SPECIFIED | `DeliveryStateList.test.tsx` — 3 passed, PR pending |
-| Live wiring of CSV import/offline-cache (remaining) | agent-webui | FIN-UI-R014.2, FIN-UI-R015.2 | SPECIFIED | `CsvImportFlow.test.tsx`, `OfflineCacheView.test.tsx` — 7 passed, PR pending |
-| Live wiring of a11y (remaining) | agent-webui | FIN-UI-R016.2 | SPECIFIED | `ChartA11ySummary.test.tsx` — 4 passed, PR pending |
+| Responsive Markets route and views | agent-webui | OVERSTORY-R001 | SPECIFIED | PR/commit, FIN-T01–T04, T07–T14, served-path and visual evidence |
+| Shared Finance/Atlas ChartRenderer | agent-webui | OVERSTORY-R002 | SPECIFIED | PR/commit, FIN-T05–T06, T13–T14 and mobile performance evidence |
+| Detail-tab/ChartRenderer/supportedChartMode contracts (PR #59) | agent-webui | OVERSTORY-R001.1, OVERSTORY-R002.1, OVERSTORY-R008.1 | LANDED | `chart-contract.test.ts`, `detail-support.test.ts` — 11 passed |
+| Overlay/performance/strategy/delivery contracts (PR #60) | agent-webui | OVERSTORY-R010.1, OVERSTORY-R011.1, OVERSTORY-R012.1, OVERSTORY-R013.1 | LANDED | 4 new vitest files — 19 passed |
+| CSV import/offline-cache/a11y contracts (PR #61) | agent-webui | OVERSTORY-R014.1, OVERSTORY-R015.1, OVERSTORY-R016.1 | LANDED | vitest — 13 passed |
+| Live wiring of detail-tab/ChartRenderer/supportedChartMode (remaining) | agent-webui | OVERSTORY-R001.2, OVERSTORY-R002.2, OVERSTORY-R008.2 | SPECIFIED | Live ChartPage/ChartRenderer component wiring, PR pending |
+| Live wiring of overlay/performance/strategy (remaining) | agent-webui | OVERSTORY-R010.2, OVERSTORY-R011.2, OVERSTORY-R012.2 | SPECIFIED | `overlay-wiring.test.ts`, `PerformanceCardView.test.tsx`, `StrategyPanel.test.tsx` — 10 passed, PR pending |
+| Live wiring of delivery (remaining) | agent-webui | OVERSTORY-R013.2 | SPECIFIED | `DeliveryStateList.test.tsx` — 3 passed, PR pending |
+| Live wiring of CSV import/offline-cache (remaining) | agent-webui | OVERSTORY-R014.2, OVERSTORY-R015.2 | SPECIFIED | `CsvImportFlow.test.tsx`, `OfflineCacheView.test.tsx` — 7 passed, PR pending |
+| Live wiring of a11y (remaining) | agent-webui | OVERSTORY-R016.2 | SPECIFIED | `ChartA11ySummary.test.tsx` — 4 passed, PR pending |
 
 ## Build sequence
 
@@ -35,12 +35,12 @@
 
 | Date | Commit/PR | Environment and fixture/service revision | Tests/gates | Decision |
 |---|---|---|---|---|
-| 2026-10-08 | Port of 0809b6d3ca onto `origin/main` (PR pending) | Local worktree, pnpm/uv toolchain, no live provider | `pytest agent/agent_webui/__tests__/test_markets_app.py` 14 passed. `vitest run src/apps/markets src/lib/apps` 26 passed. `tsc --noEmit` clean. `node scripts/generate-site-assets.mjs` and `check-site-assets.mjs` pass. `no_fabrication_gate.mjs` OK | FIN-UI-R006 and FIN-UI-R003 code merged to a branch off current main. Owner repository dependencies remain PENDING. They are EG finance primitives and SDK sources. This spec stays SPECIFIED. |
-| 2026-10-09 | Markets five-destination nav, stacked on the 0809b6d3ca port branch (PR pending) | Local worktree, pnpm toolchain | `vitest run src/apps/markets` 29 passed (new `MarketsNav.test.tsx`). `tsc --noEmit` clean. Site-assets generate and check pass. The no-fabrication gate passes | FIN-UI-R004 code merged to a branch stacked on the open Markets-app-port PR. News and Portfolio destinations state their PENDING owner dependency. Calendar reuses the macro-events route. The spec stays SPECIFIED. |
+| 2026-10-08 | Port of 0809b6d3ca onto `origin/main` (PR pending) | Local worktree, pnpm/uv toolchain, no live provider | `pytest agent/agent_webui/__tests__/test_markets_app.py` 14 passed. `vitest run src/apps/markets src/lib/apps` 26 passed. `tsc --noEmit` clean. `node scripts/generate-site-assets.mjs` and `check-site-assets.mjs` pass. `no_fabrication_gate.mjs` OK | OVERSTORY-R006 and OVERSTORY-R003 code merged to a branch off current main. Owner repository dependencies remain PENDING. They are EG finance primitives and SDK sources. This spec stays SPECIFIED. |
+| 2026-10-09 | Markets five-destination nav, stacked on the 0809b6d3ca port branch (PR pending) | Local worktree, pnpm toolchain | `vitest run src/apps/markets` 29 passed (new `MarketsNav.test.tsx`). `tsc --noEmit` clean. Site-assets generate and check pass. The no-fabrication gate passes | OVERSTORY-R004 code merged to a branch stacked on the open Markets-app-port PR. News and Portfolio destinations state their PENDING owner dependency. Calendar reuses the macro-events route. The spec stays SPECIFIED. |
 
 ## Unreferenced requirement IDs
 
-The build sequence above cites `FIN-UI-R001` and `FIN-UI-R002` by work package but does not name `FIN-UI-R003` or the `FIN-UI-R004`–`FIN-UI-R016` sub-requirements individually. Add their coverage to the corresponding build-sequence and evidence-log rows as each is implemented. All IDs are defined in [requirements.md](requirements.md).
+The build sequence above cites `OVERSTORY-R001` and `OVERSTORY-R002` by work package but does not name `OVERSTORY-R003` or the `OVERSTORY-R004`–`OVERSTORY-R016` sub-requirements individually. Add their coverage to the corresponding build-sequence and evidence-log rows as each is implemented. All IDs are defined in [requirements.md](requirements.md).
 
 ## Status rules
 
@@ -48,10 +48,10 @@ The build sequence above cites `FIN-UI-R001` and `FIN-UI-R002` by work package b
 
 ## Decomposition children (tracked)
 
-- [x] **FIN-UI-R008:** Detail tabs and range controls expose only supported data (rollup)
-- [x] **FIN-UI-R010:** Chart overlays show strategy version and simulation state (rollup)
-- [x] **FIN-UI-R011:** Performance cards render owner-calculated values verbatim (rollup)
-- [x] **FIN-UI-R012:** Strategy views cite evidence and never submit orders (rollup)
-- [ ] **FIN-UI-R013:** DCA and alert views distinguish delivery states (rollup)
-- [ ] **FIN-UI-R014:** CSV import preview with idempotent receipt (rollup)
-- [ ] **FIN-UI-R015:** Offline PWA shell marks cached data stale (rollup)
+- [x] **OVERSTORY-R008:** Detail tabs and range controls expose only supported data (rollup)
+- [x] **OVERSTORY-R010:** Chart overlays show strategy version and simulation state (rollup)
+- [x] **OVERSTORY-R011:** Performance cards render owner-calculated values verbatim (rollup)
+- [x] **OVERSTORY-R012:** Strategy views cite evidence and never submit orders (rollup)
+- [ ] **OVERSTORY-R013:** DCA and alert views distinguish delivery states (rollup)
+- [ ] **OVERSTORY-R014:** CSV import preview with idempotent receipt (rollup)
+- [ ] **OVERSTORY-R015:** Offline PWA shell marks cached data stale (rollup)

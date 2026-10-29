@@ -1,7 +1,7 @@
 /**
  * @file ChartA11ySummary.tsx
- * @description Live chart/control accessibility wiring (FIN-UI-R016.2): renders
- * the text-summary contract (FIN-UI-R016.1, {@link chartSummaryText}) as a
+ * @description Live chart/control accessibility wiring (OVERSTORY-R016.2): renders
+ * the text-summary contract (OVERSTORY-R016.1, {@link chartSummaryText}) as a
  * screen-reader-accessible, keyboard-focusable region so a chart's state is
  * announceable without seeing it. Direction is conveyed by a non-color word
  * ({@link directionWord}), never color alone, and motion is gated by the

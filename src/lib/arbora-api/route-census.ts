@@ -1,11 +1,11 @@
 /**
- * Typed model for the WEBUI-API-R003.1 route census: the checked-in record of
+ * Typed model for the OVERSTORY-API-R003.1 route census: the checked-in record of
  * every browser-facing route in `api_extensions.py`, its owning Arbora
  * operation (or UI-local/retire disposition), caller, scope, effect class and
  * migration state.
  *
  * This module owns the typed model and the source-to-census check used by the
- * WEBUI-API-R003.2 architecture gate. The checked-in data lives beside this
+ * OVERSTORY-API-R003.2 architecture gate. The checked-in data lives beside this
  * module in `route-census.json` and is validated before any route is served.
  */
 import { z } from 'zod'

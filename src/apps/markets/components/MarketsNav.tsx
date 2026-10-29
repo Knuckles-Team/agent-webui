@@ -1,6 +1,6 @@
 /**
  * @file MarketsNav.tsx
- * @description Markets' five-destination navigation (FIN-UI-R004, FIN-UI-R001):
+ * @description Markets' five-destination navigation (OVERSTORY-R004, OVERSTORY-R001):
  * Markets, News, Calendar, Portfolio and Menu. One destination list and one
  * active-path check drive both a bottom bar on narrow viewports and a side
  * rail on desktop, so the selected destination and keyboard focus stay

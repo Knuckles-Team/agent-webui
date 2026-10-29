@@ -39,8 +39,8 @@ function tool(name: string): WebMcpToolDefinition {
 
 const call = (name: string, input: unknown) => tool(name).execute(input, { signal: new AbortController().signal })
 
-// spec: WEBUI-DASH-R002, WEBUI-DASH-R006, WEBUI-DASH-R009, WEBUI-DASH-R014, WEBUI-DASH-R015
-describe('DashboardsView (WEBUI-DASH-R002, R006, R009, R014, R015)', () => {
+// spec: OVERSTORY-DASH-R002, OVERSTORY-DASH-R006, OVERSTORY-DASH-R009, OVERSTORY-DASH-R014, OVERSTORY-DASH-R015
+describe('DashboardsView (OVERSTORY-DASH-R002, R006, R009, R014, R015)', () => {
   beforeEach(() => {
     window.localStorage.clear()
     runMock.mockReset()

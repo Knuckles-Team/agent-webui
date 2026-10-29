@@ -1,4 +1,4 @@
-// spec: WEBUI-API-R003.2
+// spec: OVERSTORY-API-R003.2
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {

@@ -1,7 +1,7 @@
 /**
  * @file instrument-groups-state.ts
  * @description URL-param persistence for the selected instrument group and
- * Basic/Holdings mode (FIN-UI-R005), following `../view-state.ts`'s
+ * Basic/Holdings mode (OVERSTORY-R005), following `../view-state.ts`'s
  * `readFilters`/`writeFilters` convention: the URL is the source of truth
  * so a selection survives navigation and refresh. Kept local to this
  * component rather than added to the shared `view-state.ts` to avoid

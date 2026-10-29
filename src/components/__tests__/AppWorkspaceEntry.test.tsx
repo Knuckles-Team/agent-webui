@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R045, WEBUI-APPS-R049, WEBUI-APPS-R049.1.2, WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R045, OVERSTORY-APPS-R049, OVERSTORY-APPS-R049.1.2, OVERSTORY-APPS-R049.1.3
 import { useEffect, useState, type ReactNode } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
@@ -105,7 +105,7 @@ function visit(path: string) {
     window.dispatchEvent(new Event('history-state-changed'))
   })
 }
-// spec: WEBUI-IDENTITY-R004.1
+// spec: OVERSTORY-IDENTITY-R004.1
 it('mounts Work by default, replaces only the entry, and retains query/hash/history state', async () => {
   window.history.replaceState({ retained: true }, '', '/?conversation=existing#context')
   const length = window.history.length
@@ -201,7 +201,7 @@ it.each(['/prompts?lens=investigation', '/?conversation=a&conversation=b', '/pro
   },
 )
 
-// spec: WEBUI-DESIGN-R002.1, WEBUI-APPS-R049.1.2
+// spec: OVERSTORY-DESIGN-R002.1, OVERSTORY-APPS-R049.1.2
 it('selects the real frame Work branch after entry while retaining an inert fragment', async () => {
   window.history.replaceState({}, '', '/#context')
   render(<App />)
@@ -236,7 +236,7 @@ it('retains the real editor DOM across frame presentation and compatibility navi
   expect(screen.getByRole('complementary', { name: 'Workspace map' })).toBe(map)
 })
 
-// spec: WEBUI-APPS-R049.1.14, WEBUI-APPS-R049.1.15, WEBUI-APPS-R049.1.16
+// spec: OVERSTORY-APPS-R049.1.14, OVERSTORY-APPS-R049.1.15, OVERSTORY-APPS-R049.1.16
 it('redirects admitted workflows into the native in-memory editor without mounting the legacy page', async () => {
   vi.mocked(fetch).mockImplementation(async (input) =>
     String(input).endsWith('/workflows')
@@ -290,7 +290,7 @@ it('retains the legacy reader-admitted graph route rather than redirecting away 
   expect(await screen.findByText('Legacy graph reader and editor')).toBeVisible()
   expect(window.location.pathname).toBe('/graph')
 })
-// spec: WEBUI-APPS-R005.4, WEBUI-APPS-R049.1.3, WEBUI-APPS-R049.2.1
+// spec: OVERSTORY-APPS-R005.4, OVERSTORY-APPS-R049.1.3, OVERSTORY-APPS-R049.2.1
 it('shows the existing composer on entry without disclosure and retains its draft across contexts', async () => {
   render(<App />)
   await screen.findByRole('heading', { name: 'Tasks and conversations' })
@@ -313,7 +313,7 @@ it('shows the existing composer on entry without disclosure and retains its draf
   expect(state.mounts).toBe(1)
 })
 
-// spec: WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.3
 it.each([
   '/workspace/work?task=task-a',
   '/workspace/work?run=trace-a',
@@ -325,7 +325,7 @@ it.each([
   expect(isWorkConversationLanding(location)).toBe(false)
 })
 
-// spec: WEBUI-APPS-R049.2.1
+// spec: OVERSTORY-APPS-R049.2.1
 it('keeps privacy out of the workspace until Settings is opened without changing consent', async () => {
   state.role = 'user'
   render(<App />)
@@ -341,7 +341,7 @@ it('keeps privacy out of the workspace until Settings is opened without changing
   expect(localStorage.getItem('agent-webui.consent')).toBeNull()
 })
 
-// spec: WEBUI-APPS-R049.2.1
+// spec: OVERSTORY-APPS-R049.2.1
 it.each(['/overview', '/contact'])(
   'does not mount automatic privacy consent on retained or public route %s',
   async (path) => {

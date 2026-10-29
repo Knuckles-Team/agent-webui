@@ -1,12 +1,12 @@
 /**
  * @file detail-support.ts
- * @description Typed detail-view contract (FIN-UI-R001.1, FIN-UI-R008.1). The
+ * @description Typed detail-view contract (OVERSTORY-R001.1, OVERSTORY-R008.1). The
  * instrument detail view offers Chart, Rates, News, Notes, Dividends, and
  * Analysis tabs, but only the tabs, intervals, and data types the
  * underlying series actually supports; every unsupported combination gets
  * an explanatory reason rather than being silently rendered or hidden with
  * no explanation. Wiring these pure checks into ChartPage/tab components is
- * FIN-UI-R001.2 / FIN-UI-R008.2.
+ * OVERSTORY-R001.2 / OVERSTORY-R008.2.
  */
 import type { Timeframe } from './schemas'
 

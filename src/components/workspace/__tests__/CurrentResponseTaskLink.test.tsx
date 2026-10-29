@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.5
+// spec: OVERSTORY-APPS-R049.1.5
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { UIMessage } from 'ai'

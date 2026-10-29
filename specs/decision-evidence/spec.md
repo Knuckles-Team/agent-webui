@@ -1,8 +1,8 @@
-# WEBUI-DECIDE — Decision evidence and calibration
+# OVERSTORY-DECIDE — Decision evidence and calibration
 
-**ID:** WEBUI-DECIDE
+**ID:** OVERSTORY-DECIDE
 **Owner:** agent-webui
-**Related IDs:** WEBUI-DECIDE-R002, WEBUI-DECIDE-R001
+**Related IDs:** OVERSTORY-DECIDE-R002, OVERSTORY-DECIDE-R001
 **Delivery:** specified; existing source requires current-main and browser acceptance audit
 **Acceptance:** open
 
@@ -23,12 +23,12 @@ Actors are a tenant reader, an operator investigating a decision, and an accessi
 
 | Requirement | Behavior | Related ID | Acceptance evidence |
 |---|---|---|---|
-| WEBUI-DECIDE-R003 | Typed explorer renders chosen and excluded options with cited premise/derivation identifiers, certificate and violations | WEBUI-DECIDE-R002 | Contract fixture and rendered route test |
-| WEBUI-DECIDE-R004 | Why-not is requested on demand with a bounded solve budget. Timeout or refusal is visible without mutating the original decision | WEBUI-DECIDE-R002 | Timeout/refusal integration fixture |
-| WEBUI-DECIDE-R005 | Evaluation dashboard labels cohort, sample count, source class, window, target/observed coverage, risk and receipt version independently | WEBUI-DECIDE-R001 | Independent-label fixture and rendered test |
-| WEBUI-DECIDE-R006 | No numeric coverage, calibration or deployment claim appears for synthetic-only, missing or underpowered evaluation | WEBUI-DECIDE-R001 | Negative fixtures for each case |
-| WEBUI-DECIDE-R007 | Tenant and purpose changes invalidate cached decision/evaluation queries, and stale responses cannot overwrite a newer selection | WEBUI-DECIDE-R002, WEBUI-DECIDE-R001 | Two-tenant browser test |
-| WEBUI-DECIDE-R008 | All explanation structure is usable without color, hover or pointer-only controls | WEBUI-DECIDE-R002, WEBUI-DECIDE-R001 | Keyboard and accessibility test |
+| OVERSTORY-DECIDE-R003 | Typed explorer renders chosen and excluded options with cited premise/derivation identifiers, certificate and violations | OVERSTORY-DECIDE-R002 | Contract fixture and rendered route test |
+| OVERSTORY-DECIDE-R004 | Why-not is requested on demand with a bounded solve budget. Timeout or refusal is visible without mutating the original decision | OVERSTORY-DECIDE-R002 | Timeout/refusal integration fixture |
+| OVERSTORY-DECIDE-R005 | Evaluation dashboard labels cohort, sample count, source class, window, target/observed coverage, risk and receipt version independently | OVERSTORY-DECIDE-R001 | Independent-label fixture and rendered test |
+| OVERSTORY-DECIDE-R006 | No numeric coverage, calibration or deployment claim appears for synthetic-only, missing or underpowered evaluation | OVERSTORY-DECIDE-R001 | Negative fixtures for each case |
+| OVERSTORY-DECIDE-R007 | Tenant and purpose changes invalidate cached decision/evaluation queries, and stale responses cannot overwrite a newer selection | OVERSTORY-DECIDE-R002, OVERSTORY-DECIDE-R001 | Two-tenant browser test |
+| OVERSTORY-DECIDE-R008 | All explanation structure is usable without color, hover or pointer-only controls | OVERSTORY-DECIDE-R002, OVERSTORY-DECIDE-R001 | Keyboard and accessibility test |
 
 ## Completion
 

@@ -374,7 +374,7 @@ describe('PromptsView — create a new prompt (Lane 4)', () => {
   })
 })
 
-describe('PromptsView — sidebar status language (WEBUI-DESIGN-R006)', () => {
+describe('PromptsView — sidebar status language (OVERSTORY-DESIGN-R006)', () => {
   it('shows the shared loading status message while the prompt list is in flight', () => {
     global.fetch = vi.fn(() => new Promise(() => undefined)) as unknown as typeof fetch
     render(<PromptsView />)

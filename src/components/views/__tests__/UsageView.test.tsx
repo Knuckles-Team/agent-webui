@@ -17,7 +17,7 @@ vi.mock('@/lib/auth', () => ({
 }))
 
 /**
- * WEBUI-DESIGN-R006 rendered-state coverage for the Usage & Cost dashboard's shared
+ * OVERSTORY-DESIGN-R006 rendered-state coverage for the Usage & Cost dashboard's shared
  * `StatusMessage` empty-state adoption (the local `Empty` wrapper). Spies on
  * the real `api` singleton (not a hand-written stand-in) so a renamed/removed
  * method fails the spy setup instead of silently passing.
@@ -59,7 +59,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('UsageView — WEBUI-DESIGN-R006 status language', () => {
+describe('UsageView — OVERSTORY-DESIGN-R006 status language', () => {
   it('shows the shared empty status message on every tab with no data', async () => {
     stubEveryUsageEndpointEmpty()
     const { user } = renderWithProviders(<UsageView />)

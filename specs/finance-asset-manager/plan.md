@@ -1,4 +1,4 @@
-# FIN-UI — Architecture and implementation design
+# OVERSTORY — Architecture and implementation design
 
 **Status:** SPECIFIED. Governing requirements: [spec.md](spec.md). This design defines the WebUI contract proposal; paths in the proposed API table do not claim deployed endpoints exist.
 
@@ -76,9 +76,9 @@ Run `pnpm run typecheck`, `pnpm run lint`, `pnpm run test`, `pnpm run test:e2e`,
 
 | Repository | Owner-native deliverable; interface consumed here | IDs |
 |---|---|---|
-| [epistemic-graph](https://github.com/Knuckles-Team/epistemic-graph) | finance-v1 accounts, activities, lots, reference sessions, fixed-point accounting, strategy/backtest/recommendation/leverage outputs and golden fixtures | EG-FINANCE-PRIMITIVES-R004–EG-FINANCE-PRIMITIVES-R006, EG-FINANCE-PRIMITIVES-R007–EG-FINANCE-PRIMITIVES-R009, EG-FINANCE-PRIMITIVES-R010, EG-FINANCE-PRIMITIVES-R013 |
-| [agent-connector-sdk](https://github.com/Knuckles-Team/agent-connector-sdk) and [emerald-exchange](https://github.com/Knuckles-Team/emerald-exchange) | qualified stock/FX/commodity source and account/import transport; governed effect boundary | SDK-FINANCE-SOURCES-R002, SDK-FINANCE-SOURCES-R003, SDK-FINANCE-SOURCES-R004 |
-| [arbora](https://github.com/Knuckles-Team/arbora) | authenticated finance projection, replay-safe DCA scheduling and outbox alert delivery | ARBORA-DATA-MARKET-R006, EG-FINANCE-PRIMITIVES-R011 |
-| [agent-utilities](https://github.com/Knuckles-Team/agent-utilities) | workflow orchestration without a duplicate finance math authority | EG-FINANCE-PRIMITIVES-R009, ARBORA-DATA-MARKET-R006 |
+| [epistemic-graph](https://github.com/Knuckles-Team/epistemic-graph) | finance-v1 accounts, activities, lots, reference sessions, fixed-point accounting, strategy/backtest/recommendation/leverage outputs and golden fixtures | MEDULLA-FINANCE-PRIMITIVES-R004–MEDULLA-FINANCE-PRIMITIVES-R006, MEDULLA-FINANCE-PRIMITIVES-R007–MEDULLA-FINANCE-PRIMITIVES-R009, MEDULLA-FINANCE-PRIMITIVES-R010, MEDULLA-FINANCE-PRIMITIVES-R013 |
+| [agent-connector-sdk](https://github.com/Knuckles-Team/agent-connector-sdk) and [emerald-exchange](https://github.com/Knuckles-Team/emerald-exchange) | qualified stock/FX/commodity source and account/import transport; governed effect boundary | SCION-FINANCE-SOURCES-R002, SCION-FINANCE-SOURCES-R003, SCION-FINANCE-SOURCES-R004 |
+| [arbora](https://github.com/Knuckles-Team/arbora) | authenticated finance projection, replay-safe DCA scheduling and outbox alert delivery | ARBORA-DATA-MARKET-R006, MEDULLA-FINANCE-PRIMITIVES-R011 |
+| [agent-utilities](https://github.com/Knuckles-Team/agent-utilities) | workflow orchestration without a duplicate finance math authority | MEDULLA-FINANCE-PRIMITIVES-R009, ARBORA-DATA-MARKET-R006 |
 | [media-downloader](https://github.com/Knuckles-Team/media-downloader) and Emerald skills | source intake, claim/evidence separation and leveraged-trading guide | EMERALD-GUIDE-R001, EMERALD-MEDIA-R001 |
-| [agent-webui](https://github.com/Knuckles-Team/agent-webui) | this Markets workspace and shared chart | FIN-UI-R001, FIN-UI-R002 |
+| [agent-webui](https://github.com/Knuckles-Team/agent-webui) | this Markets workspace and shared chart | OVERSTORY-R001, OVERSTORY-R002 |

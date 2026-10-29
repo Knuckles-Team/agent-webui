@@ -15,7 +15,7 @@ _BROWSER_SETTINGS = (
 )
 _ISSUER = 'https://identity.example.test'
 _INERT_VALUE = 'inert-configuration-probe'
-pytestmark = pytest.mark.spec('WEBUI-IDENTITY-R003.3.1')
+pytestmark = pytest.mark.spec('OVERSTORY-IDENTITY-R003.3.1')
 
 
 @pytest.fixture(autouse=True)

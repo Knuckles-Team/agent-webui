@@ -1,7 +1,7 @@
 /**
  * @file CsvImportFlow.tsx
- * @description Live CSV import preview wiring (FIN-UI-R014.2): renders the
- * import preview contract (FIN-UI-R014.1, {@link mappingErrors},
+ * @description Live CSV import preview wiring (OVERSTORY-R014.2): renders the
+ * import preview contract (OVERSTORY-R014.1, {@link mappingErrors},
  * {@link isIdempotentReimport}) before anything commits — showing the
  * column mapping, per-row validation errors, and the file digest as the
  * stable receipt — then, once an import result is available, displays the

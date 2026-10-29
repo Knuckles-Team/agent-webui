@@ -1,5 +1,5 @@
-// spec: WEBUI-APPS-R049.1.4
-// spec: WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.4
+// spec: OVERSTORY-APPS-R049.1.3
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceContextRail } from '../WorkspaceContextRail'
@@ -93,7 +93,7 @@ describe('anchored workspace context rail', () => {
   })
 })
 
-// spec: WEBUI-DESIGN-R004.1.1
+// spec: OVERSTORY-DESIGN-R004.1.1
 it('keeps primary navigation inline instead of placing it behind a compact disclosure', () => {
   render(<WorkspaceContextRail role="user" active="explore" />)
   const navigation = screen.getByRole('navigation', { name: 'Primary workspace contexts' })
@@ -103,7 +103,7 @@ it('keeps primary navigation inline instead of placing it behind a compact discl
   expect(screen.getByText('Settings').closest('details')).not.toHaveAttribute('open')
 })
 
-// spec: WEBUI-APPS-R038
+// spec: OVERSTORY-APPS-R038
 it('shows Overstory as the primary client name without changing the home route', () => {
   render(<WorkspaceContextRail role="user" active="work" />)
   expect(screen.getByRole('link', { name: 'Overstory' })).toHaveAttribute('href', '/workspace/work')

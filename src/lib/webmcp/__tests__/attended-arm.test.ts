@@ -127,7 +127,7 @@ describe('same-origin attended-arm authority client', () => {
   })
 })
 
-// spec: WEBUI-APPS-R048
+// spec: OVERSTORY-APPS-R048
 it('uses the canonical CSRF owner for arm mutations, rotation and session clearing', async () => {
   const fetchMock = vi
     .fn<typeof fetch>()

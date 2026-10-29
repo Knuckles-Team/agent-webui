@@ -1,6 +1,6 @@
 /**
  * @file PanelBody.tsx
- * @description Renders one panel's result (WEBUI-DASH-R002): table, line, bar or KPI.
+ * @description Renders one panel's result (OVERSTORY-DASH-R002): table, line, bar or KPI.
  * Loading, empty, error and unavailable are distinct states. Charts and KPIs always
  * come with a data-table alternative.
  */

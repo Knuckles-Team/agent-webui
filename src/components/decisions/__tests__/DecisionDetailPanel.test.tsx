@@ -5,8 +5,8 @@ import { renderWithProviders } from '@/__tests__/fixtures'
 import { baseRecord, createFixtureTransport, emptyProvenance } from './decisions-fixtures'
 
 /**
- * DecisionDetailPanel's on-demand why-not explanation (requirement WEBUI-DECIDE-R004,
- * part of WEBUI-DECIDE-R002): a fresh explanation is requested within a
+ * DecisionDetailPanel's on-demand why-not explanation (requirement OVERSTORY-DECIDE-R004,
+ * part of OVERSTORY-DECIDE-R002): a fresh explanation is requested within a
  * bounded solve budget, and a timeout or refusal is shown to the reader
  * without altering the original committed decision record.
  */
@@ -23,8 +23,8 @@ async function renderWithDetail(transport: ReturnType<typeof createFixtureTransp
   return view
 }
 
-describe('DecisionDetailPanel why-not on demand (WEBUI-DECIDE-R004)', () => {
-  // spec: WEBUI-DECIDE-R004
+describe('DecisionDetailPanel why-not on demand (OVERSTORY-DECIDE-R004)', () => {
+  // spec: OVERSTORY-DECIDE-R004
   it('shows a freshly computed explanation without altering the original decision', async () => {
     const transport = createFixtureTransport()
     transport.getWhyNotOnDemand.mockResolvedValue({
@@ -45,7 +45,7 @@ describe('DecisionDetailPanel why-not on demand (WEBUI-DECIDE-R004)', () => {
     expect(screen.getAllByText(/retired/i).length).toBeGreaterThanOrEqual(1)
   })
 
-  // spec: WEBUI-DECIDE-R004
+  // spec: OVERSTORY-DECIDE-R004
   it('shows a refusal reason returned by the engine', async () => {
     const transport = createFixtureTransport()
     transport.getWhyNotOnDemand.mockResolvedValue({ kind: 'refused', reason: 'policy_denied' })
@@ -56,7 +56,7 @@ describe('DecisionDetailPanel why-not on demand (WEBUI-DECIDE-R004)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/policy_denied/i)
   })
 
-  // spec: WEBUI-DECIDE-R004
+  // spec: OVERSTORY-DECIDE-R004
   it('shows a timeout when the bounded solve budget elapses, and never mutates the record', async () => {
     const transport = createFixtureTransport()
     transport.getWhyNotOnDemand.mockImplementation(

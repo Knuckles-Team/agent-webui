@@ -14,7 +14,7 @@ test.beforeEach(async ({ page }) => {
 const viewports = [320, 375, 768, 1440].flatMap((width) => ['light', 'dark'].map((theme) => ({ width, theme })))
 
 for (const { width, theme } of viewports) {
-  // spec: WEBUI-DESIGN-R003, WEBUI-DESIGN-R004
+  // spec: OVERSTORY-DESIGN-R003, OVERSTORY-DESIGN-R004
   test(`keyboard, focus, descriptions and layout at ${width}px (${theme})`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await page.goto('/')

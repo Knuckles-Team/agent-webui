@@ -5,7 +5,7 @@ import { renderWithProviders } from '@/__tests__/fixtures'
 import { baseAggregate, baseRow, createFixtureTransport } from '@/components/decisions/__tests__/decisions-fixtures'
 
 /**
- * DecisionsView (requirements WEBUI-DECIDE-R001, WEBUI-DECIDE-R002): the
+ * DecisionsView (requirements OVERSTORY-DECIDE-R001, OVERSTORY-DECIDE-R002): the
  * composed explorer + calibration tabs render against one shared injected
  * transport and switching tabs does not lose or duplicate either query.
  */

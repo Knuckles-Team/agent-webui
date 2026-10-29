@@ -13,8 +13,8 @@ test.afterEach(async ({ page }, info) => {
     console.error('Catalog fixture DOM:', (await page.locator('body').innerText()).slice(0, 8000))
 })
 
-// spec: WEBUI-APPS-R046.2.2
-// spec: WEBUI-APPS-R049.1.2
+// spec: OVERSTORY-APPS-R046.2.2
+// spec: OVERSTORY-APPS-R049.1.2
 test('catalog definitions share deep links, keyboard search and native history across viewport changes', async ({
   page,
 }, info) => {
@@ -84,7 +84,7 @@ test('catalog definitions share deep links, keyboard search and native history a
   const catalog = page.getByRole('region', { name: 'Connector catalog', exact: true })
   const detail = catalog.getByRole('region', { name: 'Selected catalog definition' })
   await expect(detail).toContainText('Synthetic Lookup definition')
-  // spec: WEBUI-APPS-R049.2.1 — shared materials do not change catalog state.
+  // spec: OVERSTORY-APPS-R049.2.1 — shared materials do not change catalog state.
   await page.setViewportSize({ width: 1440, height: 900 })
   const appearance = page.locator('.workspace-appearance summary')
   await appearance.click()

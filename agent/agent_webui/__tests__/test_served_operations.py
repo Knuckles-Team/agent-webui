@@ -185,7 +185,7 @@ def _client(app: Any, scope: str = _ADMIN) -> TestClient:
         ),
     ],
 )
-# spec: WEBUI-API-R011.1
+# spec: OVERSTORY-API-R011.1
 def test_read_routes_project_the_served_operation(
     app, arbora, method, path, body, op_id, value, sent, expected
 ) -> None:
@@ -272,7 +272,7 @@ def test_a_arbora_refusal_keeps_its_status(app, arbora, code, status) -> None:
         ('/cron/calendar', 'schedule.tasks.read'),
     ],
 )
-# spec: WEBUI-API-R011.1
+# spec: OVERSTORY-API-R011.1
 def test_routes_without_a_served_operation_answer_not_available(
     app, arbora, path, operation
 ) -> None:

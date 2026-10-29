@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.16
+// spec: OVERSTORY-APPS-R049.1.16
 import { describe, expect, it } from 'vitest'
 import {
   usageActivityCellSchema,

@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.15
+// spec: OVERSTORY-APPS-R049.1.15
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { toast } from 'sonner'

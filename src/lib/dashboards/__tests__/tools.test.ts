@@ -47,8 +47,8 @@ function harness(options: { approve?: boolean; outcome?: QueryOutcome } = {}) {
   }
 }
 
-// spec: WEBUI-DASH-R007
-describe('dashboard WebMCP tools (WEBUI-DASH-R007)', () => {
+// spec: OVERSTORY-DASH-R007
+describe('dashboard WebMCP tools (OVERSTORY-DASH-R007)', () => {
   it('registers the seven tools with strict capability metadata', () => {
     const { tools } = harness()
     expect([...tools.keys()].map((n) => n.replace(DASHBOARD_TOOL_PREFIX, '')).sort()).toEqual([
@@ -105,8 +105,8 @@ describe('dashboard WebMCP tools (WEBUI-DASH-R007)', () => {
   })
 })
 
-// spec: WEBUI-DASH-R009
-describe('destructive agent changes (WEBUI-DASH-R009)', () => {
+// spec: OVERSTORY-DASH-R009
+describe('destructive agent changes (OVERSTORY-DASH-R009)', () => {
   async function withPanel(approve: boolean) {
     const h = harness({ approve })
     await h.call('create', { title: 'Ops' })

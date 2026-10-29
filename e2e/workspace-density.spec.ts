@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R002.1
+// spec: OVERSTORY-DESIGN-R002.1
 import { expect, test } from '@playwright/test'
 
 test('workspace panes use available width and keep collection drafts through disclosure and resize', async ({

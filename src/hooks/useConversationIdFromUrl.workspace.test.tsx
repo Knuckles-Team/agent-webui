@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.3
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ACTIVE_CONVERSATION_STORAGE_KEY, useConversationIdFromUrl } from './useConversationIdFromUrl'

@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R011
+// spec: OVERSTORY-DESIGN-R011
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'

@@ -1,4 +1,4 @@
-# FIN-UI — Finance Asset Manager
+# OVERSTORY — Finance Asset Manager
 
 **Status:** SPECIFIED. Implementation and deployment unverified. **Owner:** `agent-webui`. Every requirement ID this spec owns, and the cross-repository IDs it depends on, are defined in [requirements.md](requirements.md). Their current delivery and acceptance state, with evidence, is recorded in [status.json](status.json). These identifiers support cross-repository tracking. This document contains the complete WebUI requirements. A specification is not evidence that its feature is built.
 
@@ -21,19 +21,19 @@ The primary actor is an authenticated investor managing personal accounts. They 
 
 | ID | Observable requirement | Related IDs |
 |---|---|---|
-| FIN-UI-R004 | Responsive five-destination navigation uses a bottom bar on narrow viewports and a side rail on desktop. Selected route and focus remain coherent. | FIN-UI-R001 |
-| FIN-UI-R005 | User-defined instrument groups and Basic/Holdings mode preserve selection. They distinguish loading, genuinely empty, stale, partial, denied, and unavailable results. | EG-FINANCE-PRIMITIVES-R004, FIN-UI-R001 |
-| FIN-UI-R006 | Search keys selection by stable instrument and listing IDs, venue and quote basis. Ticker text alone never identifies an instrument. | EG-FINANCE-PRIMITIVES-R006, SDK-FINANCE-SOURCES-R002 |
-| FIN-UI-R007 | Rows and details show price, session and provenance. They show the previous close, change, sparkline, and licensed logo or fallback. They show a separate after-hours value where supplied. | EG-FINANCE-PRIMITIVES-R006, SDK-FINANCE-SOURCES-R002, FIN-UI-R001 |
-| FIN-UI-R008 | Detail tabs, range controls, line/candle toggle and separate volume pane expose only supported intervals and data types. | FIN-UI-R001, FIN-UI-R002 |
-| FIN-UI-R009 | One typed ChartRenderer is shared with Atlas. It draws scalar line/area and complete OHLC candles, preserves gaps and revisions, and computes no authoritative indicators. | FIN-UI-R002 |
-| FIN-UI-R010 | Available overlays include trend line/flips, DCA buys, cost basis and margin/liquidation levels. Each displays strategy/source version and simulation status. | EG-FINANCE-PRIMITIVES-R005, EG-FINANCE-PRIMITIVES-R007, EG-FINANCE-PRIMITIVES-R010, FIN-UI-R002 |
-| FIN-UI-R011 | Performance and benchmark cards render owner-calculated fixed-point values with method, currency, source, as-of, session and explicit unavailable states. | EG-FINANCE-PRIMITIVES-R005, EG-FINANCE-PRIMITIVES-R013 |
-| FIN-UI-R012 | Strategy and recommendation views cite versioned evidence and scorecards, show abstention reasons, and never directly submit orders. | EG-FINANCE-PRIMITIVES-R007–EG-FINANCE-PRIMITIVES-R010 |
-| FIN-UI-R013 | DCA and alert views distinguish due, missed, failed, replayed, paper-filled and delivered states. | ARBORA-DATA-MARKET-R006, EG-FINANCE-PRIMITIVES-R011 |
-| FIN-UI-R014 | CSV import previews mapping and validation, shows source digest and idempotent receipt, and reads authoritative accounting after import. | SDK-FINANCE-SOURCES-R004 |
-| FIN-UI-R015 | PWA offline shell marks cached financial facts stale; it cannot imply current market, account or order state. | FIN-UI-R001, EG-FINANCE-PRIMITIVES-R013 |
-| FIN-UI-R016 | Every chart and control works with keyboard, screen reader summary, 200% zoom, reduced motion and non-color state labels. | WEBUI-DESIGN-R001, FIN-UI-R001, FIN-UI-R002 |
+| OVERSTORY-R004 | Responsive five-destination navigation uses a bottom bar on narrow viewports and a side rail on desktop. Selected route and focus remain coherent. | OVERSTORY-R001 |
+| OVERSTORY-R005 | User-defined instrument groups and Basic/Holdings mode preserve selection. They distinguish loading, genuinely empty, stale, partial, denied, and unavailable results. | MEDULLA-FINANCE-PRIMITIVES-R004, OVERSTORY-R001 |
+| OVERSTORY-R006 | Search keys selection by stable instrument and listing IDs, venue and quote basis. Ticker text alone never identifies an instrument. | MEDULLA-FINANCE-PRIMITIVES-R006, SCION-FINANCE-SOURCES-R002 |
+| OVERSTORY-R007 | Rows and details show price, session and provenance. They show the previous close, change, sparkline, and licensed logo or fallback. They show a separate after-hours value where supplied. | MEDULLA-FINANCE-PRIMITIVES-R006, SCION-FINANCE-SOURCES-R002, OVERSTORY-R001 |
+| OVERSTORY-R008 | Detail tabs, range controls, line/candle toggle and separate volume pane expose only supported intervals and data types. | OVERSTORY-R001, OVERSTORY-R002 |
+| OVERSTORY-R009 | One typed ChartRenderer is shared with Atlas. It draws scalar line/area and complete OHLC candles, preserves gaps and revisions, and computes no authoritative indicators. | OVERSTORY-R002 |
+| OVERSTORY-R010 | Available overlays include trend line/flips, DCA buys, cost basis and margin/liquidation levels. Each displays strategy/source version and simulation status. | MEDULLA-FINANCE-PRIMITIVES-R005, MEDULLA-FINANCE-PRIMITIVES-R007, MEDULLA-FINANCE-PRIMITIVES-R010, OVERSTORY-R002 |
+| OVERSTORY-R011 | Performance and benchmark cards render owner-calculated fixed-point values with method, currency, source, as-of, session and explicit unavailable states. | MEDULLA-FINANCE-PRIMITIVES-R005, MEDULLA-FINANCE-PRIMITIVES-R013 |
+| OVERSTORY-R012 | Strategy and recommendation views cite versioned evidence and scorecards, show abstention reasons, and never directly submit orders. | MEDULLA-FINANCE-PRIMITIVES-R007–MEDULLA-FINANCE-PRIMITIVES-R010 |
+| OVERSTORY-R013 | DCA and alert views distinguish due, missed, failed, replayed, paper-filled and delivered states. | ARBORA-DATA-MARKET-R006, MEDULLA-FINANCE-PRIMITIVES-R011 |
+| OVERSTORY-R014 | CSV import previews mapping and validation, shows source digest and idempotent receipt, and reads authoritative accounting after import. | SCION-FINANCE-SOURCES-R004 |
+| OVERSTORY-R015 | PWA offline shell marks cached financial facts stale; it cannot imply current market, account or order state. | OVERSTORY-R001, MEDULLA-FINANCE-PRIMITIVES-R013 |
+| OVERSTORY-R016 | Every chart and control works with keyboard, screen reader summary, 200% zoom, reduced motion and non-color state labels. | OVERSTORY-DESIGN-R001, OVERSTORY-R001, OVERSTORY-R002 |
 
 ## Boundaries and failure behavior
 

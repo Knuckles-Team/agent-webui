@@ -3,7 +3,7 @@ import { arboraDecisionsTransport } from '../arbora-decisions-transport'
 import { baseRecord } from './decisions-fixtures'
 
 /**
- * The real `DecisionsTransport` (requirement WEBUI-API-R001) against a
+ * The real `DecisionsTransport` (requirement OVERSTORY-API-R001) against a
  * stubbed `fetch`, exercising the shared `invoke` adapter end to end —
  * no module-level spy on `invoke` itself, the same convention
  * `identity.test.ts` uses for `identity.ts`. Operation ids are the real
@@ -41,7 +41,7 @@ describe('arboraDecisionsTransport on the shared Arbora invoke adapter', () => {
     )
   })
 
-  // spec: WEBUI-API-R001
+  // spec: OVERSTORY-API-R001
   it('gets one committed decision record via DecisionLog.get, unwrapping the log entry', async () => {
     const fetcher = stubReplies({
       status: 200,

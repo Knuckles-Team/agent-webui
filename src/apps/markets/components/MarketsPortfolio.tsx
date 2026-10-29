@@ -1,6 +1,6 @@
 /**
  * @file MarketsPortfolio.tsx
- * @description The Portfolio destination (FIN-UI-R004). Account reads and
+ * @description The Portfolio destination (OVERSTORY-R004). Account reads and
  * holdings are owned by agent-connector-sdk/emerald-exchange and remain
  * PENDING (specs/finance-asset-manager/tasks.md); this page states that
  * honestly rather than showing an empty portfolio.

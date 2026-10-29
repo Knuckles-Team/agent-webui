@@ -63,7 +63,7 @@ describe('DashboardView reconnect backoff (pure logic, BUG-019)', () => {
   })
 })
 
-describe('widgetCardBody status language (WEBUI-DESIGN-R006)', () => {
+describe('widgetCardBody status language (OVERSTORY-DESIGN-R006)', () => {
   it('shows the shared empty status message when a widget has no data yet', () => {
     const { container } = render(<>{widgetCardBody(false, undefined)}</>)
     expect(container).toHaveTextContent('No data available')

@@ -1,6 +1,6 @@
 /**
  * @file model.ts
- * @description The dashboard document (WEBUI-DASH-R001): a declarative, versioned grid
+ * @description The dashboard document (OVERSTORY-DASH-R001): a declarative, versioned grid
  * of panels, each a query plus a visualization. All edits are pure functions that
  * return a new document with revision + 1, so user edits, agent edits and undo share
  * one path. No I/O lives here.

@@ -33,7 +33,7 @@ The `/api/v1` version and schema digest are visible to the client. A version mis
 
 ### 2026-10-11: engine wheel integrity for host tests
 
-The host tests, including `WEBUI-API-R005`, still import the AU numeric layer.
+The host tests, including `OVERSTORY-API-R005`, still import the AU numeric layer.
 The existing `--engine-wheel` bootstrap option keeps using the rolling
 `engine-main` release. Before installation, bootstrap must check the downloaded
 wheel against the selected GitHub asset's SHA-256 digest. A missing digest or
@@ -46,7 +46,7 @@ does not attest the compiled source. This receipt identifies the tested artifact
 adding a fixed source pin. Fixture tests cover matching and invalid downloads.
 Real host tests must still pass before runtime acceptance.
 
-CI support source for `WEBUI-API-R005` is
+CI support source for `OVERSTORY-API-R005` is
 [`d3bf9a9651c70688dd19ade62b45dc2897d9fa9a`](https://github.com/Knuckles-Team/agent-webui/commit/d3bf9a9651c70688dd19ade62b45dc2897d9fa9a).
 Seven fixture tests pass. Native host acceptance remains pending. This change
 does not add a test binding or claim new runtime verification for the row.
@@ -55,7 +55,7 @@ does not add a test binding or claim new runtime verification for the row.
 
 A newer pull-request revision must cancel the older run in the same release
 concurrency group. This prevents obsolete revisions from delaying the current
-host checks, including `WEBUI-API-R005`. Push and manual release runs must
+host checks, including `OVERSTORY-API-R005`. Push and manual release runs must
 keep the existing no-cancellation policy. The group key, gate timeouts and
 test scopes stay unchanged. Event contract tests cover PR cancellation and
 non-PR preservation. They do not establish native host acceptance.
@@ -67,7 +67,7 @@ hooks, but before pre-push hooks. This lets selected tests produce real
 execution evidence even when the later spec trailer check blocks delivery.
 Keep every command, test scope, failure gate and timeout unchanged. Scope
 selection still controls which tests run; ordering alone does not establish
-`WEBUI-API-R005` acceptance. Its real tests must run before adding a binding.
+`OVERSTORY-API-R005` acceptance. Its real tests must run before adding a binding.
 
 The existing error-code test file now checks the exact length boundary:
 64 uppercase characters remain in the log; 65 produce `error_code=none`.
@@ -84,7 +84,7 @@ to `8e2d7c50896a9e416ec76e53c4a9a585cc5f4d28`, with a regenerated lockfile.
 Merge that repair without changing its immutable pins or dependency lock.
 Import the real host module after numeric certification during wheel bootstrap.
 Write the receipt only after both imports pass. This check enables the existing
-host tests, including `WEBUI-API-R005`; it does not establish their acceptance.
+host tests, including `OVERSTORY-API-R005`; it does not establish their acceptance.
 Do not replace the public owner API or hide an import failure.
 
 ### 2026-10-11: bind the tested failure-log tests
@@ -95,11 +95,11 @@ and certified engine wheel. At 10:00:11 UTC, all five tests in
 `tests/test_log_failure_error_code.py` passed. All 19 selected tests passed.
 The tests cover typed and plain codes, missing or malformed codes, message
 redaction, and the 64/65-character boundary. Bind these tested tests to
-`WEBUI-API-R005` without changing their semantics. Generate the delivery
+`OVERSTORY-API-R005` without changing their semantics. Generate the delivery
 record after publishing this source. This evidence covers failure logging;
 it does not establish acceptance of the other consumer requirements.
 
-### Host composition without an engine (WEBUI-API-R011.1)
+### Host composition without an engine (OVERSTORY-API-R011.1)
 
 The WebUI holds no graph engine. A host composes its own routes on the real
 factory through `application_composer`. Graph data reaches the WebUI only
@@ -108,11 +108,11 @@ and session lifecycle. Injection does not create identity or authority.
 
 ## Responsive workspace route/action census consumer
 
-WEBUI-API-R003.2 remains the owner of populated domain-route census data and its CI classifier. WEBUI-APPS-R045 consumes that classification for each visible action: generated Arbora operation, explicitly browser-local behavior or unavailable capability. A redesigned button or WebMCP tool must not silently fall back to a host-owned domain implementation. R007 preview/confirmation/step-up, R011 identity/stream/cancel and R011.1 composed-host refusal remain unchanged. Complete the API census before claiming full capability coverage; UI route presence is not evidence that a backend operation is served.
+OVERSTORY-API-R003.2 remains the owner of populated domain-route census data and its CI classifier. OVERSTORY-APPS-R045 consumes that classification for each visible action: generated Arbora operation, explicitly browser-local behavior or unavailable capability. A redesigned button or WebMCP tool must not silently fall back to a host-owned domain implementation. R007 preview/confirmation/step-up, R011 identity/stream/cancel and R011.1 composed-host refusal remain unchanged. Complete the API census before claiming full capability coverage; UI route presence is not evidence that a backend operation is served.
 
 ## Catalog and source discovery use graph queries
 
-Catalog, glossary, stewardship, lineage, prompt-candidate and virtual-source questions use Arbora `ask`/`find` intent routing to `query.nl`, or typed `query.uql` for programmatic clients. Do not introduce or regenerate a bespoke `catalog.search`, `glossary.list/get`, `stewardship.list/get`, `catalog.lineage`, `catalog.prompt_candidates` or `query.sources` operation family. Arbora owns intent routing and the governed source executor; EG owns ontology, relevance and graph query semantics. This follows merged [Arbora #432](https://github.com/Knuckles-Team/arbora/pull/432), ARBORA-OPS-R855.1/R855.4–R855.6 and ARBORA-FLEET-R043.2/R043.3/R043.7. The related [EG #739](https://github.com/Knuckles-Team/epistemic-graph/pull/739) correction owns EG-TYPED-PACKS-R106/R108 and EG-DECISION-ENGINE-R814; its still-open specification is not a delivered producer receipt. The route/action census binds these query operations, preserving typed tenant/purpose, pagination, refusal and cancellation behavior. A local component app catalog or dashboard save contract does not imply a new metadata catalog read API.
+Catalog, glossary, stewardship, lineage, prompt-candidate and virtual-source questions use Arbora `ask`/`find` intent routing to `query.nl`, or typed `query.uql` for programmatic clients. Do not introduce or regenerate a bespoke `catalog.search`, `glossary.list/get`, `stewardship.list/get`, `catalog.lineage`, `catalog.prompt_candidates` or `query.sources` operation family. Arbora owns intent routing and the governed source executor; EG owns ontology, relevance and graph query semantics. This follows merged [Arbora #432](https://github.com/Knuckles-Team/arbora/pull/432), ARBORA-OPS-R855.1/R855.4–R855.6 and ARBORA-FLEET-R043.2/R043.3/R043.7. The related [EG #739](https://github.com/Knuckles-Team/epistemic-graph/pull/739) correction owns MEDULLA-TYPED-PACKS-R106/R108 and MEDULLA-DECISION-ENGINE-R814; its still-open specification is not a delivered producer receipt. The route/action census binds these query operations, preserving typed tenant/purpose, pagination, refusal and cancellation behavior. A local component app catalog or dashboard save contract does not imply a new metadata catalog read API.
 
 ## Amendment 2026-10-24: public execution adapter
 

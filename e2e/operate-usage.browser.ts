@@ -1,7 +1,7 @@
-// spec: WEBUI-APPS-R049.2.1
+// spec: OVERSTORY-APPS-R049.2.1
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
-// Browser qualification for WEBUI-APPS-R049.1.16; not a local verification receipt.
+// Browser qualification for OVERSTORY-APPS-R049.1.16; not a local verification receipt.
 // Synthetic source qualification only, not installed analytics producers.
 test.use({ trace: 'retain-on-failure', hasTouch: true })
 async function tabTo(page: Page, target: Locator) {

@@ -108,7 +108,7 @@ describe('UserManagementView', () => {
     identityResult = null
   })
 
-  it('shows the shared loading status message (WEBUI-DESIGN-R006) while the identity hook is still resolving', () => {
+  it('shows the shared loading status message (OVERSTORY-DESIGN-R006) while the identity hook is still resolving', () => {
     identityResult = { identity: READER_IDENTITY, loading: true }
     global.fetch = mockConfigureFetch({}) as unknown as typeof fetch
 
@@ -119,7 +119,7 @@ describe('UserManagementView', () => {
     expect(selfCard.getByRole('status')).toBeInTheDocument()
   })
 
-  it('shows the shared loading status message (WEBUI-DESIGN-R006) while the principals roster is still loading', () => {
+  it('shows the shared loading status message (OVERSTORY-DESIGN-R006) while the principals roster is still loading', () => {
     identityResult = { identity: ADMIN_IDENTITY, loading: false }
     global.fetch = vi.fn(() => new Promise(() => undefined)) as unknown as typeof fetch
 
@@ -189,7 +189,7 @@ describe('UserManagementView', () => {
     expect(screen.getByText(/do not have permission/i)).toBeInTheDocument()
   })
 
-  // spec: WEBUI-IDENTITY-R002
+  // spec: OVERSTORY-IDENTITY-R002
   it('renders live roles for a ready policy and lets an admin see revoke controls', async () => {
     identityResult = { identity: ADMIN_IDENTITY, loading: false }
     global.fetch = mockConfigureFetch({
@@ -211,7 +211,7 @@ describe('UserManagementView', () => {
     expect(screen.getByRole('button', { name: /Revoke admin from principal-42/i })).toBeInTheDocument()
   })
 
-  // spec: WEBUI-IDENTITY-R002
+  // spec: OVERSTORY-IDENTITY-R002
   it('does not show a grant/revoke control to a non-admin caller', async () => {
     identityResult = { identity: READER_IDENTITY, loading: false }
     global.fetch = mockConfigureFetch({

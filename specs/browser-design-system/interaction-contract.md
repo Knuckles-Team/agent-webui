@@ -79,7 +79,7 @@ copied guidance. Screenshot review and measured contrast are still required.
 
 ## Canopy Glass composition and density
 
-WEBUI-DESIGN-R002.1.1/R004.1.1 and WEBUI-APPS-R049.2.1 apply to one shared
+OVERSTORY-DESIGN-R002.1.1/R004.1.1 and OVERSTORY-APPS-R049.2.1 apply to one shared
 full-width header, not an additional shell. Work/Explore/Operate, current context, command/search entry and main actions stay visible and labelled. The header wraps into useful rows. Never shrink them to an icon-only capsule or place main
 navigation behind More. Secondary appearance utilities may use a disclosure.
 Keep the existing logo, route semantics and same-origin font; the material
@@ -114,7 +114,7 @@ system surfaces, text, selection and focus rather than preserving branded paint.
 
 ## Canopy Glass motion and preferences
 
-WEBUI-DESIGN-R005.2 builds on the existing reduced-motion contract. Runtime tokens
+OVERSTORY-DESIGN-R005.2 builds on the existing reduced-motion contract. Runtime tokens
 are `--motion-fast: 110ms`, `--motion-context: 180ms`, `--motion-panel: 220ms`
 and `--motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1)`. A genuine data update
 may highlight once for at most 600 ms and keeps its textual state afterward.

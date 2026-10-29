@@ -1,11 +1,11 @@
 /**
  * @file delivery-state.ts
- * @description Typed DCA/alert delivery-state contract (FIN-UI-R013.1). Due,
+ * @description Typed DCA/alert delivery-state contract (OVERSTORY-R013.1). Due,
  * missed, failed, replayed, paper-filled, and delivered are distinct
  * outcomes that must never collapse into one another; a paper fill is
  * never shown as a live fill, and a duplicated event ID or a channel retry
  * must not produce two visible receipts for the same event. Wiring into a
- * DCA/alert list component is FIN-UI-R013.2.
+ * DCA/alert list component is OVERSTORY-R013.2.
  */
 
 export const DELIVERY_STATES = ['due', 'missed', 'failed', 'replayed', 'paper_filled', 'delivered'] as const

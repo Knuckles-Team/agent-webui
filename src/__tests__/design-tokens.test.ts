@@ -1,6 +1,6 @@
 /**
  * @file design-tokens.test.ts
- * @description Token audit for WEBUI-DESIGN-R002 (docs/design-system.md). Confirms the
+ * @description Token audit for OVERSTORY-DESIGN-R002 (docs/design-system.md). Confirms the
  * color values documented there still match the live `src/index.css` source
  * and that every documented pairing clears its stated WCAG contrast target,
  * using the same OKLCH-to-sRGB and contrast math the knowledge-graph canvas
@@ -54,8 +54,8 @@ const DOCUMENTED_COLOR: Record<string, { light: string; dark: string }> = {
   '--input': { light: '#738170', dark: '#829680' },
 }
 
-describe('design-system token audit (WEBUI-DESIGN-R002)', () => {
-  // spec: WEBUI-DESIGN-R002
+describe('design-system token audit (OVERSTORY-DESIGN-R002)', () => {
+  // spec: OVERSTORY-DESIGN-R002
   it.each(Object.entries(DOCUMENTED_COLOR))('%s matches docs/design-system.md in :root and .dark', (name, doc) => {
     expect(DOC_SOURCE).toContain(doc.light.toLowerCase())
     expect(DOC_SOURCE).toContain(doc.dark.toLowerCase())
@@ -72,8 +72,8 @@ describe('design-system token audit (WEBUI-DESIGN-R002)', () => {
     expect(CSS_SOURCE).toMatch(/:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--ring\)/)
   })
 
-  // spec: WEBUI-DESIGN-R005
-  it('disables nonessential animation and transition motion under prefers-reduced-motion (WEBUI-DESIGN-R005)', () => {
+  // spec: OVERSTORY-DESIGN-R005
+  it('disables nonessential animation and transition motion under prefers-reduced-motion (OVERSTORY-DESIGN-R005)', () => {
     const reduceBlock = /@media \(prefers-reduced-motion: reduce\)\s*\{([^]*?)\n\}/.exec(CSS_SOURCE)
     expect(reduceBlock).not.toBeNull()
     expect(reduceBlock?.[1]).toMatch(/animation-duration:\s*0\.01ms\s*!important/)
@@ -110,15 +110,15 @@ function contrastCases(theme: 'light' | 'dark'): ContrastCase[] {
   ]
 }
 
-describe.each(['light', 'dark'] as const)('%s theme contrast targets (WEBUI-DESIGN-R002)', (theme) => {
-  // spec: WEBUI-DESIGN-R002
+describe.each(['light', 'dark'] as const)('%s theme contrast targets (OVERSTORY-DESIGN-R002)', (theme) => {
+  // spec: OVERSTORY-DESIGN-R002
   it.each(contrastCases(theme))('$name clears $target:1', ({ fg, bg, target }) => {
     const ratio = contrastRatio(cssColorToHex(fg, '#000000'), cssColorToHex(bg, '#ffffff'))
     expect(ratio).toBeGreaterThanOrEqual(target)
   })
 })
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 it.each(['light', 'dark'] as const)('keeps %s glass text readable over the bounded authored field', (theme) => {
   const tokens = theme === 'dark' ? DARK : LIGHT
   for (const material of [
@@ -169,7 +169,7 @@ it('keeps glass materials separate from semantic tokens and container opacity', 
   }
 })
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 it.each(['components/AuthModeBanner.tsx', 'components/ui/badge.tsx', 'components/views/SchedulingView.tsx'])(
   '%s pairs semantic action fills with their matching foreground',
   (path) => {
@@ -198,7 +198,7 @@ function compositeHex(foreground: string, background: string, alpha: number) {
   )
 }
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 it.each(['light', 'dark'] as const)('keeps %s semantic fill text readable at rest, hover and disabled', (theme) => {
   const tokens = theme === 'dark' ? DARK : LIGHT
   for (const fill of ['primary', 'destructive']) {
@@ -212,7 +212,7 @@ it.each(['light', 'dark'] as const)('keeps %s semantic fill text readable at res
   expect(contrastRatio(tokens['--muted-foreground'], tokens['--muted'])).toBeGreaterThanOrEqual(4.5)
 })
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 it('pins the approved palette and requested fifteen-percent glass refinement', () => {
   const approved = {
     '--foreground': '#111111',
@@ -249,7 +249,7 @@ it('pins the approved palette and requested fifteen-percent glass refinement', (
   expect(explore).toContain('backdrop-filter: blur(16px) saturate(115%)')
 })
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 it('uses quiet selection and aligned control type without losing keyboard focus', () => {
   const frame = readFileSync(resolve(import.meta.dirname, '../components/workspace/WorkspaceFrame.css'), 'utf-8')
   const explore = readFileSync(resolve(import.meta.dirname, '../components/workspace/ExploreWorkspace.css'), 'utf-8')
@@ -269,7 +269,7 @@ it('uses quiet selection and aligned control type without losing keyboard focus'
   expect(explore).toContain('color: var(--primary-foreground)')
 })
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 it.each(['light', 'dark'] as const)('keeps %s shared button states translucent and readable', (theme) => {
   const tokens = theme === 'dark' ? DARK : LIGHT
   for (const name of [
@@ -308,7 +308,7 @@ it.each(['light', 'dark'] as const)('keeps %s shared button states translucent a
 })
 
 it('keeps inventoried ordinary workspace actions on the shared button primitive', () => {
-  // WEBUI-DESIGN-R002.1.1: includes collapsed task and conversation actions.
+  // OVERSTORY-DESIGN-R002.1.1: includes collapsed task and conversation actions.
   for (const name of [
     'WorkWorkspace',
     'WorkTaskControls',
@@ -333,7 +333,7 @@ it('keeps inventoried ordinary workspace actions on the shared button primitive'
   expect(CSS_SOURCE).toContain('.ui-button:disabled')
 })
 
-// spec: WEBUI-DESIGN-R005.4
+// spec: OVERSTORY-DESIGN-R005.4
 it('keeps decorative stacking out of the default glass backdrop ancestry', () => {
   const wallpaper = readFileSync(
     resolve(import.meta.dirname, '../components/workspace/WorkspaceWallpaper.css'),

@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R004.4
+// spec: OVERSTORY-APPS-R004.4
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { currentPlanRunId, readCurrentPlan } from '@/lib/current-plan'
 

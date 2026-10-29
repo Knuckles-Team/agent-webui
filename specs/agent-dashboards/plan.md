@@ -1,4 +1,4 @@
-# WEBUI-DASH architecture
+# OVERSTORY-DASH architecture
 
 ## Reuse inventory
 
@@ -14,8 +14,8 @@ Dashboard { schema_version: 1, id, title, revision, params[], panels[] }
 Panel { id, title, viz: table|line|bar|kpi, query { kind: uql, text }, layout { x, y, w, h }, options }
 ```
 
-The document is the catalog asset of EG-TYPED-PACKS-R108. Arbora saves it under that asset type.
-The catalog page (WEBUI-DASH-R016) reads EG-TYPED-PACKS-R106 and R108 assets through the arbora catalog operations.
+The document is the catalog asset of MEDULLA-TYPED-PACKS-R108. Arbora saves it under that asset type.
+The catalog page (OVERSTORY-DASH-R016) reads MEDULLA-TYPED-PACKS-R106 and R108 assets through the arbora catalog operations.
 
 ## Interfaces
 
@@ -38,7 +38,7 @@ The `observability.live-dashboards` route at `/dashboards` shows fixed metric, l
 ## Amendment 2026-10-25: Overstory Studio display name
 
 Name the existing dashboard-authoring surface Overstory Studio. Keep the
-`agent-dashboards` family, WEBUI-DASH IDs, `/data-dashboards` route, document
+`agent-dashboards` family, OVERSTORY-DASH IDs, `/data-dashboards` route, document
 schema, storage keys and WebMCP tool identifiers unchanged. This is display
 alignment, not new dashboard implementation. Catalog persistence (R010),
 ownership/sharing (R012) and catalog discovery (R016) retain their unmet

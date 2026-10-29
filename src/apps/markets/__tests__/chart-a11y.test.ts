@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { allowsAnimation, chartSummaryText, directionWord } from '../chart-a11y'
 import { CHART } from './fixtures'
 
-// spec: FIN-UI-R016.1
-describe('chart-a11y (FIN-UI-R016.1)', () => {
+// spec: OVERSTORY-R016.1
+describe('chart-a11y (OVERSTORY-R016.1)', () => {
   it('summarizes a bar series in text a screen reader can announce', () => {
     const summary = chartSummaryText(CHART.bars, 'bullish')
     expect(summary.label).toMatch(/bars, trend rising, last close/)

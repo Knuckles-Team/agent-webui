@@ -1,4 +1,4 @@
-// spec: WEBUI-API-R011.4, WEBUI-APPS-R049.1.13
+// spec: OVERSTORY-API-R011.4, OVERSTORY-APPS-R049.1.13
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import fixture from './fixtures/execution-graph.json'
 import unicodeFixture from './fixtures/execution-graph-unicode.json'

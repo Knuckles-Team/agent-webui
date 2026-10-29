@@ -28,17 +28,17 @@ Built-in EG mode uses Arbora served account/session operations. OIDC mode uses t
 
 Renewal is server-authoritative and bounded by configured maximum lifetime. The host updates browser-safe session descriptors while upstream Arbora/EG retain authority and revocation semantics. Coordinate renewal across concurrent calls, reject renewal after logout/revocation, and bind WebSockets/streams to the same current context. Reauthentication may preserve safe unsent drafts but cannot silently replay side effects. Mode/tenant/session changes invalidate protected queries, receipts, selected privileged objects, tool catalogs and active control. Discard late old-context responses. No-auth displays no fictional session renewal.
 
-Dependencies: WEBUI-API-R011/R011.1 and WEBUI-APPS-R048/R050 consume this contract; Arbora identity/composition supplies the admission boundary, EG supplies local identity, and external providers supply OIDC. The deployment owner must bind concrete upstream requirement IDs and served operation versions before marking integration delivered. Source-only callback tests are insufficient: qualify installed packages and real admitted requests.
+Dependencies: OVERSTORY-API-R011/R011.1 and OVERSTORY-APPS-R048/R050 consume this contract; Arbora identity/composition supplies the admission boundary, EG supplies local identity, and external providers supply OIDC. The deployment owner must bind concrete upstream requirement IDs and served operation versions before marking integration delivered. Source-only callback tests are insufficient: qualify installed packages and real admitted requests.
 
 ### Producer bindings and incomplete effect migration
 
-[ARBORA-IDENTITY-R004.7, R004.4, R004.5 and R004.6](https://github.com/Knuckles-Team/arbora/tree/main/specs/identity-access) own the producer contracts. They cover mode composition, HTTP browser admission, same-owner dispatch fencing and anonymous effect migration respectively. WEBUI-IDENTITY-R003.1–R003.3/R010 consume them without claiming those candidate rows are merged or qualified. The dispatcher binds the exact request/task/caller and revalidates use-time authority after awaits. It preserves validation, policy, CAS and effect journals. A helper that only schedules work in an executor is not this dispatcher.
+[ARBORA-IDENTITY-R004.7, R004.4, R004.5 and R004.6](https://github.com/Knuckles-Team/arbora/tree/main/specs/identity-access) own the producer contracts. They cover mode composition, HTTP browser admission, same-owner dispatch fencing and anonymous effect migration respectively. OVERSTORY-IDENTITY-R003.1–R003.3/R010 consume them without claiming those candidate rows are merged or qualified. The dispatcher binds the exact request/task/caller and revalidates use-time authority after awaits. It preserves validation, policy, CAS and effect journals. A helper that only schedules work in an executor is not this dispatcher.
 
 Current direct WebUI enhanced handlers include filesystem writes/deletes, configuration and editor operations. No-auth cannot bypass their route or effect checks. A conservative anonymous read-route policy is an interim refusal boundary, not full no-auth delivery. Direct enhanced effects remain denied until canonical operation/effect migration. Migration preserves containment, parameter/target/action binding and required confirmation. EG adapter activation and cookie WebSocket admission remain refused until their actual caller/use-time and WebSocket contracts are qualified. Source regressions or an inactive fence do not close login, renewal, streaming, writes or full three-mode acceptance.
 
 ## Amendment: 2026-10-23 explicit deployment identity modes
 
-Extend WEBUI-IDENTITY-R003 with operator-selected `none`, `eg` and `oidc`
+Extend OVERSTORY-IDENTITY-R003 with operator-selected `none`, `eg` and `oidc`
 serving modes. The default remains authenticated. Missing or failed authenticated
 configuration never selects `none`. The explicit no-auth listener is loopback
 only. It binds an unauthenticated request actor with no credential or grant.
@@ -81,9 +81,9 @@ No session-boundary, anonymous read policy or operation admission is widened.
 
 ## Amendment: 2026-10-26 workspace account access
 
-Preserve the full WEBUI-IDENTITY-R004 account/session requirement. Track its
-workspace menu source interactions as WEBUI-IDENTITY-R004.1 and all remaining
-installed account/session acceptance as WEBUI-IDENTITY-R004.2. Reuse the existing
+Preserve the full OVERSTORY-IDENTITY-R004 account/session requirement. Track its
+workspace menu source interactions as OVERSTORY-IDENTITY-R004.1 and all remaining
+installed account/session acceptance as OVERSTORY-IDENTITY-R004.2. Reuse the existing
 account menu and sign-out implementation in the shared Work header; do not add
 a second authentication policy or require a legacy navigation detour.
 
@@ -91,4 +91,4 @@ The source child uses fixture identity and mocked HTTP responses. Its passing
 component tests do not qualify native revocation, cookie replay, provider
 interoperability or full desktop/mobile accessibility. Keep the installed child
 and parent incomplete until their exact-version journeys pass. Do not bind these
-source tests to the broad parent or WEBUI-IDENTITY-R009.
+source tests to the broad parent or OVERSTORY-IDENTITY-R009.

@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R005.3.1, WEBUI-DESIGN-R005.4, WEBUI-DESIGN-R005.5
+// spec: OVERSTORY-DESIGN-R005.3.1, OVERSTORY-DESIGN-R005.4, OVERSTORY-DESIGN-R005.5
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ThemeProvider } from '../../theme-provider'

@@ -81,7 +81,7 @@ describe('sidebar link navigation', () => {
   })
 })
 
-// spec: WEBUI-APPS-R001
+// spec: OVERSTORY-APPS-R001
 it('renders only available app links after the real catalog query resolves', async () => {
   let resolveCatalog!: (response: Response) => void
   const catalog = new Promise<Response>((resolve) => {

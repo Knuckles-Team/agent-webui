@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.4
+// spec: OVERSTORY-APPS-R049.1.4
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   FleetCatalogSchema,
@@ -85,7 +85,7 @@ describe('Operate typed navigation', () => {
   })
 })
 
-// spec: WEBUI-APPS-R046.2.2
+// spec: OVERSTORY-APPS-R046.2.2
 it('round trips catalog identities independently of retained fleet context', () => {
   const state = {
     server: 'fleet',

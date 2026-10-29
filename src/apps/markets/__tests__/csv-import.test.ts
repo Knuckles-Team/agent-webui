@@ -14,8 +14,8 @@ const MAPPING: ColumnMapping = {
   },
 }
 
-// spec: FIN-UI-R014.1
-describe('csv-import (FIN-UI-R014.1)', () => {
+// spec: OVERSTORY-R014.1
+describe('csv-import (OVERSTORY-R014.1)', () => {
   it('accepts a complete, unambiguous mapping', () => {
     expect(mappingErrors(HEADERS, MAPPING)).toEqual([])
   })

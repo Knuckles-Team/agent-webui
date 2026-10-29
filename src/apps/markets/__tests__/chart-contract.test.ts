@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { decimate, decimationPreservesFinalizedOutput, isValidCandleBar, validateSeriesInput } from '../chart-contract'
 import { CHART } from './fixtures'
 
-// spec: FIN-UI-R002.1, FIN-UI-R008.1
-describe('chart-contract (FIN-UI-R002.1)', () => {
+// spec: OVERSTORY-R002.1, OVERSTORY-R008.1
+describe('chart-contract (OVERSTORY-R002.1)', () => {
   it('accepts a complete OHLC candle series and rejects an inconsistent bar', () => {
     expect(validateSeriesInput({ kind: 'candle', bars: CHART.bars })).toEqual({ valid: true })
     const broken = { ...CHART.bars[0], h: CHART.bars[0].l - 1 }

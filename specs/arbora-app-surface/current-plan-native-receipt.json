@@ -1,5 +1,5 @@
 {
-  "requirement": "WEBUI-APPS-R004.4",
+  "requirement": "OVERSTORY-APPS-R004.4",
   "observed_at": "2026-10-24T16:15:59Z",
   "qualification": "Released native producer to actual registered Arbora operation through WebUI host; synthetic browser identity seam",
   "webui_executed_source": "ea34a07ce134595aeca78fa8cf8370c55ff52de5",

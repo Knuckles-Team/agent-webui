@@ -23,8 +23,8 @@ const MARGIN_SIM: ChartOverlay = {
 }
 const FIXTURE = [TREND_FLIP, DCA_BUY, COST_BASIS, MARGIN_SIM]
 
-describe('overlay-wiring (FIN-UI-R010.2)', () => {
-  // spec: FIN-UI-R010.2
+describe('overlay-wiring (OVERSTORY-R010.2)', () => {
+  // spec: OVERSTORY-R010.2
   it('aligns markers to the correct bars and versions in both full-resolution and decimated views', () => {
     const full = alignOverlaysToBars(FIXTURE, FULL_BARS)
     expect(full).toEqual([
@@ -44,7 +44,7 @@ describe('overlay-wiring (FIN-UI-R010.2)', () => {
     ])
   })
 
-  // spec: FIN-UI-R010.2
+  // spec: OVERSTORY-R010.2
   it('never changes an overlay kind, version, or simulation flag when the view is decimated', () => {
     expect(decimationPreservesOverlayIdentity(FIXTURE, FULL_BARS, DECIMATED_BARS)).toBe(true)
   })

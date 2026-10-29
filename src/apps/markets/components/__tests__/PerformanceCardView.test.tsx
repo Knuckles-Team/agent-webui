@@ -4,7 +4,7 @@ import { PerformanceCardView } from '../PerformanceCardView'
 import type { PerformanceCard } from '../../performance-card'
 
 // Multi-currency cash flows, dividends, splits, and fees are the owning
-// service's concern (FIN-UI-R011.1); this fixture is the decimal string it hands
+// service's concern (OVERSTORY-R011.1); this fixture is the decimal string it hands
 // to the UI, with trailing-zero precision the UI must never recompute.
 const EUR_WITH_FEES: PerformanceCard = {
   available: true,
@@ -39,8 +39,8 @@ const UNAVAILABLE: PerformanceCard = {
   stale: false,
 }
 
-describe('PerformanceCardView (FIN-UI-R011.2)', () => {
-  // spec: FIN-UI-R011.2
+describe('PerformanceCardView (OVERSTORY-R011.2)', () => {
+  // spec: OVERSTORY-R011.2
   it("reproduces the owner's decimal string verbatim with its currency, source, as-of, and session", () => {
     render(<PerformanceCardView card={EUR_WITH_FEES} />)
     expect(screen.getByTestId('performance-card-value')).toHaveTextContent('12.340000')
@@ -50,14 +50,14 @@ describe('PerformanceCardView (FIN-UI-R011.2)', () => {
     expect(screen.queryByTestId('performance-card-stale-badge')).not.toBeInTheDocument()
   })
 
-  // spec: FIN-UI-R011.2
+  // spec: OVERSTORY-R011.2
   it('shows an explicit stale state alongside the unmodified value, never a recomputed figure', () => {
     render(<PerformanceCardView card={STALE_USD} />)
     expect(screen.getByTestId('performance-card-stale-badge')).toBeInTheDocument()
     expect(screen.getByTestId('performance-card-value')).toHaveTextContent('-3.5')
   })
 
-  // spec: FIN-UI-R011.2
+  // spec: OVERSTORY-R011.2
   it('shows an explicit unavailable state rather than any computed figure', () => {
     render(<PerformanceCardView card={UNAVAILABLE} />)
     expect(screen.getByText('Performance unavailable')).toBeInTheDocument()

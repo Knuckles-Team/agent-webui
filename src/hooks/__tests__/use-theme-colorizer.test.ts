@@ -24,7 +24,7 @@ describe('normalizeBaseColor', () => {
   })
 })
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 afterEach(() => {
   vi.restoreAllMocks()
   localStorage.removeItem('pydantic-brand-color')
@@ -125,7 +125,7 @@ it('keeps action text readable across the full custom hue circle in light and da
   }
 })
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 it('keeps custom action contrast and metadata in sync with system-resolved light and dark', async () => {
   let change = () => undefined
   const media = {

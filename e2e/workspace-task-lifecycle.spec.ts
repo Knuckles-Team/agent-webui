@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.3
 import { test, expect } from '@playwright/test'
 import { operation, taskPage, refusal, taskReadFixture } from './fixtures/work-task-operations'
 
@@ -132,7 +132,7 @@ test('trace inspection preserves Work context through parent, history and refres
   await expect(page.getByText('Status: completed', { exact: true })).toBeVisible()
 })
 
-// spec: WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.3
 for (const viewport of [
   { width: 1280, height: 900 },
   { width: 390, height: 844 },
@@ -268,7 +268,7 @@ for (const viewport of [
   })
 }
 
-// spec: WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.3
 for (const viewport of [
   { width: 1280, height: 900 },
   { width: 390, height: 844 },
@@ -402,7 +402,7 @@ for (const viewport of [
   })
 }
 
-// spec: WEBUI-APPS-R049.1.2
+// spec: OVERSTORY-APPS-R049.1.2
 for (const viewport of [
   { width: 1280, height: 900 },
   { width: 390, height: 844 },

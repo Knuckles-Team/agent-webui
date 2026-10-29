@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { applyEdit, openDocument, redo, undo } from '../history'
 import { addPanel, createDashboard } from '../model'
 
-// spec: WEBUI-DASH-R008
-describe('undo history and activity log (WEBUI-DASH-R008)', () => {
+// spec: OVERSTORY-DASH-R008
+describe('undo history and activity log (OVERSTORY-DASH-R008)', () => {
   it('logs the actor, undoes and redoes agent edits', () => {
     const base = createDashboard('d')
     let state = openDocument(base)

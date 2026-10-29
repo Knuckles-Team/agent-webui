@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R005.1.2
+// spec: OVERSTORY-APPS-R005.1.2
 import type { ReactNode } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -76,7 +76,7 @@ describe('real shell and sidebar role filtering', () => {
   })
 })
 
-// spec: WEBUI-APPS-R005.6.2
+// spec: OVERSTORY-APPS-R005.6.2
 it.each([
   ['/privacy', false, 'floating'],
   ['/terms', false, 'floating'],

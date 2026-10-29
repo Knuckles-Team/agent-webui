@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R046.1
+// spec: OVERSTORY-APPS-R046.1
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ROUTES } from '@/lib/nav-registry'
@@ -52,7 +52,7 @@ describe('workspace branch navigator', () => {
   })
 })
 
-// spec: WEBUI-APPS-R046.2.1
+// spec: OVERSTORY-APPS-R046.2.1
 it('opens privacy management inside Settings on retained routes without granting consent', () => {
   window.localStorage.removeItem('agent-webui.consent')
   mount()

@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.2
+// spec: OVERSTORY-APPS-R049.1.2
 import { useState } from 'react'
 import { fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'

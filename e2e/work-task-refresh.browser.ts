@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.3
 // Native keyboard acceptance with synthetic reads, not installed-provider qualification.
 import { expect, test } from '@playwright/test'
 import { operation, taskPage, refusal } from './fixtures/work-task-operations'

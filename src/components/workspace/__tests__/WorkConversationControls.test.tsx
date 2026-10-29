@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.3
 import { act, fireEvent, screen } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'

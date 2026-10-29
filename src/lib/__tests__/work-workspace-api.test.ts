@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.3
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api-validation'
 import { workApi, retryWorkTaskRead } from '../work-workspace'
@@ -131,7 +131,7 @@ describe('Work existing contract adapters', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.3
 it('cancels through the existing facade with an encoded ID and validates the response', async () => {
   const fetch = vi
     .fn()
@@ -151,7 +151,7 @@ it('rejects malformed cancellation IDs before any request and preserves provider
   await expect(workApi.cancelTask('task-a')).rejects.toThrow('403')
 })
 
-// spec: WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.3
 it('does not retry explicit task refusal but bounds transient retries', function checkTaskRefusalRetries() {
   for (const status of [401, 403, 404, 501]) expect(retryWorkTaskRead(0, new ApiError(status, 'refused'))).toBe(false)
   expect(retryWorkTaskRead(0, new ApiError(503, 'temporarily unavailable'))).toBe(true)

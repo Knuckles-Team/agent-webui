@@ -1,6 +1,6 @@
 /**
  * @file query.ts
- * @description Runs one panel query (WEBUI-DASH-R004). The query goes through the
+ * @description Runs one panel query (OVERSTORY-DASH-R004). The query goes through the
  * Atlas UQL adapter, which posts to the governed graph query route served by arbora.
  * The browser never contacts a source. Unsafe text is refused before sending.
  */

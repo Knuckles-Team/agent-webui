@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-// spec: WEBUI-APPS-R049.1.6
+// spec: OVERSTORY-APPS-R049.1.6
 import { WorkspaceCommandsProvider, WorkspaceCommandPalette } from '../WorkspaceCommands'
-// spec: WEBUI-APPS-R049.1.1
+// spec: OVERSTORY-APPS-R049.1.1
 import { PageContextProvider, usePageContextEnvelope } from '@/lib/page-context'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -134,7 +134,7 @@ describe('retained Explore investigation', () => {
     expect(window.location.search).toBe('?q=sample+query')
   })
 
-  // spec: WEBUI-APPS-R049.2.1
+  // spec: OVERSTORY-APPS-R049.2.1
   it('only opens detail for a selection and closes back to the retained searchable collection', async () => {
     renderWorkspace()
     expect(screen.queryByRole('region', { name: 'Record details' })).not.toBeInTheDocument()
@@ -269,7 +269,7 @@ describe('typed Explore destination authority', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049.2.1
+// spec: OVERSTORY-APPS-R049.2.1
 it('uses a returned related-record title without inventing identity or fetching another record', async () => {
   vi.mocked(api.ontologySearch).mockResolvedValueOnce({
     total: 2,

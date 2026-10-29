@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R004.2.1
+// spec: OVERSTORY-DESIGN-R004.2.1
 import { expect, test } from '@playwright/test'
 
 for (const simulatedKeyboard of [true, false]) {

@@ -73,8 +73,8 @@ const referencedViewFiles = new Set(
 )
 
 describe('nav-registry: ROUTES', () => {
-  // Partial coverage for WEBUI-APPS-R005.1; rendered navigation acceptance remains open.
-  // spec: WEBUI-APPS-R005.1.1
+  // Partial coverage for OVERSTORY-APPS-R005.1; rendered navigation acceptance remains open.
+  // spec: OVERSTORY-APPS-R005.1.1
   it('requires a recognized minimum role on every registered route', () => {
     for (const route of ROUTE_REGISTRY) {
       expect(ROLE_ORDER, `${route.id} is missing a valid minimum role`).toContain(route.minRole)
@@ -92,8 +92,8 @@ describe('nav-registry: ROUTES', () => {
     }
   })
 
-  // Partial coverage for WEBUI-APPS-R005.6; rendered purpose visibility remains open.
-  // spec: WEBUI-APPS-R005.6.1
+  // Partial coverage for OVERSTORY-APPS-R005.6; rendered purpose visibility remains open.
+  // spec: OVERSTORY-APPS-R005.6.1
   it('gives every route a real, non-placeholder blurb', () => {
     const placeholder = /^(todo|tbd|fixme|placeholder|lorem ipsum|description here|change me)\b/i
     for (const route of ROUTE_REGISTRY) {
@@ -190,7 +190,7 @@ describe('nav-registry: ROUTES', () => {
   })
 })
 
-// spec: WEBUI-APPS-R045, WEBUI-APPS-R049.1.2
+// spec: OVERSTORY-APPS-R045, OVERSTORY-APPS-R049.1.2
 it('limits compatibility redirects to audited entries and registered terminal destinations', () => {
   expect(
     ROUTES.filter((route) => route.redirects)

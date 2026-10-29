@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.6
+// spec: OVERSTORY-APPS-R049.1.6
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Role } from '@/lib/nav-registry'
@@ -203,7 +203,7 @@ describe('bounded workspace commands', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049.1.14, WEBUI-APPS-R049.1.15, WEBUI-APPS-R049.1.16
+// spec: OVERSTORY-APPS-R049.1.14, OVERSTORY-APPS-R049.1.15, OVERSTORY-APPS-R049.1.16
 describe('native lens command admission', () => {
   const graph = {
     id: 'graph',
@@ -259,7 +259,7 @@ describe('native lens command admission', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049.1.16
+// spec: OVERSTORY-APPS-R049.1.16
 describe('legacy Operate map continuity', () => {
   function Map() {
     const navigation = useWorkspaceCommandNavigation()

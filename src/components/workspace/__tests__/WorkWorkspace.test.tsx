@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.3, WEBUI-APPS-R004.4, WEBUI-APPS-R049.1.15
+// spec: OVERSTORY-APPS-R049.1.3, OVERSTORY-APPS-R004.4, OVERSTORY-APPS-R049.1.15
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -495,7 +495,7 @@ it('keeps a workflow preview while inspecting the selected task without retarget
   expect(run).not.toHaveBeenCalled()
 })
 
-// spec: WEBUI-APPS-R049.1.3, WEBUI-APPS-R049.2.1
+// spec: OVERSTORY-APPS-R049.1.3, OVERSTORY-APPS-R049.2.1
 it('keeps inspection secondary by default and opens real task deep links', async () => {
   const view = mount(false)
   expect(screen.getByText('Tasks and conversations').closest('details')).not.toHaveAttribute('open')

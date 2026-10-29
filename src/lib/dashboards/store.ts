@@ -1,7 +1,7 @@
 /**
  * @file store.ts
- * @description Dashboard persistence (WEBUI-DASH-R011). Arbora's dashboard save
- * operations are not served yet (WEBUI-DASH-R010), so the interim store keeps
+ * @description Dashboard persistence (OVERSTORY-DASH-R011). Arbora's dashboard save
+ * operations are not served yet (OVERSTORY-DASH-R010), so the interim store keeps
  * documents in browser local storage and reports every save as local and pending.
  * Storage failure never loses the in-memory document.
  */

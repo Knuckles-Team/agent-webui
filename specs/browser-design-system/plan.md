@@ -18,7 +18,7 @@ Run `pnpm install --frozen-lockfile`, `uv venv --python 3.12`, `uv pip install -
 
 ## Free-scaling workspace design
 
-WEBUI-DESIGN-R002.1/R004.1/R004.2/R005.1/R010 extend the current token, accessibility and responsive owners. A single focused pane on small screens retains persistent context and a visible pane switcher. Larger screens progressively add related panes. Container/visual viewport constraints, content size and pointer capability determine layout, not a whitelist of device names. Test representative CSS dimensions and generated intermediate sizes; do not invent Galaxy Fold hardware specifications. Internal wide-data regions are labelled and keyboard-scrollable. Every editor, chart, admin action and leaf remains reachable.
+OVERSTORY-DESIGN-R002.1/R004.1/R004.2/R005.1/R010 extend the current token, accessibility and responsive owners. A single focused pane on small screens retains persistent context and a visible pane switcher. Larger screens progressively add related panes. Container/visual viewport constraints, content size and pointer capability determine layout, not a whitelist of device names. Test representative CSS dimensions and generated intermediate sizes; do not invent Galaxy Fold hardware specifications. Internal wide-data regions are labelled and keyboard-scrollable. Every editor, chart, admin action and leaf remains reachable.
 
 Prefer compact native DOM controls and the existing primitives. Coarse-pointer 44 px targets can coexist with compact desktop 32–36 px targets when accessibility requirements allow. Suggested motion ranges are feedback 120 ms, panel 180–240 ms and semantic transition 240–320 ms, subordinate to measured budgets and reduced-motion preferences. Animations use transform/opacity where appropriate, are cancellable, and never become an essential information channel. No perpetual background decoration or continuous idle requestAnimationFrame. Respect CSP nonces and same-origin font requirements.
 
@@ -26,12 +26,12 @@ Reuse table virtualization, graph worker layout and LOD transport rather than ad
 
 ## Consolidated workspace acceptance
 
-WEBUI-APPS-R049.1/R049.2 define three primary contexts instead of page-per-feature navigation. Density and responsiveness must serve that redesigned composition. Preserving an old standalone page under a compact rail is not visual acceptance. Reuse accessible domain widgets inside the new context surfaces. Record task navigation and scrolling outcomes alongside performance, focus and viewport evidence.
+OVERSTORY-APPS-R049.1/R049.2 define three primary contexts instead of page-per-feature navigation. Density and responsiveness must serve that redesigned composition. Preserving an old standalone page under a compact rail is not visual acceptance. Reuse accessible domain widgets inside the new context surfaces. Record task navigation and scrolling outcomes alongside performance, focus and viewport evidence.
 
 ## Loaded workspace branch navigation
 
-Extend the existing command catalog for partial WEBUI-DESIGN-R005.1 and
-WEBUI-APPS-R046.2.2 delivery. Branches and the flat searchable list consume the
+Extend the existing command catalog for partial OVERSTORY-DESIGN-R005.1 and
+OVERSTORY-APPS-R046.2.2 delivery. Branches and the flat searchable list consume the
 same validated, caller-visible destinations. Context roots contain loaded leaves;
 confirmed fleet capabilities nest under their server and trace nodes under their
 loaded trace. No other relationship is inferred. Drilling changes readable DOM
@@ -60,8 +60,8 @@ migrate legacy pages or prove all dynamic leaves and installed providers.
 
 ## Canopy Glass workspace continuation — 2026-10-24
 
-WEBUI-DESIGN-R002.1.1/R004.1.1/R005.2 extend the existing token, responsive
-and motion owners. WEBUI-APPS-R049.2.1 owns the bounded shared-shell and
+OVERSTORY-DESIGN-R002.1.1/R004.1.1/R005.2 extend the existing token, responsive
+and motion owners. OVERSTORY-APPS-R049.2.1 owns the bounded shared-shell and
 Explore list/detail implementation. This supersedes the earlier compact-header
 presentation, not its retained state, map resizing, authority or focus contracts.
 
@@ -107,7 +107,7 @@ metadata and readable list rows. Do not fabricate evidence, confidence, activity
 or backend relationships to fill space. Keep empty, denied and failed states
 honest and actionable. Subsequent graph, editor, run, administration, authentication
 and remaining route work stays under R002/R003/R004/R005/R006 and
-WEBUI-APPS-R049.1.2/R049.2; this slice cannot complete the redesign.
+OVERSTORY-APPS-R049.1.2/R049.2; this slice cannot complete the redesign.
 
 R010 retains declared device/browser/network/fixture provenance and all existing
 budgets. Qualify 10,000 evidence records, a 2,000-node/5,000-edge graph and a
@@ -119,7 +119,7 @@ accepts performance, all-route mobile parity or manual accessibility.
 
 ## Glass theme transitions
 
-The existing WEBUI-DESIGN-R002 token owner includes the glass palette in `src/index.css`.
+The existing OVERSTORY-DESIGN-R002 token owner includes the glass palette in `src/index.css`.
 `ThemeProvider` must select one theme class and retire the previous palette when the user changes themes.
 The provider must preserve unrelated root classes and resolve system selection from the current color preference.
 Mounted transition tests cover repeated glass-to-light, glass-to-dark and glass-to-system changes.
@@ -127,7 +127,7 @@ These tests do not establish native task contrast or explain the reported glass 
 
 ## Command palette cancellation focus
 
-Under WEBUI-DESIGN-R005.1, capture the actual focused opener when the modal opens.
+Under OVERSTORY-DESIGN-R005.1, capture the actual focused opener when the modal opens.
 On cancellation, restore a connected, visible, enabled opener or the visible command trigger.
 The expanded header keeps the command trigger reachable through reflow.
 If an opener is removed, choose a connected, visible fallback without opening a utility disclosure.
@@ -135,7 +135,7 @@ Native selection and URL navigation retain destination-owned focus rather than r
 
 ## Documentation screenshot refresh — 2026-10-24
 
-WEBUI-DESIGN-R011 owns repeatable visual documentation of the workspace.
+OVERSTORY-DESIGN-R011 owns repeatable visual documentation of the workspace.
 Capture the actual Work, Explore and Operate routes at existing narrow and wide sizes.
 Use fixed synthetic responses, time, theme and reduced motion.
 Wait for scene content, local fonts and layout. Refuse live backend traffic.
@@ -346,7 +346,7 @@ This source slice does not close broader design or live-weather requirements.
 
 ## Named palette continuation
 
-Extend WEBUI-DESIGN-R002.1.1 through the existing colorizer and Settings.
+Extend OVERSTORY-DESIGN-R002.1.1 through the existing colorizer and Settings.
 The green choice restores the exact accepted CSS baseline. Named alternatives
 derive coordinated action, neutral and focus tokens. Semantic status colors,
 typography, wallpaper and glass geometry stay unchanged. Preserve stored legacy

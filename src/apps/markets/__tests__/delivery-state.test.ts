@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { dedupeByEventId, isLiveFill, type DeliveryReceipt } from '../delivery-state'
 
-// spec: FIN-UI-R013.1
-describe('delivery-state (FIN-UI-R013.1)', () => {
+// spec: OVERSTORY-R013.1
+describe('delivery-state (OVERSTORY-R013.1)', () => {
   it('keeps every distinct delivery state distinct', () => {
     expect(isLiveFill('delivered')).toBe(true)
     expect(isLiveFill('paper_filled')).toBe(false)

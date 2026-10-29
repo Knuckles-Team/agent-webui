@@ -1,6 +1,6 @@
 /**
  * @file history.ts
- * @description Undo, redo and the visible activity log (WEBUI-DASH-R008). Agent and
+ * @description Undo, redo and the visible activity log (OVERSTORY-DASH-R008). Agent and
  * user edits take the same path; each entry records its actor so the page can show
  * who changed what.
  */

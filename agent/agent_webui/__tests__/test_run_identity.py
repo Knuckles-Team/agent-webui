@@ -1,6 +1,6 @@
-"""WEBUI-API-R011.2: conversation labels and admitted run identity stay distinct."""
+"""OVERSTORY-API-R011.2: conversation labels and admitted run identity stay distinct."""
 
-# spec: WEBUI-API-R011.2.1
+# spec: OVERSTORY-API-R011.2.1
 
 import asyncio
 from typing import Any

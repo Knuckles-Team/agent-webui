@@ -167,7 +167,7 @@ describe('SkillsView MCP server catalog', () => {
     expect(screen.getByText(/authoritative fleet catalog has no live server registrations/)).toBeInTheDocument()
   })
 
-  it('shows the shared loading status message (WEBUI-DESIGN-R006) before the catalog resolves', () => {
+  it('shows the shared loading status message (OVERSTORY-DESIGN-R006) before the catalog resolves', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => new Promise(() => undefined)),
@@ -177,7 +177,7 @@ describe('SkillsView MCP server catalog', () => {
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
 
-  it('shows the shared empty status message (WEBUI-DESIGN-R006) when an expanded server exposes no tools', async () => {
+  it('shows the shared empty status message (OVERSTORY-DESIGN-R006) when an expanded server exposes no tools', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/mcp/servers/') && url.includes('/tools')) {

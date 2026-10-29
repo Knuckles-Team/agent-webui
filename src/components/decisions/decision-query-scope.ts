@@ -1,7 +1,7 @@
 /**
  * @file decision-query-scope.ts
  * @description Tenant/purpose cache scoping for decision and evaluation
- * queries (WEBUI-DECIDE-R007). Two concerns, kept separate on purpose:
+ * queries (OVERSTORY-DECIDE-R007). Two concerns, kept separate on purpose:
  *
  * 1. `decisionQueryKey` builds a `@tanstack/react-query` `queryKey` tuple that
  *    includes tenant and purpose. react-query already keys its cache by

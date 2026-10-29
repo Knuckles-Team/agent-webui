@@ -1,7 +1,7 @@
 /**
  * @file tools.ts
  * @description WebMCP tools the Dashboards page exposes to the chat agent
- * (WEBUI-DASH-R007, R009). Every tool validates input and output, returns a small
+ * (OVERSTORY-DASH-R007, R009). Every tool validates input and output, returns a small
  * typed result inside the 1,500-byte budget, and edits through the controller so
  * the change shows in the activity log and can be undone. Removing a panel waits for
  * the person to approve it in the page.

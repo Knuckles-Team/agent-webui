@@ -126,7 +126,7 @@ describe('UserMenu', () => {
   })
 })
 
-// spec: WEBUI-IDENTITY-R004.1
+// spec: OVERSTORY-IDENTITY-R004.1
 describe('workspace account control', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
