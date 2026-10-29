@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exist. agent-webui ships only as a PyPI package (wheel and sdist) that Arbora
   installs through its `webui` extra and serves in-process.
 
+## [2.8.3] - 2026-10-29
+
+### Security
+- **Dependencies** — adopt meristem 4.0.1 (pydantic-ai-harness 0.63, which fixes
+  CVE-2026-114386) with `pydantic-ai-slim` pinned to 2.63.0.
+
 ## [2.8.2] - 2026-10-24
 
 ### Fixed

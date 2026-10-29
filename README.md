@@ -61,7 +61,7 @@ credentials and gateway delegation on the server side.
 |---|---|
 | Browser presentation, local interaction state, accessible route composition, and the FastAPI boundary | Arbora owns public routing, identity, policy, and fleet supervision; Meristem applies supplied plans; Medulla owns durable knowledge; connector services own external-system effects |
 
-Current package Version: 2.8.2.
+Current package Version: 2.8.3.
 
 ## Key capabilities
 

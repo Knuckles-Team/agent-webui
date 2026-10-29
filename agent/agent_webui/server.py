@@ -79,7 +79,7 @@ if _LOGFIRE_ENABLED:
     )
     logfire.instrument_pydantic_ai()
 
-__version__ = '2.8.2'
+__version__ = '2.8.3'
 
 print(f'Agent WebUI v{__version__}', file=sys.stderr)
 
