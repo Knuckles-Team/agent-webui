@@ -85,8 +85,10 @@ jobs:
         with:
           repository: Knuckles-Team/pipelines
           ref: main
+          # wheel-readiness imports pipelines_hooks from this checkout (pipelines 24e10f4).
           sparse-checkout: |
             .github/actions
+            pipelines_hooks
           path: .pipeline-contract
           persist-credentials: false
 
