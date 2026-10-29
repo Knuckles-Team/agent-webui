@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.3
 import { describe, expect, it } from 'vitest'
 import { taskOutput, taskReferences } from '../work-task-inspection'
 const artifact = { artifactId: 'reply-a', name: 'Reply', parts: [{ kind: 'text', text: 'Recorded answer' }] }

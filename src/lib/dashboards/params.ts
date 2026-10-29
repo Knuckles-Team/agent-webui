@@ -1,6 +1,6 @@
 /**
  * @file params.ts
- * @description Dashboard parameters (WEBUI-DASH-R013). A query may contain
+ * @description Dashboard parameters (OVERSTORY-DASH-R013). A query may contain
  * `{{name}}` placeholders. Each resolves to a validated scalar: numbers print as
  * numbers and text prints as a quoted literal with no quote or control character,
  * so a parameter value can never change the shape of the query.

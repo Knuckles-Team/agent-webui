@@ -1,7 +1,7 @@
 /**
  * @file DashboardParts.tsx
  * @description Parts of the Dashboards page: the approval banner, the parameter
- * fields and the panel form (WEBUI-DASH-R006, R009, R013).
+ * fields and the panel form (OVERSTORY-DASH-R006, R009, R013).
  */
 import { Plus } from 'lucide-react'
 import type { Ref } from 'react'

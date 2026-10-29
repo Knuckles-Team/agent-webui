@@ -1,10 +1,10 @@
 /**
- * Release gate for consistent product branding (WEBUI-APPS-R038, WEBUI-APPS-R002).
+ * Release gate for consistent product branding (OVERSTORY-APPS-R038, OVERSTORY-APPS-R002).
  *
  * Confirms the browser-facing title/metadata/web manifest, the docs site
  * name, and the README all present the Overstory product identity. This does
  * not check package, import, or environment naming — that is a separate,
- * larger identifier rename tracked by WEBUI-APPS-R039/WEBUI-APPS-R003.
+ * larger identifier rename tracked by OVERSTORY-APPS-R039/OVERSTORY-APPS-R003.
  */
 import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'

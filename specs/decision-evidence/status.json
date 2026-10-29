@@ -1,21 +1,21 @@
 {
   "schema_version": 2,
-  "spec_id": "WEBUI-DECIDE",
+  "spec_id": "OVERSTORY-DECIDE",
   "owner_repo": "overstory",
   "delivery_state": "VERIFIED",
   "requirement_ids": [
-    "WEBUI-DECIDE-R001",
-    "WEBUI-DECIDE-R003",
-    "WEBUI-DECIDE-R004",
-    "WEBUI-DECIDE-R005",
-    "WEBUI-DECIDE-R006",
-    "WEBUI-DECIDE-R007",
-    "WEBUI-DECIDE-R008",
-    "WEBUI-DECIDE-R002"
+    "OVERSTORY-DECIDE-R001",
+    "OVERSTORY-DECIDE-R003",
+    "OVERSTORY-DECIDE-R004",
+    "OVERSTORY-DECIDE-R005",
+    "OVERSTORY-DECIDE-R006",
+    "OVERSTORY-DECIDE-R007",
+    "OVERSTORY-DECIDE-R008",
+    "OVERSTORY-DECIDE-R002"
   ],
   "requirements": [
     {
-      "id": "WEBUI-DECIDE-R001",
+      "id": "OVERSTORY-DECIDE-R001",
       "title": "Evaluation dashboard shows calibration and coverage",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -28,7 +28,7 @@
       ]
     },
     {
-      "id": "WEBUI-DECIDE-R003",
+      "id": "OVERSTORY-DECIDE-R003",
       "title": "Decision explorer cites premises, derivations and certificate",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -41,7 +41,7 @@
       ]
     },
     {
-      "id": "WEBUI-DECIDE-R004",
+      "id": "OVERSTORY-DECIDE-R004",
       "title": "Why-not explanations run on demand within a bounded budget",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -57,7 +57,7 @@
       ]
     },
     {
-      "id": "WEBUI-DECIDE-R005",
+      "id": "OVERSTORY-DECIDE-R005",
       "title": "Dashboard labels each evaluation field independently",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -71,7 +71,7 @@
       ]
     },
     {
-      "id": "WEBUI-DECIDE-R006",
+      "id": "OVERSTORY-DECIDE-R006",
       "title": "No coverage claim shown for inadequate evaluation data",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -86,7 +86,7 @@
       ]
     },
     {
-      "id": "WEBUI-DECIDE-R007",
+      "id": "OVERSTORY-DECIDE-R007",
       "title": "Tenant or purpose change invalidates cached decision queries",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -100,7 +100,7 @@
       ]
     },
     {
-      "id": "WEBUI-DECIDE-R008",
+      "id": "OVERSTORY-DECIDE-R008",
       "title": "Explanation views work without color, hover or pointer",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -114,7 +114,7 @@
       ]
     },
     {
-      "id": "WEBUI-DECIDE-R002",
+      "id": "OVERSTORY-DECIDE-R002",
       "title": "Decision explorer surfaces premises, derivations and violations",
       "delivery_state": "VERIFIED",
       "landed_in": [

@@ -1,10 +1,10 @@
 /**
  * Browser adapter for the Arbora ontology operation registry.
  *
- * WEBUI-API-R002.1: typed model plus validation and refusal tests for the
+ * OVERSTORY-API-R002.1: typed model plus validation and refusal tests for the
  * ontology operation family. Graph, Atlas and object-set families follow in
  * later slices; the entry point that swaps `api_extensions.py`'s ontology
- * routes to call this adapter is WEBUI-API-R002.2.
+ * routes to call this adapter is OVERSTORY-API-R002.2.
  */
 import { z } from 'zod'
 import { ApiShapeError } from '@/lib/api-validation'

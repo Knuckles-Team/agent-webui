@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.5
+// spec: OVERSTORY-APPS-R049.1.5
 import { test, expect } from '@playwright/test'
 
 test('response task remains pointer-reachable after transcript scroll and low-height resize', async ({

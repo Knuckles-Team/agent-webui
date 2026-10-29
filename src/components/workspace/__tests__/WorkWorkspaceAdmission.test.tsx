@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.3, WEBUI-APPS-R004.4
+// spec: OVERSTORY-APPS-R049.1.3, OVERSTORY-APPS-R004.4
 import { act, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

@@ -26,8 +26,8 @@ class MemoryStorage implements Storage {
   }
 }
 
-// spec: WEBUI-DASH-R011
-describe('local dashboard store (WEBUI-DASH-R011)', () => {
+// spec: OVERSTORY-DASH-R011
+describe('local dashboard store (OVERSTORY-DASH-R011)', () => {
   it('saves locally and labels the save as pending arbora', () => {
     const store = createLocalStore(new MemoryStorage())
     const result = store.save(createDashboard('One'))

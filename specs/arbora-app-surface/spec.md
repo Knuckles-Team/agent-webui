@@ -1,8 +1,8 @@
-# WEBUI-APPS — Arbora browser shell and app surfaces
+# OVERSTORY-APPS — Arbora browser shell and app surfaces
 
-**ID:** WEBUI-APPS
+**ID:** OVERSTORY-APPS
 **Owner:** agent-webui
-**Related IDs:** WEBUI-APPS-R002, WEBUI-APPS-R003, WEBUI-APPS-R001; FIN-UI-R003 is the first app consumer
+**Related IDs:** OVERSTORY-APPS-R002, OVERSTORY-APPS-R003, OVERSTORY-APPS-R001; OVERSTORY-R003 is the first app consumer
 **Delivery:** specified; publication and consumer cutover unverified
 **Acceptance:** open
 
@@ -14,13 +14,13 @@ The browser presents one Arbora product identity and a first-class Apps section.
 
 | ID | Behavior | Related ID | Evidence |
 |---|---|---|---|
-| WEBUI-APPS-R038 | Titles, metadata, webmanifest, assets, theme, UI copy and published Pages identity consistently say Arbora | WEBUI-APPS-R002 | Asset regeneration + rendered snapshot + Pages build |
-| WEBUI-APPS-R039 | Package/import, npm metadata, WebMCP IDs, skills, browser storage/consent and environment variable names keep the agent-webui component identity. Only user-visible strings are rebranded (operator decision 2026-10-09) | WEBUI-APPS-R003 | Build and wheel tests |
-| WEBUI-APPS-R040 | `apps` is one section in `nav-registry.ts`. Each app declares route, capability, typed client, WebMCP page and optional Atlas renderer in one `AppSurface` | WEBUI-APPS-R001 | Contract and route-census tests |
-| WEBUI-APPS-R041 | Native and validated package-contributed apps resolve to the same shape. Untrusted descriptors cannot register executable code, arbitrary URLs or extra privileges | WEBUI-APPS-R001 | Invalid descriptor and denied capability tests |
-| WEBUI-APPS-R042 | Markets consumes the contract without duplicating scanner/chart or gateway wiring in the shell | FIN-UI-R003, WEBUI-APPS-R001 | First-consumer integration test |
-| WEBUI-APPS-R043 | Storage and consent keys are unchanged by the rebrand, so legacy browser state stays valid. Any future key change expires or migrates it with explicit renewed consent | WEBUI-APPS-R003 | Browser test |
-| WEBUI-APPS-R044 | App navigation works with keyboard, touch, reduced motion and mobile/desktop layouts and has loading, unavailable and denied states | WEBUI-APPS-R001 | E2E accessibility suite |
+| OVERSTORY-APPS-R038 | Titles, metadata, webmanifest, assets, theme, UI copy and published Pages identity consistently say Arbora | OVERSTORY-APPS-R002 | Asset regeneration + rendered snapshot + Pages build |
+| OVERSTORY-APPS-R039 | Package/import, npm metadata, WebMCP IDs, skills, browser storage/consent and environment variable names keep the agent-webui component identity. Only user-visible strings are rebranded (operator decision 2026-10-09) | OVERSTORY-APPS-R003 | Build and wheel tests |
+| OVERSTORY-APPS-R040 | `apps` is one section in `nav-registry.ts`. Each app declares route, capability, typed client, WebMCP page and optional Atlas renderer in one `AppSurface` | OVERSTORY-APPS-R001 | Contract and route-census tests |
+| OVERSTORY-APPS-R041 | Native and validated package-contributed apps resolve to the same shape. Untrusted descriptors cannot register executable code, arbitrary URLs or extra privileges | OVERSTORY-APPS-R001 | Invalid descriptor and denied capability tests |
+| OVERSTORY-APPS-R042 | Markets consumes the contract without duplicating scanner/chart or gateway wiring in the shell | OVERSTORY-R003, OVERSTORY-APPS-R001 | First-consumer integration test |
+| OVERSTORY-APPS-R043 | Storage and consent keys are unchanged by the rebrand, so legacy browser state stays valid. Any future key change expires or migrates it with explicit renewed consent | OVERSTORY-APPS-R003 | Browser test |
+| OVERSTORY-APPS-R044 | App navigation works with keyboard, touch, reduced motion and mobile/desktop layouts and has loading, unavailable and denied states | OVERSTORY-APPS-R001 | E2E accessibility suite |
 
 Operator decision 2026-10-09: only front-end-facing items carry the Arbora name; the repository, package and runtime identifiers stay `agent-webui`, an Arbora component. Public examples and setup instructions must use portable addresses and credentials supplied by a contributor, never a private service or inventory. The shell must not receive a service bearer in JavaScript.
 
@@ -48,24 +48,24 @@ See the open definition prerequisites in plan.md. All new rows remain SPECIFIED.
 
 This extension is SPECIFIED, not an implementation or acceptance claim. It extends the existing owner rather than creating a duplicate redesign specification. The current-state feature inventory and migration obligations are in [workspace-coverage.md](workspace-coverage.md). Every feature remains in scope on mobile and every permitted semantic leaf is directly navigable.
 
-- WEBUI-APPS-R045: Complete capability and leaf census.
-- WEBUI-APPS-R046: One semantic workspace navigation state.
-- WEBUI-APPS-R047: Native WebMCP action equivalence.
-- WEBUI-APPS-R048: WebMCP lifecycle and authority preservation.
-- WEBUI-APPS-R049: Preserve every feature through the Arbora redesign.
-- WEBUI-APPS-R050: Composed deployment and shared-backend acceptance.
+- OVERSTORY-APPS-R045: Complete capability and leaf census.
+- OVERSTORY-APPS-R046: One semantic workspace navigation state.
+- OVERSTORY-APPS-R047: Native WebMCP action equivalence.
+- OVERSTORY-APPS-R048: WebMCP lifecycle and authority preservation.
+- OVERSTORY-APPS-R049: Preserve every feature through the Arbora redesign.
+- OVERSTORY-APPS-R050: Composed deployment and shared-backend acceptance.
 
 ## Ground-up consolidation, not page preservation
 
-WEBUI-APPS-R049.1 and R049.2 define the redesign outcome. The product has three primary workspace contexts: Work, Explore and Operate. Existing features become task surfaces, lenses or inspectors within those contexts. They do not remain independently laid-out pages behind a new navigation bar. Legal pages may remain separate where required. Help and settings use contextual utilities.
+OVERSTORY-APPS-R049.1 and R049.2 define the redesign outcome. The product has three primary workspace contexts: Work, Explore and Operate. Existing features become task surfaces, lenses or inspectors within those contexts. They do not remain independently laid-out pages behind a new navigation bar. Legal pages may remain separate where required. Help and settings use contextual utilities.
 
 The capability inventory is a preservation contract, not the proposed page inventory. Compatible deep links resolve into workspace state. Source navigation, object-link and consent fixes are foundations only. They do not prove the visual redesign, semantic zoom, mobile parity or measured task improvement. These new requirements remain SPECIFIED.
 
 ## Explore source proof and remaining migration
 
-WEBUI-APPS-R049.1.1 is the bounded source proof for retained, read-only Explore investigation. WEBUI-APPS-R049.1.2 retains complete contextual migration and rendered acceptance. Work and Operate remain planned until delivered. The new opt-in route does not migrate old URLs or certify real providers. R049.2 still requires the measured redesign outcome.
+OVERSTORY-APPS-R049.1.1 is the bounded source proof for retained, read-only Explore investigation. OVERSTORY-APPS-R049.1.2 retains complete contextual migration and rendered acceptance. Work and Operate remain planned until delivered. The new opt-in route does not migrate old URLs or certify real providers. R049.2 still requires the measured redesign outcome.
 
-WEBUI-APPS-R049.1.3 defines the narrow Work source composition. It retains conversation selection and the existing Chat instance beside independent task/trace read surfaces. It does not complete correlated run investigation or invent missing producer links. R049.1.2 retains full migration and installed-browser acceptance.
+OVERSTORY-APPS-R049.1.3 defines the narrow Work source composition. It retains conversation selection and the existing Chat instance beside independent task/trace read surfaces. It does not complete correlated run investigation or invent missing producer links. R049.1.2 retains full migration and installed-browser acceptance.
 
 ## Nested execution inspection and targeted interaction
 
@@ -80,7 +80,7 @@ The single composer under R005.4.1 sends requests without an interaction-mode ch
 
 ## Edit a prompt and keep both conversations
 
-WEBUI-APPS-R051 adds an Edit and fork action to an earlier message the caller
+OVERSTORY-APPS-R051 adds an Edit and fork action to an earlier message the caller
 sent. A preview makes the retained context and omitted later replies clear.
 The original stays intact; the edited prompt begins a new persisted branch with
 explicit lineage and a return path. Forking does not undo earlier external

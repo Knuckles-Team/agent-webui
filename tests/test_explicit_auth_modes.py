@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from test_identity_boundary import _build, _no_verifier
 
 
-@pytest.mark.spec('WEBUI-IDENTITY-R003.1.1')
+@pytest.mark.spec('OVERSTORY-IDENTITY-R003.1.1')
 def test_default_and_unknown_modes_remain_protected():
     assert resolve_auth_mode(None) is AuthMode.REQUIRED
     for value in ('', 'NONE', 'disabled', 'invalid'):
@@ -14,7 +14,7 @@ def test_default_and_unknown_modes_remain_protected():
             resolve_auth_mode(value)
 
 
-@pytest.mark.spec('WEBUI-IDENTITY-R003.1.1')
+@pytest.mark.spec('OVERSTORY-IDENTITY-R003.1.1')
 def test_explicit_none_binds_no_identity_or_grant(monkeypatch):
     from agent_webui.host import current_actor, current_grant
 
@@ -54,7 +54,7 @@ def test_explicit_none_binds_no_identity_or_grant(monkeypatch):
     )
 
 
-@pytest.mark.spec('WEBUI-IDENTITY-R003.1.1')
+@pytest.mark.spec('OVERSTORY-IDENTITY-R003.1.1')
 def test_none_is_not_authentication_failure_fallback(monkeypatch):
     _no_verifier(monkeypatch)
     with pytest.raises(RuntimeError, match='identity verifier'):
@@ -69,13 +69,13 @@ def test_none_is_not_authentication_failure_fallback(monkeypatch):
         _build(auth_mode='none', session_boundary=lambda app: None)
 
 
-@pytest.mark.spec('WEBUI-IDENTITY-R003.1.1')
+@pytest.mark.spec('OVERSTORY-IDENTITY-R003.1.1')
 def test_none_rejects_configured_verifier(monkeypatch):
     with pytest.raises(RuntimeError, match='conflicts'):
         _build(auth_mode='none')
 
 
-@pytest.mark.spec('WEBUI-IDENTITY-R003.1.1')
+@pytest.mark.spec('OVERSTORY-IDENTITY-R003.1.1')
 def test_none_preserves_origin_checks_for_ui_and_webmcp(monkeypatch):
     _no_verifier(monkeypatch)
     app = _build(
@@ -101,7 +101,7 @@ def test_none_preserves_origin_checks_for_ui_and_webmcp(monkeypatch):
     assert calls == []
 
 
-@pytest.mark.spec('WEBUI-IDENTITY-R003.1.1')
+@pytest.mark.spec('OVERSTORY-IDENTITY-R003.1.1')
 def test_none_clears_ambient_authority_and_refuses_stale_cookie(monkeypatch):
     from agent_webui.host import (
         ActorContext,
@@ -147,7 +147,7 @@ def test_none_clears_ambient_authority_and_refuses_stale_cookie(monkeypatch):
         _build()
 
 
-@pytest.mark.spec('WEBUI-IDENTITY-R003.1.1')
+@pytest.mark.spec('OVERSTORY-IDENTITY-R003.1.1')
 def test_anonymous_policy_cannot_admit_direct_workspace_effects(monkeypatch):
     from agent_webui import api_extensions
 
@@ -174,7 +174,7 @@ def test_anonymous_policy_cannot_admit_direct_workspace_effects(monkeypatch):
     assert calls == []
 
 
-@pytest.mark.spec('WEBUI-IDENTITY-R003.3.1')
+@pytest.mark.spec('OVERSTORY-IDENTITY-R003.3.1')
 def test_oidc_cannot_install_an_eg_owner_or_skip_browser_login(monkeypatch):
     with pytest.raises(RuntimeError, match='complete verifier and browser SSO'):
         _build(auth_mode='oidc')
@@ -183,7 +183,7 @@ def test_oidc_cannot_install_an_eg_owner_or_skip_browser_login(monkeypatch):
         _build(auth_mode='oidc', session_boundary=lambda app: None)
 
 
-@pytest.mark.spec('WEBUI-IDENTITY-R003.2.1')
+@pytest.mark.spec('OVERSTORY-IDENTITY-R003.2.1')
 def test_explicit_eg_rejects_an_untyped_callback(monkeypatch):
     _no_verifier(monkeypatch)
     with pytest.raises(RuntimeError, match='identified as eg'):

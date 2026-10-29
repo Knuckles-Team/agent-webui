@@ -1,49 +1,49 @@
 {
   "schema_version": 2,
-  "spec_id": "FIN-UI",
+  "spec_id": "OVERSTORY",
   "owner_repo": "overstory",
   "delivery_state": "LANDED",
   "requirement_ids": [
-    "FIN-UI-R001",
-    "FIN-UI-R001.1",
-    "FIN-UI-R001.2",
-    "FIN-UI-R002",
-    "FIN-UI-R002.1",
-    "FIN-UI-R002.2",
-    "FIN-UI-R004",
-    "FIN-UI-R005",
-    "FIN-UI-R006",
-    "FIN-UI-R007",
-    "FIN-UI-R008",
-    "FIN-UI-R008.1",
-    "FIN-UI-R008.2",
-    "FIN-UI-R009",
-    "FIN-UI-R010",
-    "FIN-UI-R010.1",
-    "FIN-UI-R010.2",
-    "FIN-UI-R011",
-    "FIN-UI-R011.1",
-    "FIN-UI-R011.2",
-    "FIN-UI-R012",
-    "FIN-UI-R012.1",
-    "FIN-UI-R012.2",
-    "FIN-UI-R013",
-    "FIN-UI-R013.1",
-    "FIN-UI-R013.2",
-    "FIN-UI-R014",
-    "FIN-UI-R014.1",
-    "FIN-UI-R014.2",
-    "FIN-UI-R015",
-    "FIN-UI-R015.1",
-    "FIN-UI-R015.2",
-    "FIN-UI-R016",
-    "FIN-UI-R016.1",
-    "FIN-UI-R016.2",
-    "FIN-UI-R003"
+    "OVERSTORY-R001",
+    "OVERSTORY-R001.1",
+    "OVERSTORY-R001.2",
+    "OVERSTORY-R002",
+    "OVERSTORY-R002.1",
+    "OVERSTORY-R002.2",
+    "OVERSTORY-R004",
+    "OVERSTORY-R005",
+    "OVERSTORY-R006",
+    "OVERSTORY-R007",
+    "OVERSTORY-R008",
+    "OVERSTORY-R008.1",
+    "OVERSTORY-R008.2",
+    "OVERSTORY-R009",
+    "OVERSTORY-R010",
+    "OVERSTORY-R010.1",
+    "OVERSTORY-R010.2",
+    "OVERSTORY-R011",
+    "OVERSTORY-R011.1",
+    "OVERSTORY-R011.2",
+    "OVERSTORY-R012",
+    "OVERSTORY-R012.1",
+    "OVERSTORY-R012.2",
+    "OVERSTORY-R013",
+    "OVERSTORY-R013.1",
+    "OVERSTORY-R013.2",
+    "OVERSTORY-R014",
+    "OVERSTORY-R014.1",
+    "OVERSTORY-R014.2",
+    "OVERSTORY-R015",
+    "OVERSTORY-R015.1",
+    "OVERSTORY-R015.2",
+    "OVERSTORY-R016",
+    "OVERSTORY-R016.1",
+    "OVERSTORY-R016.2",
+    "OVERSTORY-R003"
   ],
   "requirements": [
     {
-      "id": "FIN-UI-R001",
+      "id": "OVERSTORY-R001",
       "title": "Mobile-first Markets app with five-destination navigation (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -51,12 +51,12 @@
       ],
       "verified_by": [],
       "rollup_of": [
-        "FIN-UI-R001.1",
-        "FIN-UI-R001.2"
+        "OVERSTORY-R001.1",
+        "OVERSTORY-R001.2"
       ]
     },
     {
-      "id": "FIN-UI-R001.1",
+      "id": "OVERSTORY-R001.1",
       "title": "Detail-tab support model",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -67,7 +67,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R001.2",
+      "id": "OVERSTORY-R001.2",
       "title": "Live Markets app wiring (remaining)",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -76,7 +76,7 @@
       "verified_by": []
     },
     {
-      "id": "FIN-UI-R002",
+      "id": "OVERSTORY-R002",
       "title": "Shared ChartRenderer for line, candle, and overlay data (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -84,12 +84,12 @@
       ],
       "verified_by": [],
       "rollup_of": [
-        "FIN-UI-R002.1",
-        "FIN-UI-R002.2"
+        "OVERSTORY-R002.1",
+        "OVERSTORY-R002.2"
       ]
     },
     {
-      "id": "FIN-UI-R002.1",
+      "id": "OVERSTORY-R002.1",
       "title": "Shared ChartRenderer input contract",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -100,7 +100,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R002.2",
+      "id": "OVERSTORY-R002.2",
       "title": "Live ChartRenderer wiring (remaining)",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -109,7 +109,7 @@
       "verified_by": []
     },
     {
-      "id": "FIN-UI-R004",
+      "id": "OVERSTORY-R004",
       "title": "Responsive five-destination navigation",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -123,7 +123,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R005",
+      "id": "OVERSTORY-R005",
       "title": "Instrument groups with distinct data states",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -135,7 +135,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R006",
+      "id": "OVERSTORY-R006",
       "title": "Search resolves by stable identity, not ticker text",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -146,7 +146,7 @@
       "verified_by": []
     },
     {
-      "id": "FIN-UI-R007",
+      "id": "OVERSTORY-R007",
       "title": "Instrument rows show price, provenance, after-hours value",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -159,7 +159,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R008",
+      "id": "OVERSTORY-R008",
       "title": "Detail tabs and range controls expose only supported data (rollup)",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -167,12 +167,12 @@
       ],
       "verified_by": [],
       "rollup_of": [
-        "FIN-UI-R008.1",
-        "FIN-UI-R008.2"
+        "OVERSTORY-R008.1",
+        "OVERSTORY-R008.2"
       ]
     },
     {
-      "id": "FIN-UI-R008.1",
+      "id": "OVERSTORY-R008.1",
       "title": "Pure supportedChartMode gating function",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -184,7 +184,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R008.2",
+      "id": "OVERSTORY-R008.2",
       "title": "Live detail-tab/range-control wiring (remaining)",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -193,7 +193,7 @@
       "verified_by": []
     },
     {
-      "id": "FIN-UI-R009",
+      "id": "OVERSTORY-R009",
       "title": "Shared ChartRenderer preserves gaps and revisions",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -206,7 +206,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R010",
+      "id": "OVERSTORY-R010",
       "title": "Chart overlays show strategy version and simulation state (rollup)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -219,12 +219,12 @@
         "src/apps/markets/__tests__/overlay-wiring.test.ts:47"
       ],
       "rollup_of": [
-        "FIN-UI-R010.1",
-        "FIN-UI-R010.2"
+        "OVERSTORY-R010.1",
+        "OVERSTORY-R010.2"
       ]
     },
     {
-      "id": "FIN-UI-R010.1",
+      "id": "OVERSTORY-R010.1",
       "title": "Overlay marker version/simulation-flag type",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -235,7 +235,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R010.2",
+      "id": "OVERSTORY-R010.2",
       "title": "Live chart overlay wiring (remaining)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -247,7 +247,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R011",
+      "id": "OVERSTORY-R011",
       "title": "Performance cards render owner-calculated values verbatim (rollup)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -261,12 +261,12 @@
         "src/apps/markets/components/__tests__/PerformanceCardView.test.tsx:60"
       ],
       "rollup_of": [
-        "FIN-UI-R011.1",
-        "FIN-UI-R011.2"
+        "OVERSTORY-R011.1",
+        "OVERSTORY-R011.2"
       ]
     },
     {
-      "id": "FIN-UI-R011.1",
+      "id": "OVERSTORY-R011.1",
       "title": "Performance/benchmark card verbatim-value contract",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -277,7 +277,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R011.2",
+      "id": "OVERSTORY-R011.2",
       "title": "Live performance/benchmark card wiring (remaining)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -290,7 +290,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R012",
+      "id": "OVERSTORY-R012",
       "title": "Strategy views cite evidence and never submit orders (rollup)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -303,12 +303,12 @@
         "src/apps/markets/components/__tests__/StrategyPanel.test.tsx:26"
       ],
       "rollup_of": [
-        "FIN-UI-R012.1",
-        "FIN-UI-R012.2"
+        "OVERSTORY-R012.1",
+        "OVERSTORY-R012.2"
       ]
     },
     {
-      "id": "FIN-UI-R012.1",
+      "id": "OVERSTORY-R012.1",
       "title": "Strategy view evidence/abstain contract type",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -319,7 +319,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R012.2",
+      "id": "OVERSTORY-R012.2",
       "title": "Live strategy/recommendation view wiring (remaining)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -331,7 +331,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R013",
+      "id": "OVERSTORY-R013",
       "title": "DCA and alert views distinguish delivery states (rollup)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -345,12 +345,12 @@
         "src/apps/markets/components/__tests__/DeliveryStateList.test.tsx:35"
       ],
       "rollup_of": [
-        "FIN-UI-R013.1",
-        "FIN-UI-R013.2"
+        "OVERSTORY-R013.1",
+        "OVERSTORY-R013.2"
       ]
     },
     {
-      "id": "FIN-UI-R013.1",
+      "id": "OVERSTORY-R013.1",
       "title": "DCA/alert delivery-receipt dedupe contract",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -361,7 +361,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R013.2",
+      "id": "OVERSTORY-R013.2",
       "title": "Live DCA/alert delivery-state wiring (remaining)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -374,7 +374,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R014",
+      "id": "OVERSTORY-R014",
       "title": "CSV import preview with idempotent receipt (rollup)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -389,12 +389,12 @@
         "src/apps/markets/components/__tests__/CsvImportFlow.test.tsx:64"
       ],
       "rollup_of": [
-        "FIN-UI-R014.1",
-        "FIN-UI-R014.2"
+        "OVERSTORY-R014.1",
+        "OVERSTORY-R014.2"
       ]
     },
     {
-      "id": "FIN-UI-R014.1",
+      "id": "OVERSTORY-R014.1",
       "title": "CSV import preview contract mirroring the SDK",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -405,7 +405,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R014.2",
+      "id": "OVERSTORY-R014.2",
       "title": "Live CSV import preview wiring (remaining)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -419,7 +419,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R015",
+      "id": "OVERSTORY-R015",
       "title": "Offline PWA shell marks cached data stale (rollup)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -433,12 +433,12 @@
         "src/apps/markets/components/__tests__/OfflineCacheView.test.tsx:9"
       ],
       "rollup_of": [
-        "FIN-UI-R015.1",
-        "FIN-UI-R015.2"
+        "OVERSTORY-R015.1",
+        "OVERSTORY-R015.2"
       ]
     },
     {
-      "id": "FIN-UI-R015.1",
+      "id": "OVERSTORY-R015.1",
       "title": "Offline cache staleness contract",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -449,7 +449,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R015.2",
+      "id": "OVERSTORY-R015.2",
       "title": "Live offline PWA shell wiring (remaining)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -462,7 +462,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R016",
+      "id": "OVERSTORY-R016",
       "title": "Charts and controls meet accessibility requirements (rollup)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -477,12 +477,12 @@
         "src/apps/markets/components/__tests__/ChartA11ySummary.test.tsx:7"
       ],
       "rollup_of": [
-        "FIN-UI-R016.1",
-        "FIN-UI-R016.2"
+        "OVERSTORY-R016.1",
+        "OVERSTORY-R016.2"
       ]
     },
     {
-      "id": "FIN-UI-R016.1",
+      "id": "OVERSTORY-R016.1",
       "title": "Chart accessibility text-summary contract",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -494,7 +494,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R016.2",
+      "id": "OVERSTORY-R016.2",
       "title": "Live chart/control accessibility wiring (remaining)",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -508,7 +508,7 @@
       ]
     },
     {
-      "id": "FIN-UI-R003",
+      "id": "OVERSTORY-R003",
       "title": "Arbora Markets app with scanner, search, and layered chart",
       "delivery_state": "LANDED",
       "landed_in": [

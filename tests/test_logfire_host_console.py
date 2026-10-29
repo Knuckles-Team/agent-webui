@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.spec('WEBUI-API-R011.1')
+@pytest.mark.spec('OVERSTORY-API-R011.1')
 @pytest.mark.parametrize('enabled', [False, True])
 def test_import_preserves_disabled_host_or_routes_enabled_console(tmp_path, enabled):
     script = """

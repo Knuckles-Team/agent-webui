@@ -1,5 +1,5 @@
-// spec: WEBUI-APPS-R005.4.1
-// spec: WEBUI-APPS-R049.1.5
+// spec: OVERSTORY-APPS-R005.4.1
+// spec: OVERSTORY-APPS-R049.1.5
 import { StrictMode } from 'react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -708,7 +708,7 @@ it('retires transport correlation on owner change before accepting the new owner
   expect(screen.getByText('Input tokens:').parentElement).toHaveTextContent('Input tokens:23')
 })
 
-// spec: WEBUI-APPS-R005.4, WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R005.4, OVERSTORY-APPS-R049.1.3
 it('retains the real dock composer across context changes and sends the current page context', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const app = (context: string) => (
@@ -867,7 +867,7 @@ it('does not steal fresh task-entry focus for a native secondary assistant', asy
   expect(screen.getByRole('textbox', { name: /message input/i })).toHaveFocus()
 })
 
-// spec: WEBUI-APPS-R049.2.1, WEBUI-APPS-R005.4
+// spec: OVERSTORY-APPS-R049.2.1, OVERSTORY-APPS-R005.4
 it('explains the first task and fills an example draft without sending or overwriting input', async () => {
   const { user } = renderWithProviders(<Chat pageContext={pageContext} />)
   const input = await screen.findByRole('textbox', { name: /message input/i })

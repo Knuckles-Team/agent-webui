@@ -1168,7 +1168,7 @@ export default function AgentLibraryView() {
     })
   }
 
-  /** WEBUI-DESIGN-R006 interruption: the agents list fetch already owns a real
+  /** OVERSTORY-DESIGN-R006 interruption: the agents list fetch already owns a real
    * `AbortController` (the same `agentsRequests` sequencing every other
    * fetch here uses to stay race-safe) -- this exposes a user-facing Cancel
    * on top of it. `cancelRequests` only aborts and invalidates the request;

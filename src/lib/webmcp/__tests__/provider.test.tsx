@@ -284,7 +284,7 @@ describe('WebMCP provider remote projection', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049.1.1
+// spec: OVERSTORY-APPS-R049.1.1
 it('places one attended control in workspace flow without implicitly arming it', async () => {
   installModelContext(async () => undefined)
   render(

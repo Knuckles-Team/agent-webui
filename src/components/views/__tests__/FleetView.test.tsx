@@ -34,7 +34,7 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('FleetView status language (WEBUI-DESIGN-R006)', () => {
+describe('FleetView status language (OVERSTORY-DESIGN-R006)', () => {
   it('shows the shared empty status message for an empty, confirmed-healthy fleet, per tab', async () => {
     const user = userEvent.setup()
     render(<FleetView />)

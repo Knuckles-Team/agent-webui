@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R005.4, WEBUI-APPS-R049.1.3, WEBUI-APPS-R049.2.1
+// spec: OVERSTORY-APPS-R005.4, OVERSTORY-APPS-R049.1.3, OVERSTORY-APPS-R049.2.1
 // Synthetic rendered browser evidence only. No live provider or task execution claim.
 import { expect, test } from '@playwright/test'
 import { baseURL, responses } from './fixtures/documentation-screenshots.mjs'

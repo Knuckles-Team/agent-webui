@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.7
+// spec: OVERSTORY-APPS-R049.1.7
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { exploreLensHref, navigateExploreLens, parseExploreLensState } from '../explore-lens-state'
 
@@ -48,7 +48,7 @@ describe('Explore lens integration state', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049.1.14
+// spec: OVERSTORY-APPS-R049.1.14
 describe('independent native graph context', () => {
   it('round trips graph selection alongside evidence history without treating IDs as equivalent', () => {
     const state = {

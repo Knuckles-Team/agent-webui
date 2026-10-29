@@ -20,7 +20,7 @@ function AnalyticsState() {
   return <output aria-label="Analytics consent">{record?.choice ?? 'unset'}</output>
 }
 
-// spec: WEBUI-APPS-R046.2.1
+// spec: OVERSTORY-APPS-R046.2.1
 // Narrow consent lifecycle regression; full mobile/navigation acceptance remains open.
 describe('ConsentBanner lifecycle', () => {
   beforeEach(() => {
@@ -201,7 +201,7 @@ describe('ConsentBanner lifecycle', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049.2.1, WEBUI-APPS-R046.2.1
+// spec: OVERSTORY-APPS-R049.2.1, OVERSTORY-APPS-R046.2.1
 it('keeps allow, disable and revoke in explicit Settings without changing the stored choice on open', () => {
   getSiteConfigMock.mockReturnValue({ analytics: { provider: 'fixture' }, contactAddress: null })
   window.localStorage.clear()

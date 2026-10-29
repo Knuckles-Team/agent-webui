@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R005.6.2
+// spec: OVERSTORY-APPS-R005.6.2
 import { lazy, type ReactNode } from 'react'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -61,7 +61,7 @@ describe('registry purpose is visible in every shell path', () => {
   }
 })
 
-// spec: WEBUI-APPS-R005.6.2
+// spec: OVERSTORY-APPS-R005.6.2
 it.each([
   ['public.privacy', PrivacyPage, 'The reviewed privacy policy for this deployment.'],
   ['public.terms', TermsPage, 'The reviewed terms and safe agent-control boundaries for this deployment.'],

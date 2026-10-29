@@ -1,6 +1,6 @@
 /**
  * @file decision-query-scope.test.ts
- * @description Proves WEBUI-DECIDE-R007: a tenant/purpose change (a) produces a
+ * @description Proves OVERSTORY-DECIDE-R007: a tenant/purpose change (a) produces a
  * different react-query `queryKey` and (b) a stale response from the
  * previous selection is discarded while a fresh response for the new
  * selection is applied, even when the stale response arrives LAST.
@@ -24,21 +24,21 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 }
 
 describe('decisionQueryKey', () => {
-  // spec: WEBUI-DECIDE-R007
+  // spec: OVERSTORY-DECIDE-R007
   it('differs when tenant changes', () => {
     const a = decisionQueryKey('decision', { tenantId: 'tenant-a' }, 'dec-1')
     const b = decisionQueryKey('decision', { tenantId: 'tenant-b' }, 'dec-1')
     expect(a).not.toEqual(b)
   })
 
-  // spec: WEBUI-DECIDE-R007
+  // spec: OVERSTORY-DECIDE-R007
   it('differs when purpose changes for the same tenant', () => {
     const a = decisionQueryKey('decision', { tenantId: 'tenant-a', purpose: 'audit' })
     const b = decisionQueryKey('decision', { tenantId: 'tenant-a', purpose: 'billing' })
     expect(a).not.toEqual(b)
   })
 
-  // spec: WEBUI-DECIDE-R007
+  // spec: OVERSTORY-DECIDE-R007
   it('is stable for the same tenant and purpose', () => {
     const a = decisionQueryKey('decision', { tenantId: 'tenant-a', purpose: 'audit' }, 'dec-1')
     const b = decisionQueryKey('decision', { tenantId: 'tenant-a', purpose: 'audit' }, 'dec-1')
@@ -111,7 +111,7 @@ describe('two-tenant race: stale response discarded, fresh response applied', ()
     expect(applyCount).toBe(1)
 
     // ...then tenant A's now-stale response arrives last. It must never
-    // overwrite tenant B's already-applied result (WEBUI-DECIDE-R007's exact ordering
+    // overwrite tenant B's already-applied result (OVERSTORY-DECIDE-R007's exact ordering
     // requirement: "a stale response can never overwrite a result from a
     // newer selection").
     responseA.resolve('a-payload-too-late')

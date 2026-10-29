@@ -4,7 +4,7 @@ import pytest
 from agent_webui.local_browser_boundary import validate_local_browser_boundary
 from test_identity_boundary import _build, _no_verifier
 
-pytestmark = pytest.mark.spec('WEBUI-IDENTITY-R003.1.1')
+pytestmark = pytest.mark.spec('OVERSTORY-IDENTITY-R003.1.1')
 
 
 @pytest.mark.parametrize(

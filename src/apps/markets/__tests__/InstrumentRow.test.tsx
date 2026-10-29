@@ -42,7 +42,7 @@ describe('InstrumentRow', () => {
     expect(screen.getByText('AC')).toBeInTheDocument()
   })
 
-  // spec: FIN-UI-R007
+  // spec: OVERSTORY-R007
   it('labels a pre-market quote and keeps the after-hours value separate', () => {
     const { container } = render(
       <InstrumentRow

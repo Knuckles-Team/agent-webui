@@ -126,7 +126,7 @@ function runOne(
   }
 }
 
-// spec: WEBUI-APPS-R005.5.2
+// spec: OVERSTORY-APPS-R005.5.2
 describe('route render harness — desktop x hostile payload matrix', () => {
   beforeEach(() => {
     setViewport(DESKTOP_WIDTH)
@@ -173,13 +173,13 @@ describe('route render harness — mobile viewport x hostile payload subset', ()
 })
 
 describe('route registry coverage', () => {
-  // spec: WEBUI-APPS-R005.5.2
+  // spec: OVERSTORY-APPS-R005.5.2
   it('has no known-failure exemptions in complete route acceptance', () => {
     expect(KNOWN_BROKEN_ROUTES).toEqual([])
   })
 
   // The injection test independently proves the harness detects a crashing view.
-  // spec: WEBUI-APPS-R005.5.1
+  // spec: OVERSTORY-APPS-R005.5.1
   it('detects an injected throwing view through the real ErrorBoundary', async () => {
     const fixture = HOSTILE_FIXTURES[0]
     fixture.installFetch()

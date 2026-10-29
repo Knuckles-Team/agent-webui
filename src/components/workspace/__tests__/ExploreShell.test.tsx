@@ -1,6 +1,6 @@
-// spec: WEBUI-APPS-R049.1.4
-// spec: WEBUI-APPS-R049.1.3
-// spec: WEBUI-APPS-R049.1.1
+// spec: OVERSTORY-APPS-R049.1.4
+// spec: OVERSTORY-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R049.1.1
 import { Suspense, useState } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -135,7 +135,7 @@ describe('new workspace composition', () => {
   })
 })
 
-// spec: WEBUI-APPS-R005.6.2
+// spec: OVERSTORY-APPS-R005.6.2
 it.each(['chat.console', 'observability.dashboard'])(
   'places %s control in bounded flow rather than over the content',
   async (id) => {

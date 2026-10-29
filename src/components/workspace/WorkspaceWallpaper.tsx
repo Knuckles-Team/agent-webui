@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R005.3.1, WEBUI-DESIGN-R005.4, WEBUI-DESIGN-R005.5
+// spec: OVERSTORY-DESIGN-R005.3.1, OVERSTORY-DESIGN-R005.4, OVERSTORY-DESIGN-R005.5
 import { useEffect, useRef } from 'react'
 import { useTheme, type WallpaperScene, type WallpaperWeather } from '../theme-provider'
 import './WorkspaceWallpaper.css'

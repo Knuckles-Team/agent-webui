@@ -2,7 +2,7 @@
  * @file useDashboards.ts
  * @description State for the Dashboards page: the open dashboard with undo history,
  * the saved list, the save status, the pending approval, and the controller the WebMCP
- * tools use. User and agent edits share one path (WEBUI-DASH-R006, R008, R009).
+ * tools use. User and agent edits share one path (OVERSTORY-DASH-R006, R008, R009).
  */
 import { useCallback, useMemo, useRef, useState } from 'react'
 import {

@@ -231,7 +231,7 @@ def _log_failure(
     """Log a stable operation label, exception type and sanitized error code.
 
     The code comes from a typed attribute, never from the message text. A code
-    that is not a short upper-case token is logged as ``none`` (WEBUI-API-R005).
+    that is not a short upper-case token is logged as ``none`` (OVERSTORY-API-R005).
     """
 
     safe_operation = re.sub(r'[^a-z0-9_.-]+', '_', operation.lower())[:64]

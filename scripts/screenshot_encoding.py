@@ -1,4 +1,4 @@
-"""Lossless documentation encoding with decoded-pixel verification (WEBUI-DESIGN-R011)."""
+"""Lossless documentation encoding with decoded-pixel verification (OVERSTORY-DESIGN-R011)."""
 
 import base64
 import hashlib

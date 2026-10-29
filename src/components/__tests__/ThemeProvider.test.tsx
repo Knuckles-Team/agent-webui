@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R002
+// spec: OVERSTORY-DESIGN-R002
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ThemeProvider, useTheme } from '../theme-provider'
@@ -85,8 +85,8 @@ it.each([
   }
 })
 
-// spec: WEBUI-DESIGN-R002.1.1
-// spec: WEBUI-DESIGN-R005.2
+// spec: OVERSTORY-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R005.2
 function AppearanceControls() {
   const { density, setDensity, motion, setMotion, transparency, setTransparency } = useTheme()
   return (
@@ -155,7 +155,7 @@ it('keeps preference changes usable when storage is denied', () => {
   expect(document.documentElement).toHaveClass('dark')
 })
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 it('presents legacy glass as the light palette with an independent material preference', () => {
   localStorage.setItem('theme-transition-test', 'glass')
   render(

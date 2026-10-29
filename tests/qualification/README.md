@@ -64,7 +64,7 @@ It does not implement a production provider or prove Keycloak/Okta interoperabil
 No-auth and OIDC effect probes assert refusal before dispatch, not complete anonymous operation acceptance.
 Native EG login is unavailable until Arbora supplies its production auth-route and admission owner.
 These tests do not invent that owner or qualify streams, WebSockets, native effects or concurrent renewal safety.
-Full `WEBUI-IDENTITY-R010` acceptance remains open.
+Full `OVERSTORY-IDENTITY-R010` acceptance remains open.
 
 ## Retained source and redundancy
 

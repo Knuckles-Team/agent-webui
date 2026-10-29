@@ -13,7 +13,7 @@ import { ReceiptCard } from './DecisionEvaluationReceipts'
  * with its policy-threshold status. A synthetic receipt or one whose
  * threshold alert does not match its own policy digest is shown as an
  * explicit unavailable/unmatched state rather than a fabricated pass/fail
- * (requirement WEBUI-DECIDE-R006); statistical drift detection is out of scope here and
+ * (requirement OVERSTORY-DECIDE-R006); statistical drift detection is out of scope here and
  * is named as such rather than implied.
  */
 

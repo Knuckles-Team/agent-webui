@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R004.2.1
+// spec: OVERSTORY-DESIGN-R004.2.1
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WorkspaceViewport } from '../WorkspaceViewport'

@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.16
+// spec: OVERSTORY-APPS-R049.1.16
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../api'
 afterEach(() => vi.unstubAllGlobals())

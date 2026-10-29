@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-// spec: WEBUI-APPS-R049.1.9
+// spec: OVERSTORY-APPS-R049.1.9
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'
@@ -201,7 +201,7 @@ describe('loaded Work and Operate command adapters', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049.1.16
+// spec: OVERSTORY-APPS-R049.1.16
 it('selects services for fleet and catalog commands without losing retained usage context', () => {
   const retained = {
     server: 'source',

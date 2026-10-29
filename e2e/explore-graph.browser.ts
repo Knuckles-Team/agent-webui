@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.14
+// spec: OVERSTORY-APPS-R049.1.14
 // Synthetic rendered acceptance fixture; installed-provider parity is separate.
 import { expect, test } from '@playwright/test'
 import { baseURL, responses } from './fixtures/documentation-screenshots.mjs'

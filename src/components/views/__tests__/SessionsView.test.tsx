@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import SessionsView from '@/components/views/SessionsView'
 
 /**
- * WEBUI-DESIGN-R006 rendered-state coverage for the Durable Sessions Console. The view
+ * OVERSTORY-DESIGN-R006 rendered-state coverage for the Durable Sessions Console. The view
  * polls `/api/enhanced/sessions` every 4s and, while the attach-console
  * drawer is open, `/api/enhanced/sessions/:id` every 2s -- every test here
  * unmounts (via `cleanup`, run automatically by the test setup, or an
@@ -41,7 +41,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('SessionsView — WEBUI-DESIGN-R006 status language', () => {
+describe('SessionsView — OVERSTORY-DESIGN-R006 status language', () => {
   it('shows the shared loading status message before the session list resolves', () => {
     vi.stubGlobal(
       'fetch',
@@ -53,7 +53,7 @@ describe('SessionsView — WEBUI-DESIGN-R006 status language', () => {
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
 
-  it('shows the shared empty status message (WEBUI-DESIGN-R006) when no durable sessions exist', async () => {
+  it('shows the shared empty status message (OVERSTORY-DESIGN-R006) when no durable sessions exist', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.resolve(jsonResponse([]))),

@@ -10,7 +10,7 @@ Check keyboard drill-in, immediate ancestor return, global search and branch res
 Check 44 CSS px targets, no horizontal overflow, native surface selection and real Back/Forward. Capture 320-by-740, 740-by-320, 1440-by-900 and 587-by-913
 CSS px layouts under both motion preferences.
 
-This is partial WEBUI-DESIGN-R005.1 evidence for loaded branches. No camera
+This is partial OVERSTORY-DESIGN-R005.1 evidence for loaded branches. No camera
 animation or scaled screenshot is introduced. Full dynamic depth, real touch,
 manual screen-reader, native-device and installed-provider acceptance remain open.
 
@@ -26,7 +26,7 @@ manual screen-reader, native-device and installed-provider acceptance remain ope
 | States | Loading/empty/stale/denied/error/success fixtures | Text distinctions, no color-only meaning |
 | Reuse/privacy | Source/asset/dependency audit | No duplicate primitive, real-user data or telemetry request |
 | Skill distillation | Compare each adopted rule with existing public skill and component ownership | Distinct rule has license record, owner, example and failing/passing UI check; duplicate names and copied text rejected |
-| Strict style policy | Built bundle served by `SecurityHeadersMiddleware` in headless Chromium | No `securitypolicyviolation` event for `style-src-elem` or `font-src`; each document nonce differs (WEBUI-DESIGN-R008, WEBUI-DESIGN-R009) |
+| Strict style policy | Built bundle served by `SecurityHeadersMiddleware` in headless Chromium | No `securitypolicyviolation` event for `style-src-elem` or `font-src`; each document nonce differs (OVERSTORY-DESIGN-R008, OVERSTORY-DESIGN-R009) |
 | Offline review | Run synthetic journeys with local networking only | Accessibility review completes without remote critique or telemetry |
 
 Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`, and `pre-commit run --config .config/pre-commit.yaml --all-files` on the exact commit. E2E provisions local fixtures and browser; no live hosted environment is required for a PR. CCCC's configured staged rule rejects new functions above cyclomatic 10/cognitive 15 and regressions. Use configured jscpd and Dupehound if available; missing configuration is a gap. KISS requires adapting existing components and tokens before adding a primitive. Record automated accessibility findings plus manual keyboard/screen-reader notes and screenshot artifact digests in `tasks.md`.
@@ -37,11 +37,11 @@ The following are planned tests, not existing receipts. Test every registered st
 
 | Requirement | Required proof |
 |---|---|
-| WEBUI-DESIGN-R002.1 | Token/layout snapshots and task-completion review at the declared viewport matrix. |
-| WEBUI-DESIGN-R004.1 | All-route/action coverage at 320 CSS px, narrow/tall, low-height landscape, 4:3,16:9,32:9 and generated intermediate dimensions; no unsupported/mobile-only omission. |
-| WEBUI-DESIGN-R004.2 | Resize during form editing, stream updates and graph navigation. Test keyboard-open and 200-percent zoom states without lost state or unreachable controls. |
-| WEBUI-DESIGN-R005.1 | Keyboard/screen-reader/touch and reduced-motion journeys through deepest fixtures, interrupted transition and focus restoration tests. |
-| WEBUI-DESIGN-R010 | Reproducible load/interaction traces, memory/idle checks and budget assertions plus reduced-motion tests on the exact release candidate. |
+| OVERSTORY-DESIGN-R002.1 | Token/layout snapshots and task-completion review at the declared viewport matrix. |
+| OVERSTORY-DESIGN-R004.1 | All-route/action coverage at 320 CSS px, narrow/tall, low-height landscape, 4:3,16:9,32:9 and generated intermediate dimensions; no unsupported/mobile-only omission. |
+| OVERSTORY-DESIGN-R004.2 | Resize during form editing, stream updates and graph navigation. Test keyboard-open and 200-percent zoom states without lost state or unreachable controls. |
+| OVERSTORY-DESIGN-R005.1 | Keyboard/screen-reader/touch and reduced-motion journeys through deepest fixtures, interrupted transition and focus restoration tests. |
+| OVERSTORY-DESIGN-R010 | Reproducible load/interaction traces, memory/idle checks and budget assertions plus reduced-motion tests on the exact release candidate. |
 
 Run each relevant journey with loading, empty, stale, denied, unavailable, validation error, success and in-flight cancellation fixtures. Use synthetic tenant data. No auth tokens, private reasoning, real account data or secrets may appear in screenshots, tool results or logs. Existing source and security gates remain mandatory.
 
@@ -68,7 +68,7 @@ fold hardware, browser zoom or live-provider acceptance.
 
 `WorkspaceViewport.test.tsx` covers retained selection/focus, pinch-zoom reflow
 avoidance, fallback without VisualViewport, and listener cleanup. These tests
-do not complete WEBUI-DESIGN-R004.2; its broader acceptance remains open.
+do not complete OVERSTORY-DESIGN-R004.2; its broader acceptance remains open.
 
 ## Native browser zoom regression
 
@@ -92,7 +92,7 @@ A separate isolated Chromium profile checks keyboard navigation at actual 200-pe
 The browser extension sets native zoom; it does not emulate CSS scaling.
 `WorkspaceFrame.test.tsx` checks callback retirement and stable task DOM across map and legacy layout changes.
 
-This evidence supports partial WEBUI-APPS-R046, WEBUI-APPS-R049 and WEBUI-DESIGN-R002.1/R005.1 delivery.
+This evidence supports partial OVERSTORY-APPS-R046, OVERSTORY-APPS-R049 and OVERSTORY-DESIGN-R002.1/R005.1 delivery.
 The existing broad requirements and tasks remain open.
 The map includes loaded admitted destinations, not every legacy capability or dynamic leaf.
 Live authentication, installed providers, manual screen readers and physical fold hardware remain unverified.
@@ -134,7 +134,7 @@ These checks do not establish live WebMCP, manual screen-reader, provider or com
 
 ## Native task contrast regression
 
-Extend the existing identity journey under WEBUI-DESIGN-R002 and WEBUI-DESIGN-R002.1.
+Extend the existing identity journey under OVERSTORY-DESIGN-R002 and OVERSTORY-DESIGN-R002.1.
 Measure native Operate headings, body text, labels, inputs, links and enabled buttons beside the shell.
 Require at least six native task samples and a 4.5:1 contrast ratio for every sample.
 Run light, dark and glass at the existing desktop and narrow widths.
@@ -175,7 +175,7 @@ The hosted identity journey remains the rendered check for native Operate descri
 
 ## Documentation screenshots
 
-WEBUI-DESIGN-R011: run `pnpm screenshots:test` for fixture coverage and
+OVERSTORY-DESIGN-R011: run `pnpm screenshots:test` for fixture coverage and
 manifest rejection of mismatched paths, dimensions, revisions, bytes and partial sets.
 Run `pnpm screenshots:refresh` in Chromium, then `pnpm screenshots:check`.
 The six captures assert loaded scene content, no alerts and no page overflow.
@@ -191,10 +191,10 @@ workspace component and browser suites before claiming any listed result.
 
 | Requirement | Proof seam | Required checks |
 |---|---|---|
-| WEBUI-DESIGN-R002.1.1 | `design-tokens.test.ts`, `ThemeProvider.test.tsx`, rendered identity/Explore journeys | Check light/dark/glass native and composited contrast. Cover hover/selected/focus states, higher-opacity glass reading surfaces and original logo. Test compact/comfortable persistence and invalid/blocked storage fallback. |
-| WEBUI-DESIGN-R004.1.1 | `WorkspaceContextRail.test.tsx`, `WorkspaceFrame.test.tsx`, rendered identity/density journeys | Use one full-width header. Keep labelled contexts, current context, search and main actions visible without opening More. Reject capsule/max-width working gutters, overflow and duplicate navigation. Check useful map resizing and optional selected detail. |
-| WEBUI-DESIGN-R005.2 | Provider/frame/palette tests and actual rendered motion checks | Check system reduced motion from first render and in-app reduction precedence. Exercise immediate state on repeated input and close/cancel during transition. Reject stale callback focus and idle decoration. Retain all text. |
-| WEBUI-APPS-R049.2.1 | `ExploreWorkspace.test.tsx`, shell/query/palette suites and rendered Explore journey | Retain query/results through each detail tool. Cover return, real Back/Forward and resize. Reject placeholder inspectors and auth/tool authority changes. |
+| OVERSTORY-DESIGN-R002.1.1 | `design-tokens.test.ts`, `ThemeProvider.test.tsx`, rendered identity/Explore journeys | Check light/dark/glass native and composited contrast. Cover hover/selected/focus states, higher-opacity glass reading surfaces and original logo. Test compact/comfortable persistence and invalid/blocked storage fallback. |
+| OVERSTORY-DESIGN-R004.1.1 | `WorkspaceContextRail.test.tsx`, `WorkspaceFrame.test.tsx`, rendered identity/density journeys | Use one full-width header. Keep labelled contexts, current context, search and main actions visible without opening More. Reject capsule/max-width working gutters, overflow and duplicate navigation. Check useful map resizing and optional selected detail. |
+| OVERSTORY-DESIGN-R005.2 | Provider/frame/palette tests and actual rendered motion checks | Check system reduced motion from first render and in-app reduction precedence. Exercise immediate state on repeated input and close/cancel during transition. Reject stale callback focus and idle decoration. Retain all text. |
+| OVERSTORY-APPS-R049.2.1 | `ExploreWorkspace.test.tsx`, shell/query/palette suites and rendered Explore journey | Retain query/results through each detail tool. Cover return, real Back/Forward and resize. Reject placeholder inspectors and auth/tool authority changes. |
 
 Cover 320×740, 390×844, 844×390, 768×1024, 1024×768, 1440×900,
 1920×1080, 2560×720 and generated intermediate dimensions. Include a constrained
@@ -260,12 +260,12 @@ control: Playwright scrolls it and mask missing application focus reveal.
 
 ## Viewport continuity evidence partition
 
-WEBUI-DESIGN-R004.2.1 binds the existing viewport, query and native-assistant tests.
+OVERSTORY-DESIGN-R004.2.1 binds the existing viewport, query and native-assistant tests.
 Preserve their draft, identity, focus, wheel-scroll and real-control hit assertions.
 A compact assistant must not compress its composer into a hidden nested scrollport.
 Keep actual candidate screenshots and failed cases visible until qualification passes.
 
-WEBUI-DESIGN-R004.2.2 requires the full parent matrix, not another source-only fixture.
+OVERSTORY-DESIGN-R004.2.2 requires the full parent matrix, not another source-only fixture.
 Exercise native keyboards, fold and orientation changes, safe areas and visual viewports.
 Include interrupted streams and graph navigation across every applicable surface.
 Check selection, history, drafts, progress and focus, plus readable 200-percent browser zoom.
@@ -273,8 +273,8 @@ Record exact revisions, device/browser conditions, results and remaining gaps.
 
 ## Retained acceptance verification
 
-WEBUI-DESIGN-R002.1.2 retains the original density/hierarchy verification matrix and outstanding token/contrast review.
-WEBUI-DESIGN-R004.1.2 retains the complete registered-route/action and dynamic-leaf matrix from R004.1.
+OVERSTORY-DESIGN-R002.1.2 retains the original density/hierarchy verification matrix and outstanding token/contrast review.
+OVERSTORY-DESIGN-R004.1.2 retains the complete registered-route/action and dynamic-leaf matrix from R004.1.
 Run the outstanding journeys with actual keyboard, touch, state and viewport coverage before claiming their acceptance.
 The scoped Canopy shell, evidence and Work diagram fixtures do not replace those journeys.
 
@@ -292,7 +292,7 @@ Enlarged-text cases retain their full keyboard and wheel reachability checks wit
 
 The 200-percent-text journey must inspect the remaining Message options label,
 not only its accessible name. Preserve text bounds and keyboard reachability.
-WEBUI-APPS-R005.4.1 removes the obsolete Ask, Plan and Code selector.
+OVERSTORY-APPS-R005.4.1 removes the obsolete Ask, Plan and Code selector.
 This presentation must not change action handlers or authority.
 
 ## Liquid Glass reference correction acceptance
@@ -334,9 +334,9 @@ Tests enter real appearance controls and the shared frame, not an isolated rende
 
 | Requirement | Future proving tests | Positive and negative cases |
 |---|---|---|
-| WEBUI-DESIGN-R005.3 | Extend `WorkspaceFrame.test.tsx` and `canopy-glass.browser.ts`. | Follow context and manual override preserve Chat/Knowledge/Tools labels, navigation, drafts and identity. Assert Canopy/Fluid first. Assert Roots=connectors, Trunk=harness, Branches/leaves=knowledge and Light=workspace. Require matching supplied relationships/events for activity. Reject missing, stale, duplicate, unrelated and out-of-order events. Preserve the actual task graph. |
-| WEBUI-DESIGN-R005.4 | Extend `ThemeProvider.test.tsx`, `WorkspaceFrame.test.tsx` and `canopy-glass.browser.ts`. | Assert Off/Subtle/Expressive, invalid/blocked storage, initial reduction and preference changes during motion. Interrupt repeated input and hide/show cycles without stale callbacks or replay. Exercise unavailable battery signals, resource fallback, unsupported rendering and context loss. Preserve text, focus, controls and contrast. |
-| WEBUI-DESIGN-R005.5 | Extend `ThemeProvider.test.tsx`, `WorkspaceFrame.test.tsx` and `canopy-glass.browser.ts`. | Prove explicit provider/location opt-in, manual-preview labels and all seven conditions. Reject automatic GPS/network lookup, secret location, expired or mismatched responses and requests after disable. Cover unknown, stale, offline and unsupported states. Assert droplets/fog/snow spare content; heat preserves UI coordinates. |
+| OVERSTORY-DESIGN-R005.3 | Extend `WorkspaceFrame.test.tsx` and `canopy-glass.browser.ts`. | Follow context and manual override preserve Chat/Knowledge/Tools labels, navigation, drafts and identity. Assert Canopy/Fluid first. Assert Roots=connectors, Trunk=harness, Branches/leaves=knowledge and Light=workspace. Require matching supplied relationships/events for activity. Reject missing, stale, duplicate, unrelated and out-of-order events. Preserve the actual task graph. |
+| OVERSTORY-DESIGN-R005.4 | Extend `ThemeProvider.test.tsx`, `WorkspaceFrame.test.tsx` and `canopy-glass.browser.ts`. | Assert Off/Subtle/Expressive, invalid/blocked storage, initial reduction and preference changes during motion. Interrupt repeated input and hide/show cycles without stale callbacks or replay. Exercise unavailable battery signals, resource fallback, unsupported rendering and context loss. Preserve text, focus, controls and contrast. |
+| OVERSTORY-DESIGN-R005.5 | Extend `ThemeProvider.test.tsx`, `WorkspaceFrame.test.tsx` and `canopy-glass.browser.ts`. | Prove explicit provider/location opt-in, manual-preview labels and all seven conditions. Reject automatic GPS/network lookup, secret location, expired or mismatched responses and requests after disable. Cover unknown, stale, offline and unsupported states. Assert droplets/fog/snow spare content; heat preserves UI coordinates. |
 
 Capture wide and 320px layouts in light/dark, opaque, reduced-motion, reduced-transparency and forced-color states.
 Review brightest/darkest animation frames against existing 4.5:1 text and 3:1 control/focus targets.
@@ -356,7 +356,7 @@ Event/provider fixtures prove browser mapping only; served evidence remains nece
 
 ## Named palette continuation
 
-WEBUI-DESIGN-R002.1.1 adds deterministic per-palette light/dark action and neutral
+OVERSTORY-DESIGN-R002.1.1 adds deterministic per-palette light/dark action and neutral
 state contrast, persistence, green reset and semantic-token isolation checks.
 Mount Settings to exercise labelled palette selection and remount persistence.
 Qualify real-browser light/dark, opaque, reduced-transparency and forced-colors

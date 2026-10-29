@@ -10,8 +10,8 @@ import {
   updatePanel,
 } from '../model'
 
-// spec: WEBUI-DASH-R001
-describe('dashboard document model (WEBUI-DASH-R001)', () => {
+// spec: OVERSTORY-DASH-R001
+describe('dashboard document model (OVERSTORY-DASH-R001)', () => {
   it('creates a versioned, empty document with a slug id', () => {
     const doc = createDashboard('Fleet Health!')
     expect(doc).toMatchObject({ schema_version: 1, id: 'fleet-health', revision: 0, panels: [], params: [] })

@@ -11,7 +11,7 @@ import { shortenId } from './decision-format'
  * ordered. A receipt's coverage interval and act-risk bound are shown only
  * when it passed, is not synthetic, and carries metrics — a synthetic or
  * failed receipt is shown as a labeled diagnostic instead of a numeric claim
- * (requirement WEBUI-DECIDE-R006).
+ * (requirement OVERSTORY-DECIDE-R006).
  */
 
 function percent(value: { numerator: number; denominator: number }): string {

@@ -17,7 +17,7 @@ for (const viewport of [
   { width: 640, height: 240 },
 ]) {
   for (const payload of ['long', 'tall']) {
-    // spec: WEBUI-APPS-R048
+    // spec: OVERSTORY-APPS-R048
     test(`complete ${payload} review and trusted decisions at ${viewport.width}x${viewport.height}`, async ({
       page,
     }) => {

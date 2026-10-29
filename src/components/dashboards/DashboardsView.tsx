@@ -1,7 +1,7 @@
 /**
  * @file DashboardsView.tsx
  * @description `/data-dashboards`: build dashboards by hand or together with the chat agent
- * (WEBUI-DASH-R006, R008, R009, R013, R015). The agent works through the WebMCP tools
+ * (OVERSTORY-DASH-R006, R008, R009, R013, R015). The agent works through the WebMCP tools
  * registered below, which exist only while this page is mounted. Every edit, from the
  * person or the agent, lands in the activity log and can be undone.
  */

@@ -1,34 +1,34 @@
 {
   "schema_version": 2,
-  "spec_id": "WEBUI-IDENTITY",
+  "spec_id": "OVERSTORY-IDENTITY",
   "owner_repo": "overstory",
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
-    "WEBUI-IDENTITY-R003",
-    "WEBUI-IDENTITY-R004",
-    "WEBUI-IDENTITY-R005",
-    "WEBUI-IDENTITY-R006",
-    "WEBUI-IDENTITY-R007",
-    "WEBUI-IDENTITY-R008",
-    "WEBUI-IDENTITY-R009",
-    "WEBUI-IDENTITY-R001",
-    "WEBUI-IDENTITY-R002",
-    "WEBUI-IDENTITY-R003.1",
-    "WEBUI-IDENTITY-R003.2",
-    "WEBUI-IDENTITY-R003.3",
-    "WEBUI-IDENTITY-R010",
-    "WEBUI-IDENTITY-R003.1.1",
-    "WEBUI-IDENTITY-R003.1.2",
-    "WEBUI-IDENTITY-R003.2.1",
-    "WEBUI-IDENTITY-R003.2.2",
-    "WEBUI-IDENTITY-R003.3.1",
-    "WEBUI-IDENTITY-R003.3.2",
-    "WEBUI-IDENTITY-R004.1",
-    "WEBUI-IDENTITY-R004.2"
+    "OVERSTORY-IDENTITY-R003",
+    "OVERSTORY-IDENTITY-R004",
+    "OVERSTORY-IDENTITY-R005",
+    "OVERSTORY-IDENTITY-R006",
+    "OVERSTORY-IDENTITY-R007",
+    "OVERSTORY-IDENTITY-R008",
+    "OVERSTORY-IDENTITY-R009",
+    "OVERSTORY-IDENTITY-R001",
+    "OVERSTORY-IDENTITY-R002",
+    "OVERSTORY-IDENTITY-R003.1",
+    "OVERSTORY-IDENTITY-R003.2",
+    "OVERSTORY-IDENTITY-R003.3",
+    "OVERSTORY-IDENTITY-R010",
+    "OVERSTORY-IDENTITY-R003.1.1",
+    "OVERSTORY-IDENTITY-R003.1.2",
+    "OVERSTORY-IDENTITY-R003.2.1",
+    "OVERSTORY-IDENTITY-R003.2.2",
+    "OVERSTORY-IDENTITY-R003.3.1",
+    "OVERSTORY-IDENTITY-R003.3.2",
+    "OVERSTORY-IDENTITY-R004.1",
+    "OVERSTORY-IDENTITY-R004.2"
   ],
   "requirements": [
     {
-      "id": "WEBUI-IDENTITY-R003",
+      "id": "OVERSTORY-IDENTITY-R003",
       "title": "Identity mode wizard shows the active auth mode with no hidden bypass",
       "delivery_state": "SPECIFIED",
       "landed_in": [
@@ -37,13 +37,13 @@
       ],
       "verified_by": [],
       "rollup_of": [
-        "WEBUI-IDENTITY-R003.1",
-        "WEBUI-IDENTITY-R003.2",
-        "WEBUI-IDENTITY-R003.3"
+        "OVERSTORY-IDENTITY-R003.1",
+        "OVERSTORY-IDENTITY-R003.2",
+        "OVERSTORY-IDENTITY-R003.3"
       ]
     },
     {
-      "id": "WEBUI-IDENTITY-R004",
+      "id": "OVERSTORY-IDENTITY-R004",
       "title": "Local account flows use server sessions with no stored credentials",
       "delivery_state": "SPECIFIED",
       "landed_in": [
@@ -51,12 +51,12 @@
       ],
       "verified_by": [],
       "rollup_of": [
-        "WEBUI-IDENTITY-R004.1",
-        "WEBUI-IDENTITY-R004.2"
+        "OVERSTORY-IDENTITY-R004.1",
+        "OVERSTORY-IDENTITY-R004.2"
       ]
     },
     {
-      "id": "WEBUI-IDENTITY-R005",
+      "id": "OVERSTORY-IDENTITY-R005",
       "title": "MFA enrollment and recovery cover TOTP and WebAuthn",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -66,7 +66,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-IDENTITY-R006",
+      "id": "OVERSTORY-IDENTITY-R006",
       "title": "Identity admin tabs cover users, roles, groups and mapping dry run",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -75,7 +75,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-IDENTITY-R007",
+      "id": "OVERSTORY-IDENTITY-R007",
       "title": "Elevation requests display scope, expiry and a bound receipt",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -85,7 +85,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-IDENTITY-R008",
+      "id": "OVERSTORY-IDENTITY-R008",
       "title": "Identity or tenant change invalidates cached protected data",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -97,7 +97,7 @@
       ]
     },
     {
-      "id": "WEBUI-IDENTITY-R009",
+      "id": "OVERSTORY-IDENTITY-R009",
       "title": "Identity forms and confirmations are accessible on desktop and mobile",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -107,7 +107,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-IDENTITY-R001",
+      "id": "OVERSTORY-IDENTITY-R001",
       "title": "Release-qualification identity test client supports a live sign-in probe",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -116,7 +116,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-IDENTITY-R002",
+      "id": "OVERSTORY-IDENTITY-R002",
       "title": "Admin UI surfaces identity operations for users, roles and navigation",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -129,47 +129,47 @@
       ]
     },
     {
-      "id": "WEBUI-IDENTITY-R003.1",
+      "id": "OVERSTORY-IDENTITY-R003.1",
       "title": "Explicit no-auth mode with bounded anonymous policy",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [],
       "rollup_of": [
-        "WEBUI-IDENTITY-R003.1.1",
-        "WEBUI-IDENTITY-R003.1.2"
+        "OVERSTORY-IDENTITY-R003.1.1",
+        "OVERSTORY-IDENTITY-R003.1.2"
       ]
     },
     {
-      "id": "WEBUI-IDENTITY-R003.2",
+      "id": "OVERSTORY-IDENTITY-R003.2",
       "title": "Built-in EG authentication through Arbora",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [],
       "rollup_of": [
-        "WEBUI-IDENTITY-R003.2.1",
-        "WEBUI-IDENTITY-R003.2.2"
+        "OVERSTORY-IDENTITY-R003.2.1",
+        "OVERSTORY-IDENTITY-R003.2.2"
       ]
     },
     {
-      "id": "WEBUI-IDENTITY-R003.3",
+      "id": "OVERSTORY-IDENTITY-R003.3",
       "title": "External OIDC provider interoperability",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": [],
       "rollup_of": [
-        "WEBUI-IDENTITY-R003.3.1",
-        "WEBUI-IDENTITY-R003.3.2"
+        "OVERSTORY-IDENTITY-R003.3.1",
+        "OVERSTORY-IDENTITY-R003.3.2"
       ]
     },
     {
-      "id": "WEBUI-IDENTITY-R010",
+      "id": "OVERSTORY-IDENTITY-R010",
       "title": "Long-session renewal and mode-transition coherence",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
     },
     {
-      "id": "WEBUI-IDENTITY-R003.1.1",
+      "id": "OVERSTORY-IDENTITY-R003.1.1",
       "title": "Explicit anonymous source refusal boundary",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -185,14 +185,14 @@
       ]
     },
     {
-      "id": "WEBUI-IDENTITY-R003.1.2",
+      "id": "OVERSTORY-IDENTITY-R003.1.2",
       "title": "Complete installed anonymous journeys",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
     },
     {
-      "id": "WEBUI-IDENTITY-R003.2.1",
+      "id": "OVERSTORY-IDENTITY-R003.2.1",
       "title": "EG boundary configuration source refusal",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -203,14 +203,14 @@
       ]
     },
     {
-      "id": "WEBUI-IDENTITY-R003.2.2",
+      "id": "OVERSTORY-IDENTITY-R003.2.2",
       "title": "Installed EG identity journeys",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
     },
     {
-      "id": "WEBUI-IDENTITY-R003.3.1",
+      "id": "OVERSTORY-IDENTITY-R003.3.1",
       "title": "OIDC configuration source refusal",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -223,14 +223,14 @@
       ]
     },
     {
-      "id": "WEBUI-IDENTITY-R003.3.2",
+      "id": "OVERSTORY-IDENTITY-R003.3.2",
       "title": "External provider interoperability qualification",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
     },
     {
-      "id": "WEBUI-IDENTITY-R004.1",
+      "id": "OVERSTORY-IDENTITY-R004.1",
       "title": "Workspace account menu source interactions",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -242,7 +242,7 @@
       ]
     },
     {
-      "id": "WEBUI-IDENTITY-R004.2",
+      "id": "OVERSTORY-IDENTITY-R004.2",
       "title": "Complete installed local account and session flows",
       "delivery_state": "SPECIFIED",
       "landed_in": [],

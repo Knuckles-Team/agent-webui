@@ -30,7 +30,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 describe('retained workspace query lens', () => {
-  // spec: WEBUI-APPS-R049
+  // spec: OVERSTORY-APPS-R049
   it('retains pending SELECT execution, new draft and response provenance across lens unmount', async () => {
     let finish!: (response: Response) => void
     const fetch = vi.fn(
@@ -68,7 +68,7 @@ describe('retained workspace query lens', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
-  // spec: WEBUI-DESIGN-R004.2.1
+  // spec: OVERSTORY-DESIGN-R004.2.1
   it('keeps validation mode, source, errors and focused pane across host visibility changes', async () => {
     vi.stubGlobal(
       'fetch',
@@ -90,7 +90,7 @@ describe('retained workspace query lens', () => {
     expect(screen.getByRole('textbox')).toHaveValue('ex:Draft a owl:Class .')
   })
 
-  // spec: WEBUI-DESIGN-R004.1
+  // spec: OVERSTORY-DESIGN-R004.1
   it('isolates simultaneous lenses and labels each source selector uniquely', async () => {
     const user = userEvent.setup()
     render(
@@ -110,7 +110,7 @@ describe('retained workspace query lens', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049
+// spec: OVERSTORY-APPS-R049
 it('retires execution callbacks when the authorized controller owner unmounts', async () => {
   const fetch = vi.fn()
   vi.stubGlobal('fetch', fetch)

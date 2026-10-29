@@ -8,8 +8,8 @@ import { matchRoute } from '@/lib/nav-registry'
 
 /**
  * @file ConsoleConfirmView.tsx
- * @description The `console.confirm` deep link (requirement WEBUI-API-R007, part of
- * WEBUI-API-R001): attended confirmation of a server-held plan. A refused
+ * @description The `console.confirm` deep link (requirement OVERSTORY-API-R007, part of
+ * OVERSTORY-API-R001): attended confirmation of a server-held plan. A refused
  * effectful operation elsewhere in the app (e.g. `identity.ts::invokeIdentity`)
  * redirects here with a server-issued `plan_ref`; this page fetches that exact
  * plan and, on confirm, sends only the reference back — never the original

@@ -4,8 +4,8 @@ import { matchRoute } from '@/lib/nav-registry'
 import ConsoleConfirmView from '../ConsoleConfirmView'
 
 /**
- * The `console.confirm` deep link (requirement WEBUI-API-R007, part of
- * WEBUI-API-R001): the real component against a stubbed `fetch`, exercising
+ * The `console.confirm` deep link (requirement OVERSTORY-API-R007, part of
+ * OVERSTORY-API-R001): the real component against a stubbed `fetch`, exercising
  * the shared `invoke` transport end to end.
  */
 
@@ -14,7 +14,7 @@ afterEach(() => {
   window.history.replaceState({}, '', '/')
 })
 
-describe('console confirmation route (WEBUI-API-R007)', () => {
+describe('console confirmation route (OVERSTORY-API-R007)', () => {
   it('is registered as a deep link', () => {
     expect(matchRoute(`/console/confirm/arbora_plan:${'a'.repeat(48)}`)?.route.id).toBe('console.confirm')
   })

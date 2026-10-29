@@ -143,7 +143,7 @@ describe('attended WebMCP controls', () => {
   })
 })
 
-// spec: WEBUI-APPS-R005.6.2
+// spec: OVERSTORY-APPS-R005.6.2
 it('keeps legacy browser controls in a dismissible flow disclosure without arming on disclosure', async () => {
   const controlled = fakeChannel(IDLE)
   const user = userEvent.setup()

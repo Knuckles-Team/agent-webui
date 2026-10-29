@@ -408,7 +408,7 @@ describe('DataAnalystView natural-language query contract', () => {
     expect(screen.queryByText('Stale analyst answer.')).not.toBeInTheDocument()
   })
 
-  it('shows the shared loading status message with a Cancel that aborts the request (WEBUI-DESIGN-R006)', async () => {
+  it('shows the shared loading status message with a Cancel that aborts the request (OVERSTORY-DESIGN-R006)', async () => {
     const pendingResponse = deferred<Response>()
     let signal: AbortSignal | undefined
     vi.stubGlobal(

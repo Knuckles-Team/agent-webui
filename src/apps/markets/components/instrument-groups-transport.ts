@@ -1,11 +1,11 @@
 /**
  * @file instrument-groups-transport.ts
  * @description The one data-access seam `InstrumentGroups` depends on
- * (FIN-UI-R005), following the same split as `src/components/decisions/decisions-transport.ts`
+ * (OVERSTORY-R005), following the same split as `src/components/decisions/decisions-transport.ts`
  * and `src/lib/kg-lod/contract.ts`'s `LodTransport`: a typed interface the
  * view is written against, kept separate from any one implementation. No
  * production implementation is wired up here — this repository's groups
- * live on `EG-FINANCE-PRIMITIVES-R004` (epistemic-graph finance-v1 accounts
+ * live on `MEDULLA-FINANCE-PRIMITIVES-R004` (epistemic-graph finance-v1 accounts
  * and reference sessions), which is PENDING per
  * `specs/finance-asset-manager/tasks.md`. `InstrumentGroups` therefore takes
  * an `InstrumentGroupsTransport` as a required prop with no default; tests

@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R046.1
+// spec: OVERSTORY-APPS-R046.1
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -65,7 +65,7 @@ describe('shared workspace navigation', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049.1.2
+// spec: OVERSTORY-APPS-R049.1.2
 it.each([
   ['/', 'user', '/workspace/work', 'workspace.work-proof'],
   ['/', 'reader', '/workspace/operate', 'workspace.operate'],
@@ -85,7 +85,7 @@ it('retains source role admission for compatibility links', () => {
   expect(push).not.toHaveBeenCalled()
 })
 
-// spec: WEBUI-APPS-R049.1.14, WEBUI-APPS-R049.1.15, WEBUI-APPS-R049.1.16
+// spec: OVERSTORY-APPS-R049.1.14, OVERSTORY-APPS-R049.1.15, OVERSTORY-APPS-R049.1.16
 it('preserves native alias source admission and leaves legacy graph reader access unchanged', () => {
   const push = vi.spyOn(window.history, 'pushState')
   expect(() => navigateWorkspace('/workflows', 'maintainer')).toThrow('not permitted')

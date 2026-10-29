@@ -39,7 +39,7 @@ afterEach(() => {
 })
 
 describe.each(['sparql', 'shacl'] as const)('%s request ownership', (mode) => {
-  // spec: WEBUI-APPS-R049
+  // spec: OVERSTORY-APPS-R049
   it('excludes same-tick calls and retained idle callbacks across rerenders', async () => {
     const { fetch, finishes } = deferredFetch()
     const { result } = renderHook(() => useQueryValidationLens())
@@ -68,7 +68,7 @@ describe.each(['sparql', 'shacl'] as const)('%s request ownership', (mode) => {
     expect(running(result.current, mode)).toBe(false)
   })
 
-  // spec: WEBUI-APPS-R049
+  // spec: OVERSTORY-APPS-R049
   it('reads committed inputs through an old callback and keeps the current request ownership', async () => {
     const { fetch, finishes } = deferredFetch()
     const { result } = renderHook(() => useQueryValidationLens())
@@ -107,7 +107,7 @@ describe.each(['sparql', 'shacl'] as const)('%s request ownership', (mode) => {
     expect(value).toBe('newer')
   })
 
-  // spec: WEBUI-APPS-R049
+  // spec: OVERSTORY-APPS-R049
   it('releases only its own lock after failure and permits a later retry', async () => {
     const { fetch, finishes } = deferredFetch()
     const { result } = renderHook(() => useQueryValidationLens())
@@ -134,7 +134,7 @@ describe.each(['sparql', 'shacl'] as const)('%s request ownership', (mode) => {
     expect(mode === 'sparql' ? result.current.sparqlError : result.current.shaclError).toBeNull()
   })
 
-  // spec: WEBUI-APPS-R049
+  // spec: OVERSTORY-APPS-R049
   it('retires old callbacks and completions without touching a new owner request', async () => {
     const { fetch, finishes } = deferredFetch()
     const old = renderHook(() => useQueryValidationLens())
@@ -174,7 +174,7 @@ describe.each(['sparql', 'shacl'] as const)('%s request ownership', (mode) => {
   })
 })
 
-// spec: WEBUI-APPS-R049
+// spec: OVERSTORY-APPS-R049
 it('tracks query and validation ownership independently', async () => {
   const { fetch, finishes } = deferredFetch()
   const { result } = renderHook(() => useQueryValidationLens())

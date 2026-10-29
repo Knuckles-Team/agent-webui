@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R002.1
+// spec: OVERSTORY-DESIGN-R002.1
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WorkspaceHeaderDisclosure } from '../WorkspaceHeaderDisclosure'
@@ -158,7 +158,7 @@ it('keeps compact context disclosure open for disabled and modified links', () =
   expect(trigger).toHaveAttribute('aria-expanded', 'true')
 })
 
-// spec: WEBUI-DESIGN-R004.1.1
+// spec: OVERSTORY-DESIGN-R004.1.1
 it('reflows the automatic map default but preserves an explicit expansion and retained task', () => {
   let wide = true
   const media = Object.assign(new EventTarget(), {
@@ -210,7 +210,7 @@ it('reflows the automatic map default but preserves an explicit expansion and re
   }
 })
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 it('does not report a normal filtered collection as an unavailable map selection', () => {
   const entries = [{ id: 'explore', label: 'Explore', href: '/workspace/explore', kind: 'context' as const }]
   const view = render(<WorkspaceMap entries={entries} current="/workspace/explore?q=forest" onSelect={vi.fn()} />)

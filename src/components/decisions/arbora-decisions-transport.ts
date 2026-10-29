@@ -10,7 +10,7 @@ import type { DecisionAggregateOptions, DecisionsTransport, ListDecisionsOptions
 
 /**
  * @file arbora-decisions-transport.ts
- * @description The real `DecisionsTransport` (requirement WEBUI-API-R001),
+ * @description The real `DecisionsTransport` (requirement OVERSTORY-API-R001),
  * calling the five real Arbora decision operations through the shared
  * `invoke()` adapter — no second HTTP/CSRF path, no browser-held service
  * bearer. These were confirmed against the epistemic-graph source of truth
@@ -28,7 +28,7 @@ import type { DecisionAggregateOptions, DecisionsTransport, ListDecisionsOptions
  *   A record's provenance (premises, inputs) is already embedded in the
  *   `DecisionLog.get` response; evaluations/resolutions are a different,
  *   not-yet-exposed read. Refuses with `DECISION_PROVENANCE_UNAVAILABLE`.
- * `getWhyNotOnDemand` (WEBUI-DECIDE-R004) likewise has no production operation pinned
+ * `getWhyNotOnDemand` (OVERSTORY-DECIDE-R004) likewise has no production operation pinned
  * yet, so it resolves `{ kind: 'refused' }` rather than guessing an op id.
  *
  * `eg.*` operations carry a placeholder `{"type":"object"}` schema in the

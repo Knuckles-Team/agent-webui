@@ -155,7 +155,7 @@ describe('GraphCanvas renderer-mode seam', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049.1.14
+// spec: OVERSTORY-APPS-R049.1.14
 describe('read-only Explore canvas capability', () => {
   it('retains visualization controls but has no edit entry point for selection or gestures', () => {
     const selected = makeNodes(1)[0]

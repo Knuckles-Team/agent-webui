@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
-// spec: WEBUI-APPS-R049.1.7
+// spec: OVERSTORY-APPS-R049.1.7
 import { act, fireEvent, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'
@@ -143,7 +143,7 @@ describe('integrated Explore query lenses', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049.1.8
+// spec: OVERSTORY-APPS-R049.1.8
 describe('attended query editor tools', () => {
   const invoke = (name: string, input = {}) =>
     state.tools.get(`agent-webui.explore.${name}`)!.execute(input, { signal: new AbortController().signal })
@@ -214,7 +214,7 @@ describe('attended query editor tools', () => {
   })
 })
 
-// spec: WEBUI-APPS-R049.2.1
+// spec: OVERSTORY-APPS-R049.2.1
 it('leaves evidence focus with the integrated journey through StrictMode close and reselection', async () => {
   window.history.replaceState({}, '', '/workspace/explore?q=retained&entity=a')
   renderWithProviders(<StrictMode>{surface()}</StrictMode>)

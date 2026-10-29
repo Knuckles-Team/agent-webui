@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R005.3
+// spec: OVERSTORY-APPS-R005.3
 import { useState, type ComponentProps } from 'react'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -205,7 +205,7 @@ it('rejects duplicate component identities and mismatched authority', async () =
   await expect(readOperateCatalog()).rejects.toThrow()
 })
 
-// spec: WEBUI-APPS-R046.2.2
+// spec: OVERSTORY-APPS-R046.2.2
 it('restores exact URL identities and refuses wrong-connector and missing definition links', async () => {
   payload = {
     ...(payload as object),
@@ -236,7 +236,7 @@ it('restores exact URL identities and refuses wrong-connector and missing defini
   push.mockRestore()
 })
 
-// spec: WEBUI-APPS-R047
+// spec: OVERSTORY-APPS-R047
 it('uses loaded catalog commands for semantic selection and retires handles on refresh', async () => {
   payload = { ...(payload as object), components: [definition('tool:records', 'records')] }
   renderWithProviders(
@@ -265,7 +265,7 @@ it('uses loaded catalog commands for semantic selection and retires handles on r
   expect(screen.queryByRole('region', { name: 'Selected catalog definition' })).not.toBeInTheDocument()
 })
 
-// spec: WEBUI-APPS-R046.2.2
+// spec: OVERSTORY-APPS-R046.2.2
 it('bounds catalog commands and nests only explicit connector-definition associations', () => {
   const commands = loadedCatalogCommands(
     { server: null, item: null, q: '' },
@@ -288,7 +288,7 @@ it('bounds catalog commands and nests only explicit connector-definition associa
   ).toEqual([])
 })
 
-// spec: WEBUI-APPS-R046.2.2
+// spec: OVERSTORY-APPS-R046.2.2
 it('refreshes equivalent definitions without stealing focus from the retained filter', async () => {
   payload = { ...(payload as object), components: [definition('tool:records', 'records')] }
   window.history.replaceState({}, '', '/workspace/operate?connector=srv%3Arecords&definition=tool%3Arecords')
@@ -302,7 +302,7 @@ it('refreshes equivalent definitions without stealing focus from the retained fi
   expect(filter).toHaveFocus()
 })
 
-// spec: WEBUI-APPS-R046.2.2
+// spec: OVERSTORY-APPS-R046.2.2
 it.each(['x'.repeat(257), 'unsafe\u0000identity', '\ud800'])(
   'keeps non-navigable catalog identities readable without crashing',
   async (id) => {

@@ -271,7 +271,7 @@ def _run_html_document(body_chunks: list[bytes], policy: str | None = None) -> l
     return messages
 
 
-@pytest.mark.spec('WEBUI-DESIGN-R009')
+@pytest.mark.spec('OVERSTORY-DESIGN-R009')
 def test_html_documents_carry_a_fresh_style_nonce() -> None:
     chunks = [b'<meta property="csp-nonce" nonce="AGENT_WEBUI_', b'CSP_NONCE">']
     first = _run_html_document(chunks)
@@ -1031,7 +1031,7 @@ def test_fleet_effect_host_entrypoint_refuses_reader(
     assert calls == []
 
 
-# spec: WEBUI-APPS-R004.4
+# spec: OVERSTORY-APPS-R004.4
 def test_current_plan_host_entrypoint(mock_agent, authenticated_client_factory):
     """Exact read admission retains authentication and caller scope checks."""
     calls = []

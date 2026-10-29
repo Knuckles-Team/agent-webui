@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R005.4, WEBUI-APPS-R049.1.3
+// spec: OVERSTORY-APPS-R005.4, OVERSTORY-APPS-R049.1.3
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'

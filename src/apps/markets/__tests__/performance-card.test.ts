@@ -12,8 +12,8 @@ const BASE: PerformanceCard = {
   stale: false,
 }
 
-// spec: FIN-UI-R011.1
-describe('performance-card (FIN-UI-R011.1)', () => {
+// spec: OVERSTORY-R011.1
+describe('performance-card (OVERSTORY-R011.1)', () => {
   it('reproduces the owner decimal string verbatim, trailing zeros included', () => {
     expect(renderPerformanceCard(BASE)).toEqual({ state: 'value', displayValue: '12.340000' })
   })

@@ -184,7 +184,7 @@ describe('ConfigurationView (1:1 AgentConfig form)', () => {
     expect(screen.queryByText('Not set')).not.toBeInTheDocument()
   })
 
-  it('shows the shared loading status message (WEBUI-DESIGN-R006) before the schema resolves', () => {
+  it('shows the shared loading status message (OVERSTORY-DESIGN-R006) before the schema resolves', () => {
     global.fetch = vi.fn(() => new Promise(() => undefined)) as unknown as typeof fetch
     render(<ConfigurationView />)
 
@@ -192,7 +192,7 @@ describe('ConfigurationView (1:1 AgentConfig form)', () => {
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
 
-  it('shows the shared empty status message (WEBUI-DESIGN-R006) when the schema declares zero fields', async () => {
+  it('shows the shared empty status message (OVERSTORY-DESIGN-R006) when the schema declares zero fields', async () => {
     mockFetch({ schema: () => jsonResponse({ ...AGENT_CONFIG_SCHEMA, schema: { properties: {}, required: [] } }) })
     render(<ConfigurationView />)
 

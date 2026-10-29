@@ -633,7 +633,7 @@ export default function DataAnalystView() {
     })
   }
 
-  /** WEBUI-DESIGN-R006 interruption: `ask()` already owns a real `AbortController` (used
+  /** OVERSTORY-DESIGN-R006 interruption: `ask()` already owns a real `AbortController` (used
    * today to invalidate a stale in-flight request when the operator starts a
    * new one or switches modes) -- this exposes the same abort as a
    * user-facing Cancel while a question is in flight. `invalidateActiveRequest`

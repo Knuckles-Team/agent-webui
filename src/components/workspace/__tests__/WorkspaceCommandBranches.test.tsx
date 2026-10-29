@@ -1,5 +1,5 @@
-// spec: WEBUI-DESIGN-R005.1
-// spec: WEBUI-APPS-R046.2.2
+// spec: OVERSTORY-DESIGN-R005.1
+// spec: OVERSTORY-APPS-R046.2.2
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { WorkspaceCommandBranches } from '../WorkspaceCommandBranches'

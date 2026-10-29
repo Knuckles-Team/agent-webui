@@ -1,8 +1,8 @@
-# WEBUI-IDENTITY — Browser identity, administration and elevation
+# OVERSTORY-IDENTITY — Browser identity, administration and elevation
 
-**ID:** WEBUI-IDENTITY
+**ID:** OVERSTORY-IDENTITY
 **Owner:** agent-webui
-**Related IDs:** AU-SEC-R006, ARBORA-IDENTITY-R004, ARBORA-IDENTITY-R005, ARBORA-IDENTITY-R006, ARBORA-IDENTITY-R007, WEBUI-IDENTITY-R002
+**Related IDs:** MERISTEM-SEC-R006, ARBORA-IDENTITY-R004, ARBORA-IDENTITY-R005, ARBORA-IDENTITY-R006, ARBORA-IDENTITY-R007, OVERSTORY-IDENTITY-R002
 **Delivery:** specified; current source requires audit
 **Acceptance:** open
 
@@ -16,13 +16,13 @@ Actors are visitor, authenticated member, identity administrator, elevation requ
 
 | ID | Required behavior | Related IDs | Acceptance |
 |---|---|---|---|
-| WEBUI-IDENTITY-R003 | Mode wizard shows configured OIDC, local or loopback bootstrap and doctor result; no invisible auth bypass | ARBORA-IDENTITY-R004, ARBORA-IDENTITY-R007 | Mode-specific rendered + server tests |
-| WEBUI-IDENTITY-R004 | Local register/login/logout/forgot/reset/change-password use server sessions and anti-CSRF. No credential or bearer is stored in browser persistence | ARBORA-IDENTITY-R005 | End-to-end session/fixation/CSRF probes |
-| WEBUI-IDENTITY-R005 | MFA enrollment, challenge and recovery cover TOTP and WebAuthn, with one-time recovery code handling | ARBORA-IDENTITY-R006 | Positive, replay, lost-device tests |
-| WEBUI-IDENTITY-R006 | Admin tabs cover users, roles, groups, auth modes and mapping-rule dry run through typed `identity.*` operations | ARBORA-IDENTITY-R007, WEBUI-IDENTITY-R002 | Authorized/denied generated-client tests |
-| WEBUI-IDENTITY-R007 | Elevation request, approval and revocation display scope, reason, expiry and receipt; confirmation and step-up bind to the same caller and action | AU-SEC-R006 | A2A/chat/UI parity and adversarial tests |
-| WEBUI-IDENTITY-R008 | Identity mode, tenant or session change invalidates cached protected data and closes active privileged interactions | ARBORA-IDENTITY-R004–ARBORA-IDENTITY-R007 | Two-principal browser test |
-| WEBUI-IDENTITY-R009 | All forms, errors, tab panels and modal confirmations are keyboard and screen-reader usable, with equivalent mobile behavior | all | Accessibility E2E |
+| OVERSTORY-IDENTITY-R003 | Mode wizard shows configured OIDC, local or loopback bootstrap and doctor result; no invisible auth bypass | ARBORA-IDENTITY-R004, ARBORA-IDENTITY-R007 | Mode-specific rendered + server tests |
+| OVERSTORY-IDENTITY-R004 | Local register/login/logout/forgot/reset/change-password use server sessions and anti-CSRF. No credential or bearer is stored in browser persistence | ARBORA-IDENTITY-R005 | End-to-end session/fixation/CSRF probes |
+| OVERSTORY-IDENTITY-R005 | MFA enrollment, challenge and recovery cover TOTP and WebAuthn, with one-time recovery code handling | ARBORA-IDENTITY-R006 | Positive, replay, lost-device tests |
+| OVERSTORY-IDENTITY-R006 | Admin tabs cover users, roles, groups, auth modes and mapping-rule dry run through typed `identity.*` operations | ARBORA-IDENTITY-R007, OVERSTORY-IDENTITY-R002 | Authorized/denied generated-client tests |
+| OVERSTORY-IDENTITY-R007 | Elevation request, approval and revocation display scope, reason, expiry and receipt; confirmation and step-up bind to the same caller and action | MERISTEM-SEC-R006 | A2A/chat/UI parity and adversarial tests |
+| OVERSTORY-IDENTITY-R008 | Identity mode, tenant or session change invalidates cached protected data and closes active privileged interactions | ARBORA-IDENTITY-R004–ARBORA-IDENTITY-R007 | Two-principal browser test |
+| OVERSTORY-IDENTITY-R009 | All forms, errors, tab panels and modal confirmations are keyboard and screen-reader usable, with equivalent mobile behavior | all | Accessibility E2E |
 
 Errors must avoid disclosing whether a username, tenant or protected record exists. A failed step-up never turns into a successful action after retry unless a new valid confirmation and receipt are obtained. The UI's role labels are explanatory; authorization comes from Arbora and its delegated database scopes.
 
@@ -34,4 +34,4 @@ Requirement IDs are defined in [requirements.md](requirements.md); delivery stat
 
 ## Explicit authentication modes and long sessions
 
-WEBUI-IDENTITY-R003.1, R003.2 and R003.3 extend the existing mode owner: no-auth, built-in EG authentication and configured external OIDC providers (Keycloak/Okta). WEBUI-IDENTITY-R010 defines common lifecycle and renewal. No-auth is an intentional operator-selected mode with honest anonymous policy/provenance, not a fallback after auth failure. These additions are SPECIFIED. Existing login/MFA/approval requirements apply when their authentication capability is enabled; anonymous operation cannot mint proof of identity or approval. All modes retain the same responsive navigation and UI/WebMCP action boundary.
+OVERSTORY-IDENTITY-R003.1, R003.2 and R003.3 extend the existing mode owner: no-auth, built-in EG authentication and configured external OIDC providers (Keycloak/Okta). OVERSTORY-IDENTITY-R010 defines common lifecycle and renewal. No-auth is an intentional operator-selected mode with honest anonymous policy/provenance, not a fallback after auth failure. These additions are SPECIFIED. Existing login/MFA/approval requirements apply when their authentication capability is enabled; anonymous operation cannot mint proof of identity or approval. All modes retain the same responsive navigation and UI/WebMCP action boundary.

@@ -1,4 +1,4 @@
-// Planned browser coverage for WEBUI-APPS-R049.1.2; not a completed acceptance receipt.
+// Planned browser coverage for OVERSTORY-APPS-R049.1.2; not a completed acceptance receipt.
 // Synthetic browser journey only. Served workflow effects remain unavailable and unqualified.
 import { test, expect } from '@playwright/test'
 import { operation, taskPage } from './fixtures/work-task-operations'

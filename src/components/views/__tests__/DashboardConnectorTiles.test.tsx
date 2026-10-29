@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R005.3
+// spec: OVERSTORY-APPS-R005.3
 import { fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/__tests__/fixtures'

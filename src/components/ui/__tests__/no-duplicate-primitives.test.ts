@@ -31,8 +31,8 @@ function exportedComponentNames(source: string): string[] {
   return [...names]
 }
 
-describe('design-system primitive inventory (WEBUI-DESIGN-R007)', () => {
-  // spec: WEBUI-DESIGN-R007
+describe('design-system primitive inventory (OVERSTORY-DESIGN-R007)', () => {
+  // spec: OVERSTORY-DESIGN-R007
   it('names every exported primitive exactly once across src/components/ui', () => {
     const owners = new Map<string, string[]>()
     for (const file of primitiveFiles()) {
@@ -46,7 +46,7 @@ describe('design-system primitive inventory (WEBUI-DESIGN-R007)', () => {
     expect(owners.size).toBeGreaterThan(0)
   })
 
-  // spec: WEBUI-DESIGN-R007
+  // spec: OVERSTORY-DESIGN-R007
   it('adds no telemetry, analytics or session-replay dependency', () => {
     const packageJson = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>

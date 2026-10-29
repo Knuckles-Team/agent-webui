@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
 import { ThemeProvider } from '@/components/theme-provider'

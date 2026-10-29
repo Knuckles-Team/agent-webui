@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R004.2.1
+// spec: OVERSTORY-DESIGN-R004.2.1
 import { chromium, expect, test, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

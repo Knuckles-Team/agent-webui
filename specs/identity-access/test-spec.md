@@ -21,10 +21,10 @@ These are planned cases, not passing receipts. Record exact installed WebUI/Arbo
 
 | Requirement | Required proof |
 |---|---|
-| WEBUI-IDENTITY-R003.1 | The installed no-auth stack completes declared anonymous-policy journeys. It rejects out-of-scope/identity-required operations, cross-origin requests and accidental public exposure. UI/tool results identify the same anonymous scope. |
-| WEBUI-IDENTITY-R003.2 | Test real composed EG login/session/use/logout with valid, invalid, expired, revoked and wrong-tenant sessions. Check HTTP/WebSocket parity and token protection. |
-| WEBUI-IDENTITY-R003.3 | Test OIDC protocol fixtures and each claimed live provider. Reject wrong issuer/audience/state, replay, unavailable discovery/JWKS and incomplete configuration. Unavailable live-provider evidence remains explicit. |
-| WEBUI-IDENTITY-R010 | Test long-running HTTP/stream/WebSocket and manual/WebMCP flows across renewal, expiry, revocation/logout, multiple tabs and mode changes. Reject privilege carryover, duplicate effects and hidden downgrade. |
+| OVERSTORY-IDENTITY-R003.1 | The installed no-auth stack completes declared anonymous-policy journeys. It rejects out-of-scope/identity-required operations, cross-origin requests and accidental public exposure. UI/tool results identify the same anonymous scope. |
+| OVERSTORY-IDENTITY-R003.2 | Test real composed EG login/session/use/logout with valid, invalid, expired, revoked and wrong-tenant sessions. Check HTTP/WebSocket parity and token protection. |
+| OVERSTORY-IDENTITY-R003.3 | Test OIDC protocol fixtures and each claimed live provider. Reject wrong issuer/audience/state, replay, unavailable discovery/JWKS and incomplete configuration. Unavailable live-provider evidence remains explicit. |
+| OVERSTORY-IDENTITY-R010 | Test long-running HTTP/stream/WebSocket and manual/WebMCP flows across renewal, expiry, revocation/logout, multiple tabs and mode changes. Reject privilege carryover, duplicate effects and hidden downgrade. |
 
 Test public shell reachability, unauthorized API refusal in authenticated modes, authorized API success and expired/revoked sessions. Cover tenant separation, CSRF, login fixation, logout, WebSocket context binding, renewal and attended browser-control restrictions. Run manual and native WebMCP parity against the same mode/role fixtures. No-auth must pass genuine declared anonymous operations without inventing authenticated identity; disabled identity-dependent actions remain visibly explained. A startup-only fake-boundary test, browser fixture or successful upstream no-auth call alone does not qualify the installed browser stack. Provider-specific live evidence is required before claiming Keycloak or Okta production qualification; protocol fixtures remain useful but separately labelled.
 
@@ -34,12 +34,12 @@ Exercise real enhanced file/config/editor handlers in no-auth: the interim imple
 
 | Child | Source evidence or remaining acceptance |
 |---|---|
-| WEBUI-IDENTITY-R003.1.1 | `tests/test_explicit_auth_modes.py` checks explicit anonymous policy and refusal, not positive governed effects. Register probe routes through `application_composer` before the SPA mount so the same checks run against installed candidate wheels with packaged assets. |
-| WEBUI-IDENTITY-R003.1.2 | Installed anonymous journeys, UI/WebMCP parity and native effects remain open. |
-| WEBUI-IDENTITY-R003.2.1 | `tests/test_explicit_auth_modes.py` refuses missing or untyped EG owners. |
-| WEBUI-IDENTITY-R003.2.2 | Installed EG login/session/logout and HTTP/WebSocket qualification remain open. |
-| WEBUI-IDENTITY-R003.3.1 | `tests/test_explicit_auth_modes.py` refuses incompatible EG ownership and incomplete browser OIDC setup. |
-| WEBUI-IDENTITY-R003.3.2 | OIDC protocol fixtures and live provider acceptance remain open. |
+| OVERSTORY-IDENTITY-R003.1.1 | `tests/test_explicit_auth_modes.py` checks explicit anonymous policy and refusal, not positive governed effects. Register probe routes through `application_composer` before the SPA mount so the same checks run against installed candidate wheels with packaged assets. |
+| OVERSTORY-IDENTITY-R003.1.2 | Installed anonymous journeys, UI/WebMCP parity and native effects remain open. |
+| OVERSTORY-IDENTITY-R003.2.1 | `tests/test_explicit_auth_modes.py` refuses missing or untyped EG owners. |
+| OVERSTORY-IDENTITY-R003.2.2 | Installed EG login/session/logout and HTTP/WebSocket qualification remain open. |
+| OVERSTORY-IDENTITY-R003.3.1 | `tests/test_explicit_auth_modes.py` refuses incompatible EG ownership and incomplete browser OIDC setup. |
+| OVERSTORY-IDENTITY-R003.3.2 | OIDC protocol fixtures and live provider acceptance remain open. |
 
 The source markers cover only configuration and refusal behavior. R003.1, R003.2 and R003.3 retain every original parent requirement. R010 renewal and mode-transition acceptance remains open.
 
@@ -67,7 +67,7 @@ Explicit opt-in with missing prerequisites must fail, not skip.
 
 | Child | Required proof |
 |---|---|
-| WEBUI-IDENTITY-R004.1 | Render the real Work entry with the existing account menu. Verify its labeled compact trigger, keyboard opening, Escape and focus restoration. With fixture identity and mocked HTTP responses, verify sign-out posts with same-origin credentials and CSRF, redirects only after success and visibly reports refusal. |
-| WEBUI-IDENTITY-R004.2 | Exercise every original parent account flow against installed browser and native producer versions. Prove session-fixation resistance, CSRF refusal, logout and cookie replay refusal, bounded one-use recovery and no browser-persisted credentials. |
+| OVERSTORY-IDENTITY-R004.1 | Render the real Work entry with the existing account menu. Verify its labeled compact trigger, keyboard opening, Escape and focus restoration. With fixture identity and mocked HTTP responses, verify sign-out posts with same-origin credentials and CSRF, redirects only after success and visibly reports refusal. |
+| OVERSTORY-IDENTITY-R004.2 | Exercise every original parent account flow against installed browser and native producer versions. Prove session-fixation resistance, CSRF refusal, logout and cookie replay refusal, bounded one-use recovery and no browser-persisted credentials. |
 
 The R004.1 source tests are in `UserMenu.test.tsx` and `AppWorkspaceEntry.test.tsx`. They do not establish native session revocation, installed authentication, measured mobile layout or full screen-reader/accessibility acceptance. The R004 parent and R009 retain those separate obligations.

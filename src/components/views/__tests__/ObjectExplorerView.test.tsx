@@ -162,7 +162,7 @@ describe('ObjectExplorerView (component handlers, real api singleton)', () => {
   })
 })
 
-describe('ObjectExplorerView — WEBUI-DESIGN-R006 status language', () => {
+describe('ObjectExplorerView — OVERSTORY-DESIGN-R006 status language', () => {
   it('shows the shared loading status message while the object-set search is in flight', async () => {
     vi.spyOn(api, 'ontologySearch').mockReturnValue(new Promise(() => undefined))
     renderWithProviders(<ObjectExplorerView />)

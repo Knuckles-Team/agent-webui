@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { PromptInputSubmit } from '@/components/ai-elements/prompt-input'
 import { Input } from '@/components/ui/input'
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 it('pairs destructive badge fills with the theme foreground without an alpha override', () => {
   render(<Badge variant="destructive">Failed</Badge>)
   const badge = screen.getByText('Failed')
@@ -13,7 +13,7 @@ it('pairs destructive badge fills with the theme foreground without an alpha ove
   expect(badge).not.toHaveClass('text-white', 'dark:bg-destructive/60')
 })
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 it('keeps disabled control text on solid semantic surfaces without enabling input', () => {
   render(
     <>

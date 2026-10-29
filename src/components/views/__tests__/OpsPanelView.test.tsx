@@ -83,7 +83,7 @@ describe('OpsPanelView Component', () => {
     })
   })
 
-  it('shows the shared loading, then empty, status message for each tab (WEBUI-DESIGN-R006)', async () => {
+  it('shows the shared loading, then empty, status message for each tab (OVERSTORY-DESIGN-R006)', async () => {
     global.fetch = mockFetchByUrl({
       '/api/enhanced/pipeline/status': { status: 'idle', phases: [] },
       '/api/enhanced/maintenance/status': { status: 'healthy', operations: [] },

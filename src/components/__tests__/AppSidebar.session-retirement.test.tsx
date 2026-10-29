@@ -92,7 +92,7 @@ afterEach(() => {
   localStorage.clear()
 })
 
-describe('WEBUI-API-R011.2 same-document sidebar retirement', () => {
+describe('OVERSTORY-API-R011.2 same-document sidebar retirement', () => {
   it.each(changes)('retires delete confirmation on %s without deleting either owner cache', (_label, next) => {
     const nextState = next()
     saveConversationEntry(conversationOwnerKey(admitted().identity), '/same-id', 'Original private title')

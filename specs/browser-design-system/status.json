@@ -1,40 +1,40 @@
 {
   "schema_version": 2,
-  "spec_id": "WEBUI-DESIGN",
+  "spec_id": "OVERSTORY-DESIGN",
   "owner_repo": "overstory",
   "delivery_state": "SPECIFIED",
   "requirement_ids": [
-    "WEBUI-DESIGN-R001",
-    "WEBUI-DESIGN-R002",
-    "WEBUI-DESIGN-R003",
-    "WEBUI-DESIGN-R004",
-    "WEBUI-DESIGN-R005",
-    "WEBUI-DESIGN-R006",
-    "WEBUI-DESIGN-R007",
-    "WEBUI-DESIGN-R008",
-    "WEBUI-DESIGN-R009",
-    "WEBUI-DESIGN-R002.1",
-    "WEBUI-DESIGN-R004.1",
-    "WEBUI-DESIGN-R004.2",
-    "WEBUI-DESIGN-R004.2.1",
-    "WEBUI-DESIGN-R004.2.2",
-    "WEBUI-DESIGN-R005.1",
-    "WEBUI-DESIGN-R010",
-    "WEBUI-DESIGN-R011",
-    "WEBUI-DESIGN-R002.1.1",
-    "WEBUI-DESIGN-R004.1.1",
-    "WEBUI-DESIGN-R005.2",
-    "WEBUI-DESIGN-R002.1.2",
-    "WEBUI-DESIGN-R004.1.2",
-    "WEBUI-DESIGN-R005.3",
-    "WEBUI-DESIGN-R005.3.1",
-    "WEBUI-DESIGN-R005.3.2",
-    "WEBUI-DESIGN-R005.4",
-    "WEBUI-DESIGN-R005.5"
+    "OVERSTORY-DESIGN-R001",
+    "OVERSTORY-DESIGN-R002",
+    "OVERSTORY-DESIGN-R003",
+    "OVERSTORY-DESIGN-R004",
+    "OVERSTORY-DESIGN-R005",
+    "OVERSTORY-DESIGN-R006",
+    "OVERSTORY-DESIGN-R007",
+    "OVERSTORY-DESIGN-R008",
+    "OVERSTORY-DESIGN-R009",
+    "OVERSTORY-DESIGN-R002.1",
+    "OVERSTORY-DESIGN-R004.1",
+    "OVERSTORY-DESIGN-R004.2",
+    "OVERSTORY-DESIGN-R004.2.1",
+    "OVERSTORY-DESIGN-R004.2.2",
+    "OVERSTORY-DESIGN-R005.1",
+    "OVERSTORY-DESIGN-R010",
+    "OVERSTORY-DESIGN-R011",
+    "OVERSTORY-DESIGN-R002.1.1",
+    "OVERSTORY-DESIGN-R004.1.1",
+    "OVERSTORY-DESIGN-R005.2",
+    "OVERSTORY-DESIGN-R002.1.2",
+    "OVERSTORY-DESIGN-R004.1.2",
+    "OVERSTORY-DESIGN-R005.3",
+    "OVERSTORY-DESIGN-R005.3.1",
+    "OVERSTORY-DESIGN-R005.3.2",
+    "OVERSTORY-DESIGN-R005.4",
+    "OVERSTORY-DESIGN-R005.5"
   ],
   "requirements": [
     {
-      "id": "WEBUI-DESIGN-R001",
+      "id": "OVERSTORY-DESIGN-R001",
       "title": "Design guidance distilled into component system and skills",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -46,7 +46,7 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R002",
+      "id": "OVERSTORY-DESIGN-R002",
       "title": "Design tokens documented with contrast targets",
       "delivery_state": "SPECIFIED",
       "landed_in": [
@@ -62,11 +62,11 @@
         "src/components/__tests__/ThemeProvider.test.tsx:1"
       ],
       "rollup_of": [
-        "WEBUI-DESIGN-R002.1"
+        "OVERSTORY-DESIGN-R002.1"
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R003",
+      "id": "OVERSTORY-DESIGN-R003",
       "title": "Controls have accessible names and visible focus",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -78,7 +78,7 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R004",
+      "id": "OVERSTORY-DESIGN-R004",
       "title": "Responsive layout covers 320px mobile through desktop",
       "delivery_state": "SPECIFIED",
       "landed_in": [
@@ -92,12 +92,12 @@
         "e2e/accessibility.spec.ts:17"
       ],
       "rollup_of": [
-        "WEBUI-DESIGN-R004.1",
-        "WEBUI-DESIGN-R004.2"
+        "OVERSTORY-DESIGN-R004.1",
+        "OVERSTORY-DESIGN-R004.2"
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R005",
+      "id": "OVERSTORY-DESIGN-R005",
       "title": "Gesture actions have alternatives and respect reduced motion",
       "delivery_state": "SPECIFIED",
       "landed_in": [
@@ -109,15 +109,15 @@
         "src/__tests__/design-tokens.test.ts:75"
       ],
       "rollup_of": [
-        "WEBUI-DESIGN-R005.1",
-        "WEBUI-DESIGN-R005.2",
-        "WEBUI-DESIGN-R005.3",
-        "WEBUI-DESIGN-R005.4",
-        "WEBUI-DESIGN-R005.5"
+        "OVERSTORY-DESIGN-R005.1",
+        "OVERSTORY-DESIGN-R005.2",
+        "OVERSTORY-DESIGN-R005.3",
+        "OVERSTORY-DESIGN-R005.4",
+        "OVERSTORY-DESIGN-R005.5"
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R006",
+      "id": "OVERSTORY-DESIGN-R006",
       "title": "Status states are distinguishable by text, not only color",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -135,7 +135,7 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R007",
+      "id": "OVERSTORY-DESIGN-R007",
       "title": "No duplicate primitives or unsolicited telemetry introduced",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -149,7 +149,7 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R008",
+      "id": "OVERSTORY-DESIGN-R008",
       "title": "Fonts load from the same origin",
       "delivery_state": "LANDED",
       "landed_in": [
@@ -160,7 +160,7 @@
       "verified_by": []
     },
     {
-      "id": "WEBUI-DESIGN-R009",
+      "id": "OVERSTORY-DESIGN-R009",
       "title": "Runtime style elements satisfy the strict policy",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -173,7 +173,7 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R002.1",
+      "id": "OVERSTORY-DESIGN-R002.1",
       "title": "Purposeful density and Arbora visual hierarchy",
       "delivery_state": "SPECIFIED",
       "landed_in": [
@@ -187,12 +187,12 @@
         "src/components/workspace/__tests__/WorkspaceFrame.test.tsx:1"
       ],
       "rollup_of": [
-        "WEBUI-DESIGN-R002.1.1",
-        "WEBUI-DESIGN-R002.1.2"
+        "OVERSTORY-DESIGN-R002.1.1",
+        "OVERSTORY-DESIGN-R002.1.2"
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R004.1",
+      "id": "OVERSTORY-DESIGN-R004.1",
       "title": "Full mobile and arbitrary-aspect feature parity",
       "delivery_state": "SPECIFIED",
       "landed_in": [
@@ -206,12 +206,12 @@
         "src/components/query-validation/__tests__/QueryValidationLens.test.tsx:93"
       ],
       "rollup_of": [
-        "WEBUI-DESIGN-R004.1.1",
-        "WEBUI-DESIGN-R004.1.2"
+        "OVERSTORY-DESIGN-R004.1.1",
+        "OVERSTORY-DESIGN-R004.1.2"
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R004.2",
+      "id": "OVERSTORY-DESIGN-R004.2",
       "title": "Resize, fold and visual viewport continuity",
       "delivery_state": "SPECIFIED",
       "landed_in": [
@@ -221,12 +221,12 @@
         "e2e/native-chat.browser.ts:2"
       ],
       "rollup_of": [
-        "WEBUI-DESIGN-R004.2.1",
-        "WEBUI-DESIGN-R004.2.2"
+        "OVERSTORY-DESIGN-R004.2.1",
+        "OVERSTORY-DESIGN-R004.2.2"
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R004.2.1",
+      "id": "OVERSTORY-DESIGN-R004.2.1",
       "title": "Bounded workspace viewport continuity",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -244,14 +244,14 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R004.2.2",
+      "id": "OVERSTORY-DESIGN-R004.2.2",
       "title": "Complete resize and device continuity acceptance",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
     },
     {
-      "id": "WEBUI-DESIGN-R005.1",
+      "id": "OVERSTORY-DESIGN-R005.1",
       "title": "Accessible interruptible semantic zoom",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
@@ -262,14 +262,14 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R010",
+      "id": "OVERSTORY-DESIGN-R010",
       "title": "Measured performance under representative load",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
     },
     {
-      "id": "WEBUI-DESIGN-R011",
+      "id": "OVERSTORY-DESIGN-R011",
       "title": "Repeatable documentation screenshots",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -284,7 +284,7 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R002.1.1",
+      "id": "OVERSTORY-DESIGN-R002.1.1",
       "title": "Liquid Glass material and density",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -303,7 +303,7 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R004.1.1",
+      "id": "OVERSTORY-DESIGN-R004.1.1",
       "title": "Fully expanded responsive shell",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -321,7 +321,7 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R005.2",
+      "id": "OVERSTORY-DESIGN-R005.2",
       "title": "Meaningful interruptible motion",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -336,21 +336,21 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R002.1.2",
+      "id": "OVERSTORY-DESIGN-R002.1.2",
       "title": "Remaining density and hierarchy acceptance",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
     },
     {
-      "id": "WEBUI-DESIGN-R004.1.2",
+      "id": "OVERSTORY-DESIGN-R004.1.2",
       "title": "Remaining full-route responsive parity acceptance",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
     },
     {
-      "id": "WEBUI-DESIGN-R005.3",
+      "id": "OVERSTORY-DESIGN-R005.3",
       "title": "Contextual scenes preserve product meaning",
       "delivery_state": "SPECIFIED",
       "landed_in": [
@@ -360,12 +360,12 @@
         "e2e/canopy-glass.browser.ts:714"
       ],
       "rollup_of": [
-        "WEBUI-DESIGN-R005.3.1",
-        "WEBUI-DESIGN-R005.3.2"
+        "OVERSTORY-DESIGN-R005.3.1",
+        "OVERSTORY-DESIGN-R005.3.2"
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R005.3.1",
+      "id": "OVERSTORY-DESIGN-R005.3.1",
       "title": "Route-derived scene selection and manual overrides",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -378,14 +378,14 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R005.3.2",
+      "id": "OVERSTORY-DESIGN-R005.3.2",
       "title": "Evidence-bound activity and topology",
       "delivery_state": "SPECIFIED",
       "landed_in": [],
       "verified_by": []
     },
     {
-      "id": "WEBUI-DESIGN-R005.4",
+      "id": "OVERSTORY-DESIGN-R005.4",
       "title": "Wallpaper effects remain bounded and optional",
       "delivery_state": "VERIFIED",
       "landed_in": [
@@ -402,7 +402,7 @@
       ]
     },
     {
-      "id": "WEBUI-DESIGN-R005.5",
+      "id": "OVERSTORY-DESIGN-R005.5",
       "title": "Weather ambience uses explicit consent and truthful conditions",
       "delivery_state": "SPECIFIED",
       "landed_in": [],

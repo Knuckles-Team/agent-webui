@@ -60,7 +60,7 @@ describe('view state in the URL', () => {
 })
 
 describe('Atlas OHLC recognition', () => {
-  // spec: FIN-UI-R009
+  // spec: OVERSTORY-R009
   it('accepts complete candles and refuses any row that is not one', () => {
     const rows = [
       { time: '2026-01-02', open: 10, high: 12, low: 9, close: 11 },
@@ -74,7 +74,7 @@ describe('Atlas OHLC recognition', () => {
   })
 })
 
-describe('bar revisions (FIN-UI-R009)', () => {
+describe('bar revisions (OVERSTORY-R009)', () => {
   const bar = (t: number, c: number): (typeof CHART.bars)[number] => ({
     t,
     T: t + 60,
@@ -86,7 +86,7 @@ describe('bar revisions (FIN-UI-R009)', () => {
     final: true,
   })
 
-  // spec: FIN-UI-R009
+  // spec: OVERSTORY-R009
   it('replaces a bar by open time with its later revision and leaves a gap unfilled', () => {
     const original = bar(100, 10)
     const revised = bar(100, 20)

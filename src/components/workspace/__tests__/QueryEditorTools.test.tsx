@@ -1,4 +1,4 @@
-// spec: WEBUI-APPS-R049.1.8
+// spec: OVERSTORY-APPS-R049.1.8
 import { Children, isValidElement, type ComponentProps, type ReactNode } from 'react'
 import { act, fireEvent, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

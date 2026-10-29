@@ -1,4 +1,4 @@
-// spec: WEBUI-DESIGN-R005.1
+// spec: OVERSTORY-DESIGN-R005.1
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceCommandPalette, WorkspaceCommandsProvider } from '../WorkspaceCommands'

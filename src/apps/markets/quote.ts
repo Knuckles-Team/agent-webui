@@ -1,6 +1,6 @@
 /**
  * @file quote.ts
- * @description Zod schema for a single instrument quote (FIN-UI-R007): price,
+ * @description Zod schema for a single instrument quote (OVERSTORY-R007): price,
  * session, provenance, previous close, change, sparkline, logo, and an
  * optional separately-labeled after-hours value. A missing price is `null`,
  * never `0` — callers must never coerce it to a number for display.

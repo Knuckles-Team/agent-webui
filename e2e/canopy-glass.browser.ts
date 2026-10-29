@@ -1,7 +1,7 @@
-// spec: WEBUI-DESIGN-R002.1.1
-// spec: WEBUI-DESIGN-R004.1.1
-// spec: WEBUI-DESIGN-R005.2
-// spec: WEBUI-APPS-R049.2.1
+// spec: OVERSTORY-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R004.1.1
+// spec: OVERSTORY-DESIGN-R005.2
+// spec: OVERSTORY-APPS-R049.2.1
 import { expect, test, type Page, type Locator } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { baseURL, fixedTime, responses } from './fixtures/documentation-screenshots.mjs'
@@ -464,8 +464,8 @@ test('Canopy narrow entry and explicit map keep a usable task', async ({ page },
   await page.screenshot({ path: info.outputPath('canopy-narrow-returned-search.png'), animations: 'disabled' })
 })
 
-// spec: WEBUI-DESIGN-R005.4
-// spec: WEBUI-DESIGN-R005.5
+// spec: OVERSTORY-DESIGN-R005.4
+// spec: OVERSTORY-DESIGN-R005.5
 test('manual wallpaper settings retain the rendered workspace and bounded backing store', async ({ page }, info) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   const failures = await prepare(page, 'light')
@@ -571,7 +571,7 @@ test('manual wallpaper settings retain the rendered workspace and bounded backin
   expect(failures).toEqual([])
 })
 
-// spec: WEBUI-DESIGN-R002.1.1
+// spec: OVERSTORY-DESIGN-R002.1.1
 for (const palette of ['Green', 'Blue', 'Red', 'Purple', 'Pink', 'Orange', 'Yellow']) {
   test(`Canopy ${palette} palette native gallery and accessible states`, async ({ page }, info) => {
     test.setTimeout(90_000)
@@ -680,7 +680,7 @@ test('Canopy palette follows supported system reduced transparency', async ({ pa
   await session.detach()
 })
 
-// spec: WEBUI-DESIGN-R005.4
+// spec: OVERSTORY-DESIGN-R005.4
 // Golden crop comes from the accepted #180 desktop capture (runtime 83d52c8).
 // A text-free inspector region pins actual frost, not merely computed blur.
 test('explicit Off preserves accepted static glass backdrop pixels', async ({ page }) => {
@@ -711,7 +711,7 @@ test('explicit Off preserves accepted static glass backdrop pixels', async ({ pa
   })
 })
 
-// spec: WEBUI-DESIGN-R005.3, WEBUI-DESIGN-R005.3.1
+// spec: OVERSTORY-DESIGN-R005.3, OVERSTORY-DESIGN-R005.3.1
 test('Follow workspace resolves real page context without enabling motion and manual scenes override it', async ({
   page,
 }, info) => {
@@ -743,7 +743,7 @@ test('Follow workspace resolves real page context without enabling motion and ma
   expect(failures).toEqual([])
 })
 
-// spec: WEBUI-DESIGN-R005.4
+// spec: OVERSTORY-DESIGN-R005.4
 test('fresh wallpaper defaults animate subtly and Off immediately persists', async ({ page }, info) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.emulateMedia({ reducedMotion: 'no-preference' })

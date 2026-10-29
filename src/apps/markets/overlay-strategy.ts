@@ -1,10 +1,10 @@
 /**
  * @file overlay-strategy.ts
- * @description Typed chart overlay markers (FIN-UI-R010.1): trend lines/flips,
+ * @description Typed chart overlay markers (OVERSTORY-R010.1): trend lines/flips,
  * DCA buys, cost basis, and margin/liquidation levels each carry the
  * strategy version that produced them and whether they reflect a simulated
  * result, so the UI never shows a live and a simulated marker the same way.
- * Wiring these into ChartPanel/OhlcChart rendering is FIN-UI-R010.2.
+ * Wiring these into ChartPanel/OhlcChart rendering is OVERSTORY-R010.2.
  */
 
 export type OverlayKind = 'trend_line' | 'flip' | 'dca_buy' | 'cost_basis' | 'margin_liquidation'
