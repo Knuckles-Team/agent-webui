@@ -3,7 +3,7 @@
 The five repositories form one runtime. Each owns one kind of authority, and
 Arbora presents those capabilities without duplicating them.
 
-[![Knuckles-Team runtime architecture showing Arbora, Arbora, agent-utilities, epistemic-graph, and agent-connector-sdk in their owned positions.](https://raw.githubusercontent.com/Knuckles-Team/epistemic-graph/main/docs/assets/runtime-architecture.svg)](https://knuckles-team.github.io/.github/architecture/#webui)
+[![Knuckles-Team runtime architecture showing Arbora, Arbora, agent-utilities, epistemic-graph, and agent-connector-sdk in their owned positions.](https://raw.githubusercontent.com/Knuckles-Team/medulla/main/docs/assets/runtime-architecture.svg)](https://knuckles-team.github.io/.github/architecture/#webui)
 
 [Explore the live architecture](https://knuckles-team.github.io/.github/architecture/#webui)
 
