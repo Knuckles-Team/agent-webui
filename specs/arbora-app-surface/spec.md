@@ -78,6 +78,19 @@ The browser consumes hierarchy, dependencies, public records and capabilities; i
 
 The single composer under R005.4.1 sends requests without an interaction-mode choice. The backend owns request handling.
 
+## Edit a prompt and keep both conversations
+
+WEBUI-APPS-R051 adds an Edit and fork action to an earlier message the caller
+sent. A preview makes the retained context and omitted later replies clear.
+The original stays intact; the edited prompt begins a new persisted branch with
+explicit lineage and a return path. Forking does not undo earlier external
+actions. The existing shared Chat and conversation list remain the only UI.
+
+The client cannot implement this with cached-message copies or regeneration.
+It requires the producer-owned history and fork operation described in plan.md.
+The new rows remain SPECIFIED. Missing capability is unavailable, never a fake
+successful branch. Completed-child continuation remains a separate workflow.
+
 ### Canonical Work task reads (2026-10-26)
 
 R049.1.3 task list/detail reads use `agents.tasks.list` and `agents.tasks.get` through the canonical browser operation transport. The bounded first page validates the `tasks` and opaque `nextCursor` envelope; it is not a full task census. Task, context and run references remain distinct provider values. Refusal, malformed responses and mismatched task identity never fall back to legacy session routes. Cancellation and technical traces are outside this read-only migration. Installed canonical browser acceptance remains pending; synthetic transport tests do not qualify it.

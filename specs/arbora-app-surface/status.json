@@ -224,7 +224,12 @@
     "WEBUI-APPS-R049.1.14",
     "WEBUI-APPS-R049.1.15",
     "WEBUI-APPS-R049.1.16",
-    "WEBUI-APPS-R005.4.1"
+    "WEBUI-APPS-R005.4.1",
+    "WEBUI-APPS-R051",
+    "WEBUI-APPS-R051.1",
+    "WEBUI-APPS-R051.2",
+    "WEBUI-APPS-R051.3",
+    "WEBUI-APPS-R051.4"
   ],
   "requirements": [
     {
@@ -2318,6 +2323,47 @@
         "src/__tests__/Chat.slash-commands.test.tsx:1",
         "src/__tests__/Chat.swe-mode.test.tsx:1"
       ]
+    },
+    {
+      "id": "WEBUI-APPS-R051",
+      "title": "Edit and fork a conversation",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": [],
+      "rollup_of": [
+        "WEBUI-APPS-R051.1",
+        "WEBUI-APPS-R051.2",
+        "WEBUI-APPS-R051.3",
+        "WEBUI-APPS-R051.4"
+      ]
+    },
+    {
+      "id": "WEBUI-APPS-R051.1",
+      "title": "Own-message editor and boundary preview",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R051.2",
+      "title": "Wire only a producer-bound fork",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R051.3",
+      "title": "Recover fork outcomes without duplication or authority reuse",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
+    },
+    {
+      "id": "WEBUI-APPS-R051.4",
+      "title": "Prove a durable cross-client fork from the real chat route",
+      "delivery_state": "SPECIFIED",
+      "landed_in": [],
+      "verified_by": []
     }
   ]
 }
