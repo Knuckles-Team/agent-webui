@@ -52,7 +52,7 @@ requires-dist = [
     { name = "joserfc", specifier = ">=1.7.5" },
     { name = "langfuse", specifier = ">=5.0.2" },
     { name = "logfire", extras = ["fastapi", "starlette"], specifier = ">=5.2.0" },
-    { name = "meristem", specifier = ">=4.0.1,<5" },
+    { name = "meristem", specifier = ">=4.2.0,<5" },
     { name = "msgpack", specifier = ">=1.1.0" },
     { name = "networkx", marker = "extra == 'test'", specifier = ">=3.7" },
     { name = "opentelemetry-instrumentation-asgi", marker = "extra == 'test'", specifier = ">=0.65b0" },
@@ -705,7 +705,7 @@ wheels = [
 
 [[package]]
 name = "meristem"
-version = "4.0.1"
+version = "4.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "platformdirs", marker = "sys_platform == 'linux'" },
@@ -714,9 +714,9 @@ dependencies = [
     { name = "pydantic-ai-slim", marker = "sys_platform == 'linux'" },
     { name = "pydantic-graph", marker = "sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/27/8d/08f1b528ff52d13487d6a2069f266fdea2914057653cffb86c87aadec2e5/meristem-4.0.1.tar.gz", hash = "sha256:4fad6d9afb2f523d667fad27b7ce4dad0dfdf7519ca9e905c2aca65abcc8b9f0", size = 168929, upload-time = "2026-10-29T15:37:26.895Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/38/80/19e1b250442131d34d11c90de495f613898f05a18524a13170561cffce28/meristem-4.2.0.tar.gz", hash = "sha256:d52d8a2a7850ca0361262963db4a202a5f6ec0ecdae0857c7142ddcde5da5ae0", size = 169244, upload-time = "2026-10-30T01:14:10.419Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d8/14/81e3886e0ca13692ad2affef2cc890e23390c0055e956964cf398cc99caf/meristem-4.0.1-py3-none-any.whl", hash = "sha256:56a081afe976b126aa6a007cea8bee83d2584e34fc3f20007355d465517aa6b1", size = 117995, upload-time = "2026-10-29T15:37:25.769Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/1e/a414a5d2a88e19d6c629a8cb4a08556392b1a96695df95f2e06d95ddbc79/meristem-4.2.0-py3-none-any.whl", hash = "sha256:83ff3783994d941e6754906534fe84a0da71b6903146e34059fb68967ba8cecf", size = 117970, upload-time = "2026-10-30T01:14:09.346Z" },
 ]
 
 [[package]]

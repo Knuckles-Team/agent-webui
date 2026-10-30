@@ -83,7 +83,7 @@ class DesignAcceptanceLedgerTests(unittest.TestCase):
 
     def test_design_ancestors_keep_retained_acceptance_open(self):
         rows = self.rows('browser-design-system')
-        prefix = 'WEBUI-' + 'DESIGN-'
+        prefix = 'OVERSTORY-' + 'DESIGN-'
         for number in ('R002', 'R002.1', 'R004', 'R004.1', 'R004.2', 'R010'):
             with self.subTest(number=number):
                 self.assertEqual(rows[prefix + number]['delivery_state'], 'SPECIFIED')
@@ -105,7 +105,7 @@ class DesignAcceptanceLedgerTests(unittest.TestCase):
 
     def test_measured_redesign_ancestors_keep_acceptance_open(self):
         rows = self.rows('arbora-app-surface')
-        prefix = 'WEBUI-' + 'APPS-'
+        prefix = 'OVERSTORY-' + 'APPS-'
         for number in ('R049', 'R049.2', 'R049.2.2'):
             with self.subTest(number=number):
                 self.assertEqual(rows[prefix + number]['delivery_state'], 'SPECIFIED')
@@ -123,14 +123,14 @@ class DesignAcceptanceLedgerTests(unittest.TestCase):
             rows = self.rows(spec)
             for number in numbers:
                 with self.subTest(owner=owner, number=number):
-                    row = rows[f'WEBUI-{owner}-{number}']
+                    row = rows[f'OVERSTORY-{owner}-{number}']
                     self.assertEqual(row['delivery_state'], 'VERIFIED')
                     self.assertTrue(row['landed_in'])
                     self.assertTrue(row['verified_by'])
 
     def test_native_chat_keeps_broader_authority_acceptance_open(self):
         rows = self.rows('arbora-app-surface')
-        prefix = 'WEBUI-' + 'APPS-'
+        prefix = 'OVERSTORY-' + 'APPS-'
         for number in ('R047', 'R048', 'R049.1.2', 'R050'):
             with self.subTest(number=number):
                 self.assertEqual(rows[prefix + number]['delivery_state'], 'SPECIFIED')
