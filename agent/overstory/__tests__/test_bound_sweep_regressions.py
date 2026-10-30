@@ -188,9 +188,7 @@ class TestGetChatEndpoint:
                 return mock_get_chat
             return fallback
 
-        with patch(
-            'overstory.api_extensions.get_helper', side_effect=_fake_get_helper
-        ):
+        with patch('overstory.api_extensions.get_helper', side_effect=_fake_get_helper):
             response = client.get('/api/chats/chat-1')
 
         assert response.status_code == 200
@@ -217,9 +215,7 @@ class TestGetChatEndpoint:
                 return mock_get_chat
             return fallback
 
-        with patch(
-            'overstory.api_extensions.get_helper', side_effect=_fake_get_helper
-        ):
+        with patch('overstory.api_extensions.get_helper', side_effect=_fake_get_helper):
             response = client.get('/api/chats/chat-2')
 
         assert response.status_code == 200
@@ -248,9 +244,7 @@ class TestTunnelHostsSlicesBeforeBounding:
                 return _fake_list_tunnel_hosts
             return fallback
 
-        with patch(
-            'overstory.api_extensions.get_helper', side_effect=_fake_get_helper
-        ):
+        with patch('overstory.api_extensions.get_helper', side_effect=_fake_get_helper):
             response = client.get('/api/enhanced/tunnel-manager/hosts')
 
         assert response.status_code == 200
@@ -272,9 +266,7 @@ class TestDockerContainersSlicesBeforeBounding:
                 return _fake_list_containers
             return fallback
 
-        with patch(
-            'overstory.api_extensions.get_helper', side_effect=_fake_get_helper
-        ):
+        with patch('overstory.api_extensions.get_helper', side_effect=_fake_get_helper):
             response = client.get('/api/enhanced/container-manager/containers')
 
         assert response.status_code == 200

@@ -16,10 +16,10 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from overstory.apps import AppBackend, build_apps_router
-from overstory.apps.markets import EngineGateway, build_markets_router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from overstory.apps import AppBackend, build_apps_router
+from overstory.apps.markets import EngineGateway, build_markets_router
 
 DAY = 86_400_000_000_000
 START = 20_000 * DAY

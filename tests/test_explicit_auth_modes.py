@@ -1,8 +1,8 @@
 """Source contracts only: no live issuer, credentials or deployment changes."""
 
 import pytest
-from overstory.auth_policy import AuthMode, resolve_auth_mode
 from fastapi.testclient import TestClient
+from overstory.auth_policy import AuthMode, resolve_auth_mode
 from test_identity_boundary import _build, _no_verifier
 
 

@@ -57,7 +57,7 @@ from _git_subprocess_env import (  # noqa: E402
 strip_inherited_git_repository_env()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-GITIGNORE_PATH = REPO_ROOT / ".gitignore"
+GITIGNORE_PATH = REPO_ROOT / '.gitignore'
 
 # The fleet-shared minimum. Each entry exists because a real incident showed
 # its absence costs something -- see the module docstring for the mechanism
@@ -83,44 +83,44 @@ GITIGNORE_PATH = REPO_ROOT / ".gitignore"
 #                                 reports/, never in a package's commit history
 REQUIRED: frozenset[str] = frozenset(
     {
-        "dist/",
-        "dist-*/",
-        "sdist/",
-        "build/",
-        "target/",
-        "target-*/",
-        ".venv/",
-        ".mypy_cache/",
-        ".pytest_cache/",
-        ".ruff_cache/",
-        ".hypothesis/",
-        ".pytest_tmp/",
-        "node_modules/",
-        ".kissconfig",
-        "reports/",
-        "scratch/",
+        'dist/',
+        'dist-*/',
+        'sdist/',
+        'build/',
+        'target/',
+        'target-*/',
+        '.venv/',
+        '.mypy_cache/',
+        '.pytest_cache/',
+        '.ruff_cache/',
+        '.hypothesis/',
+        '.pytest_tmp/',
+        'node_modules/',
+        '.kissconfig',
+        'reports/',
+        'scratch/',
     }
 )
 
 # Anchored to a path SEGMENT boundary -- see the module docstring's point 2.
-_TRACKED_BUILD_OUTPUT_RE = re.compile(r"^(dist|build|target)(-[^/]*)?/")
+_TRACKED_BUILD_OUTPUT_RE = re.compile(r'^(dist|build|target)(-[^/]*)?/')
 
 
 def _normalize(token: str) -> str:
     """Strip a purely presentational leading/trailing '/'. See docstring
     point 1 for why this is a widening, never a loosening, of the check."""
-    return token.strip("/")
+    return token.strip('/')
 
 
 def _tracked_paths() -> list[str]:
     out = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],
+        ['git', '-C', str(REPO_ROOT), 'ls-files', '-z'],
         capture_output=True,
         check=True,
         text=True,
         env=sanitized_git_env(),
     ).stdout
-    return [p for p in out.split("\0") if p]
+    return [p for p in out.split('\0') if p]
 
 
 def _gitignore_tokens() -> set[str]:
@@ -129,7 +129,7 @@ def _gitignore_tokens() -> set[str]:
     tokens: set[str] = set()
     for line in GITIGNORE_PATH.read_text().splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+        if not stripped or stripped.startswith('#'):
             continue
         tokens.add(_normalize(stripped))
     return tokens
@@ -149,17 +149,17 @@ def _collect_convergence_problems() -> list[str]:
     missing = _missing_required_entries(_gitignore_tokens())
     if missing:
         problems.append(
-            "Missing from .gitignore (fleet-shared REQUIRED set):\n"
-            + "\n".join(f"    {m}" for m in missing)
+            'Missing from .gitignore (fleet-shared REQUIRED set):\n'
+            + '\n'.join(f'    {m}' for m in missing)
         )
 
     tracked_build_output = _tracked_build_output_paths(_tracked_paths())
     if tracked_build_output:
         problems.append(
-            "Build-output paths are TRACKED (a .gitignore rule cannot "
-            "un-track what already slipped through -- delete these and let "
-            "the .gitignore rule do its job going forward):\n"
-            + "\n".join(f"    {p}" for p in tracked_build_output)
+            'Build-output paths are TRACKED (a .gitignore rule cannot '
+            'un-track what already slipped through -- delete these and let '
+            'the .gitignore rule do its job going forward):\n'
+            + '\n'.join(f'    {p}' for p in tracked_build_output)
         )
 
     return problems
@@ -170,17 +170,17 @@ def main() -> int:
 
     if not problems:
         print(
-            f"gitignore convergence: clean ({len(REQUIRED)} required entries "
-            f"present, 0 tracked build-output paths)"
+            f'gitignore convergence: clean ({len(REQUIRED)} required entries '
+            f'present, 0 tracked build-output paths)'
         )
         return 0
 
-    print("FAIL: .gitignore convergence violations.\n")
+    print('FAIL: .gitignore convergence violations.\n')
     for p in problems:
         print(p)
         print()
     return 1
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

@@ -14,12 +14,12 @@ pytestmark = pytest.mark.skipif(
 @pytest.mark.parametrize('mode', ['none', 'oidc'])
 def test_actual_host_arguments_and_factory_refuse_unadmitted_effects(monkeypatch, mode):
     import httpx
-    from overstory import oidc_session
-    from overstory.host import config
-    from overstory.server import create_agent_web_app
     from arbora.webui_host.session_boundary import identity_factory_kwargs
     from cryptography.fernet import Fernet
     from fastapi.testclient import TestClient
+    from overstory import oidc_session
+    from overstory.host import config
+    from overstory.server import create_agent_web_app
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
 
@@ -88,8 +88,8 @@ def test_installed_candidate_paths_and_packaged_assets():
     import inspect
     from pathlib import Path
 
-    import overstory
     import arbora
+    import overstory
     from overstory.server import create_agent_web_app
 
     for package in (arbora, overstory):

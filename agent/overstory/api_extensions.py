@@ -27,7 +27,6 @@ from urllib.parse import quote, urlsplit
 import msgpack
 from agent_connector_sdk.privacy import sanitize_for_persistence
 from agent_connector_sdk.privacy_reference import persistence_reference
-from meristem.core.paths import config_dir, data_dir
 from fastapi import (
     APIRouter,
     File,
@@ -38,6 +37,7 @@ from fastapi import (
     HTTPException as FastAPIHTTPException,
 )
 from fastapi.responses import JSONResponse, Response
+from meristem.core.paths import config_dir, data_dir
 
 from .host import config, served, unavailable
 

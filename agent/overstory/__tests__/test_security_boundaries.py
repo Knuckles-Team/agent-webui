@@ -14,6 +14,9 @@ from unittest.mock import MagicMock
 
 import overstory.api_extensions as api_extensions
 import pytest
+from fastapi import FastAPI
+from fastapi import HTTPException as FastAPIHTTPException
+from fastapi.testclient import TestClient
 from overstory.api_extensions import (
     _BoundedSyncWorkExecutor,
     _redact_inline_secrets,
@@ -34,9 +37,6 @@ from overstory.server import (
     _validated_bearer_header,
     create_agent_web_app,
 )
-from fastapi import FastAPI
-from fastapi import HTTPException as FastAPIHTTPException
-from fastapi.testclient import TestClient
 
 
 def test_governed_host_helpers_are_public_api() -> None:

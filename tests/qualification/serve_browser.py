@@ -15,9 +15,9 @@ from .loopback_oidc import running_issuer
 
 
 def build_app(issuer, origin, clock):
+    from arbora.webui_host.session_boundary import identity_factory_kwargs
     from overstory import host, oidc_session
     from overstory.server import create_agent_web_app
-    from arbora.webui_host.session_boundary import identity_factory_kwargs
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
 

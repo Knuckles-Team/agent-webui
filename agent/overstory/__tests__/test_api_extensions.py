@@ -5,8 +5,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from overstory.server import create_agent_web_app
 from fastapi.testclient import TestClient
+from overstory.server import create_agent_web_app
 
 
 @pytest.fixture

@@ -9,8 +9,6 @@ from pathlib import Path
 
 import fleet_support
 import uvicorn
-from overstory.host import config
-from overstory.server import create_agent_web_app
 from arbora.fleet.catalog_reader import (
     CatalogComponent,
     CatalogServer,
@@ -29,6 +27,8 @@ from arbora.webui_host.webui_co_service import compose_web_application
 from authlib.jose import JsonWebKey, jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from overstory.host import config
+from overstory.server import create_agent_web_app
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 

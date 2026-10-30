@@ -23,11 +23,11 @@ def issuer():
 
 @pytest.fixture
 def browser(monkeypatch, issuer):
-    from overstory import host, oidc_session
-    from overstory.server import create_agent_web_app
     from arbora.webui_host.session_boundary import identity_factory_kwargs
     from cryptography.fernet import Fernet
     from fastapi.testclient import TestClient
+    from overstory import host, oidc_session
+    from overstory.server import create_agent_web_app
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
 

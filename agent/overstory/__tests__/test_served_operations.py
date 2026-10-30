@@ -13,9 +13,9 @@ import httpx
 import msgpack
 import pytest
 from _overstory_shared_fixtures import authenticated_asgi_app
+from fastapi.testclient import TestClient
 from overstory import host
 from overstory.server import create_agent_web_app
-from fastapi.testclient import TestClient
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 

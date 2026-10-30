@@ -12,6 +12,8 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from cryptography.fernet import Fernet
+from fastapi.testclient import TestClient
 from overstory.browser_control import (
     BrowserControlBinding,
     BrowserMessage,
@@ -20,8 +22,6 @@ from overstory.browser_control import (
 )
 from overstory.browser_control_canonical import canonical_protocol_json
 from overstory.server import create_agent_web_app
-from cryptography.fernet import Fernet
-from fastapi.testclient import TestClient
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 from starlette.websockets import WebSocketDisconnect
 
