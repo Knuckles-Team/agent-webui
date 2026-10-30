@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-30
+
 ### Changed
+- **BREAKING:** the `agent-webui` distribution is replaced by `overstory` 3.0.0.
 - **Renamed to Overstory (hard cutover)** — the PyPI distribution is now
   `overstory` (was `agent-webui`), the import package is `overstory` (was
   `agent_webui`), and every `AGENT_WEBUI_*` environment variable is now

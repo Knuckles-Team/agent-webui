@@ -82,7 +82,7 @@ describe('versioned WebMCP capability catalog', () => {
       source: 'overstory:test',
     })
     expect(first.tools[1].schemaDigest).toBe('sha256:5b55d760d089d942def7d1900dcabc5671fab6c64c1f06dd718e009f47ebceac')
-    expect(first.catalogDigest).toBe('sha256:cd58d61f38903955a239e220dd82b2d0f16d6a0eb29dca4c8645ba66e7b97c52')
+    expect(first.catalogDigest).toBe('sha256:5743a625e94522c9c64a524bf2fa303a8656654c54f780d175c141706ba24e97')
     expect(first.toolScopeDigest).toBe('sha256:57b486f4f6ebc7c59987ca1d1879604615ee5653fdc2acf270961d0760e3cf6c')
   })
 
