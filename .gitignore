@@ -303,3 +303,6 @@ reports/
 # check_root_hygiene.py's FORBIDDEN_ANYWHERE (which catches it if it is ever
 # tracked anyway); this stops it from becoming stageable in the first place.
 .kissconfig
+
+# Spec status is computed at read time (pipelines-hook spec-status --write), never committed.
+specs/*/status.json
