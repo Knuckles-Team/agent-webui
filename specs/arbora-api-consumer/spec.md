@@ -1,7 +1,7 @@
 # OVERSTORY-API — Generated Arbora API consumer cutover
 
 **ID:** OVERSTORY-API
-**Owner:** agent-webui
+**Owner:** overstory
 **Related IDs:** MERISTEM-BOUNDARY-R039, OVERSTORY-API-R001, OVERSTORY-API-R002, OVERSTORY-API-R003
 **Delivery:** specified; current adapter inventory requires verification
 **Acceptance:** open
@@ -31,7 +31,7 @@ Out of scope: creating new graph, ontology, finance or agent algorithms, or expo
 
 OVERSTORY-API-R001 owns the generated `src/lib/arbora-api/` client, its `invoke` seam, decision and Markets/app callers, WebMCP page tools, and a console confirmation page. The browser sends a typed operation and input to the same-origin session host. The host binds the authenticated caller; the browser never supplies a service token. A write or destructive operation first returns a server-issued preview and `plan_ref`, and the confirmation page sends that exact reference only after the required human action and step-up. A stale reference, changed principal, altered parameters, missing MFA or denial must fail closed. The host's app domain routes retire only after equivalent Arbora operations and fixtures exist.
 
-OVERSTORY-API-R002 owns migration of ontology, graph, Atlas and object-set callers, including the matching blocks in `agent/agent_webui/api_extensions.py`. The graph/database service remains the durable authority. Preserve source IDs, cursor pagination, tenant and purpose context, typed validation, and partial/unavailable states. Replace each domain block only after the generated operation has positive and cross-tenant denial coverage. No direct database access moves into React.
+OVERSTORY-API-R002 owns migration of ontology, graph, Atlas and object-set callers, including the matching blocks in `agent/overstory/api_extensions.py`. The graph/database service remains the durable authority. Preserve source IDs, cursor pagination, tenant and purpose context, typed validation, and partial/unavailable states. Replace each domain block only after the generated operation has positive and cross-tenant denial coverage. No direct database access moves into React.
 
 OVERSTORY-API-R003 owns prompts, SDD, knowledge base, sessions, goals, MCP servers and tools, and LLM/model administration. Inventory every corresponding host route and browser caller before deletion. A checked-in route census must list each old method/path, owning operation ID, caller, scope, effect class, migration state and disposition; UI-local browser routes need an explicit owner and reason. An architecture lint must reject any new unclassified domain route or direct browser domain endpoint, while permitting enumerated session, asset, protocol and UI-local handlers. A missing Arbora operation blocks that family's cutover; the UI shows unavailable instead of using a hidden fallback.
 

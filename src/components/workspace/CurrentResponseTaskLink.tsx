@@ -49,7 +49,7 @@ export function CurrentResponseTaskLink({
     if (!target) return []
     return [
       makeTool({
-        name: 'agent-webui.work.inspect-current-task',
+        name: 'overstory.work.inspect-current-task',
         title: 'Inspect current response task',
         description:
           'Open the explicitly returned task for the current non-streaming response. Does not execute or authorize a task.',
@@ -57,7 +57,7 @@ export function CurrentResponseTaskLink({
         outputSchema: z.object({ selected: z.literal(true) }).strict(),
         jsonSchema: { type: 'object', properties: {}, additionalProperties: false },
         readOnly: false,
-        source: 'agent-webui:src/components/workspace/CurrentResponseTaskLink.tsx',
+        source: 'overstory:src/components/workspace/CurrentResponseTaskLink.tsx',
         execute: () => {
           if (!active.current || live.current !== target)
             throw new Error('The current response task is no longer available')

@@ -1,6 +1,6 @@
 # OVERSTORY-DASH — Overstory Studio
 
-**Owner:** `agent-webui`. Every requirement ID is defined in [requirements.md](requirements.md). The generator records state in [status.json](status.json).
+**Owner:** `overstory`. Every requirement ID is defined in [requirements.md](requirements.md). The generator records state in [status.json](status.json).
 
 Component: Overstory Studio
 Depends-on: [OVERSTORY-APPS](../arbora-app-surface/spec.md), [OVERSTORY-API](../arbora-api-consumer/spec.md)

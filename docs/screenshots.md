@@ -49,7 +49,7 @@ not establish a provider connection or permission to act.
 This gallery imports the complete `documentation-screenshots` artifact without
 repainting, cropping or substituting scenes.
 
-- Source run: [CI 40191270609](https://github.com/Knuckles-Team/agent-webui/actions/runs/40191270609).
+- Source run: [CI 40191270609](https://github.com/Knuckles-Team/overstory/actions/runs/40191270609).
 - Artifact: `12597877858`, fixture `workspace-docs-v2`.
 - Rendered Actions merge source: `ecf62ef54df6873b2983b5def438e3e761b98c3d` (clean tree).
 - Main revision: `68a408d02a6215aa0d0e8e94f381ad253e54b2f1`, including the opt-out Subtle wallpaper default.

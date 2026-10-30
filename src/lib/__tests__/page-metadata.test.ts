@@ -7,7 +7,7 @@ const COMPLETE_CONFIG: SiteConfig = {
   siteName: 'Configured Arbora',
   canonicalOrigin: 'https://agents.example.invalid',
   indexableEnvironment: true,
-  openGraphImagePath: '/og/agent-webui-v1.png',
+  openGraphImagePath: '/og/overstory-v1.png',
   legalOwner: 'Configured Owner',
   contactAddress: '1 Reviewed Way\nExample City',
   contactEmail: 'owner@example.invalid',

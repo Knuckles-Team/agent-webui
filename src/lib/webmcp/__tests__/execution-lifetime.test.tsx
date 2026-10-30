@@ -21,7 +21,7 @@ function pendingTool() {
   const signals: AbortSignal[] = []
   const finish: (() => void)[] = []
   const tool = makeTool({
-    name: 'agent-webui.pending-read',
+    name: 'overstory.pending-read',
     title: 'Pending read',
     description: 'Cooperative local test read',
     inputSchema: z.object({}).strict(),
@@ -90,13 +90,13 @@ afterEach(() => {
 
 async function activeCallback(): Promise<WebMcpToolDefinition> {
   await waitFor(() => {
-    expect(registered.some((tool) => tool.name.startsWith('agent-webui.pending-read__'))).toBe(true)
+    expect(registered.some((tool) => tool.name.startsWith('overstory.pending-read__'))).toBe(true)
   })
   // Let the structural document API's registration acknowledgement settle.
   await act(async () => {
     await Promise.resolve()
   })
-  const tool = registered.find((entry) => entry.name.startsWith('agent-webui.pending-read__'))
+  const tool = registered.find((entry) => entry.name.startsWith('overstory.pending-read__'))
   if (!tool) throw new Error('missing test tool')
   return tool
 }

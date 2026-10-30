@@ -1,4 +1,4 @@
-"""Test configuration and fixtures for agent-webui backend tests."""
+"""Test configuration and fixtures for overstory backend tests."""
 
 import os
 import shutil
@@ -44,7 +44,7 @@ def mock_workspace_helpers():
 @pytest.fixture
 def served_identity_config(monkeypatch):
     """Configure the served identity boundary the way a deployment does."""
-    from agent_webui.host import config
+    from overstory.host import config
 
     # The complete verifier itself is configured by ``_complete_jwt_verifier``
     # (autouse) for every test.
@@ -61,7 +61,7 @@ def _complete_jwt_verifier(monkeypatch):
     (JWKS URI, issuer, audience). A test that exercises the refusal of an
     unconfigured verifier clears these fields itself.
     """
-    from agent_webui.host import config
+    from overstory.host import config
 
     monkeypatch.setattr(
         config,
@@ -70,13 +70,13 @@ def _complete_jwt_verifier(monkeypatch):
         raising=False,
     )
     monkeypatch.setattr(config, 'auth_jwt_issuer', 'https://idp.test/', raising=False)
-    monkeypatch.setattr(config, 'auth_jwt_audience', 'agent-webui-test', raising=False)
+    monkeypatch.setattr(config, 'auth_jwt_audience', 'overstory-test', raising=False)
 
 
 @pytest.fixture(autouse=True)
 def _reset_settings():
     """Drop process overrides of the WebUI settings after each test."""
-    from agent_webui.host import config
+    from overstory.host import config
 
     yield
     config.reset()

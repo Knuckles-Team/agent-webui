@@ -69,6 +69,6 @@ test('default conversation stays reachable at desktop, narrow and short viewport
   await expect(input).toHaveValue('Retain this unsent request')
   await page.getByText('Settings', { exact: true }).click()
   await expect(page.getByRole('region', { name: 'Privacy settings' })).toBeVisible()
-  expect(await page.evaluate(() => localStorage.getItem('agent-webui.consent'))).toBeNull()
+  expect(await page.evaluate(() => localStorage.getItem('overstory.consent'))).toBeNull()
   expect(submissions).toEqual([])
 })

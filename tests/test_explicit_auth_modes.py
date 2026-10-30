@@ -1,7 +1,7 @@
 """Source contracts only: no live issuer, credentials or deployment changes."""
 
 import pytest
-from agent_webui.auth_policy import AuthMode, resolve_auth_mode
+from overstory.auth_policy import AuthMode, resolve_auth_mode
 from fastapi.testclient import TestClient
 from test_identity_boundary import _build, _no_verifier
 
@@ -16,7 +16,7 @@ def test_default_and_unknown_modes_remain_protected():
 
 @pytest.mark.spec('OVERSTORY-IDENTITY-R003.1.1')
 def test_explicit_none_binds_no_identity_or_grant(monkeypatch):
-    from agent_webui.host import current_actor, current_grant
+    from overstory.host import current_actor, current_grant
 
     _no_verifier(monkeypatch)
 
@@ -103,7 +103,7 @@ def test_none_preserves_origin_checks_for_ui_and_webmcp(monkeypatch):
 
 @pytest.mark.spec('OVERSTORY-IDENTITY-R003.1.1')
 def test_none_clears_ambient_authority_and_refuses_stale_cookie(monkeypatch):
-    from agent_webui.host import (
+    from overstory.host import (
         ActorContext,
         RequestGrant,
         current_actor,
@@ -149,7 +149,7 @@ def test_none_clears_ambient_authority_and_refuses_stale_cookie(monkeypatch):
 
 @pytest.mark.spec('OVERSTORY-IDENTITY-R003.1.1')
 def test_anonymous_policy_cannot_admit_direct_workspace_effects(monkeypatch):
-    from agent_webui import api_extensions
+    from overstory import api_extensions
 
     _no_verifier(monkeypatch)
     forbidden = frozenset(

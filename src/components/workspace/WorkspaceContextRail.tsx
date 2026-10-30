@@ -1,4 +1,4 @@
-import arboraLogo from '../../../docs/assets/brands/agent-webui-logo-v1.png'
+import arboraLogo from '../../../docs/assets/brands/overstory-logo-v1.png'
 import { WorkspaceAppearance } from './WorkspaceAppearance'
 import { UserMenu } from '@/components/UserMenu'
 import { WorkspaceCommandPalette } from './WorkspaceCommands'

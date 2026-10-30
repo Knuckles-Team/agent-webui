@@ -1,7 +1,7 @@
 """The optional local port never widens default or ordinary admission."""
 
 import pytest
-from agent_webui.local_browser_boundary import validate_local_browser_boundary
+from overstory.local_browser_boundary import validate_local_browser_boundary
 from test_identity_boundary import _build, _no_verifier
 
 pytestmark = pytest.mark.spec('OVERSTORY-IDENTITY-R003.1.1')
@@ -33,7 +33,7 @@ def test_absent_boundary_does_not_import_optional_contract(monkeypatch):
 
 
 def test_factory_preserves_existing_positional_arguments(monkeypatch):
-    from agent_webui.server import create_agent_web_app
+    from overstory.server import create_agent_web_app
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
 

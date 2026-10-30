@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 
-const readmeLogo = readFileSync(new URL('../docs/assets/brands/agent-webui-logo-v1.png', import.meta.url))
+const readmeLogo = readFileSync(new URL('../docs/assets/brands/overstory-logo-v1.png', import.meta.url))
 
 async function checkPackagedLogo(page: Page) {
   const logo = page.getByRole('img', { name: 'Arbora', exact: true })
@@ -32,7 +32,7 @@ for (const context of ['work', 'explore', 'operate'] as const) {
     await page.route('**/api/**', (route) =>
       route.fulfill({ status: 501, json: { detail: 'Unavailable in the synthetic cold-entry fixture' } }),
     )
-    await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+    await page.addInitScript(() => localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1'))
     const failedAssets: string[] = []
     const loadedAssets: string[] = []
     page.on('response', (response) => {

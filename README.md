@@ -1,11 +1,11 @@
 # Overstory
 
 <p align="center">
-  <img src="docs/assets/brands/agent-webui-logo-v1.png" alt="Overstory logo" width="160" />
+  <img src="docs/assets/brands/overstory-logo-v1.png" alt="Overstory logo" width="160" />
 </p>
 
 Overstory is the browser workspace for Arbora. The repository is `overstory`;
-the package remains `agent-webui`. Existing gallery images retain their original capture provenance.
+the package remains `overstory`. Existing gallery images retain their original capture provenance.
 
 <p align="center">
   <strong>The browser workspace for governed agents, workflows, and knowledge in Arbora.</strong><br>
@@ -14,15 +14,15 @@ the package remains `agent-webui`. Existing gallery images retain their original
 
 <p align="center">
 
-[![PyPI - Version](https://img.shields.io/pypi/v/agent-webui)](https://pypi.org/project/agent-webui/)
+[![PyPI - Version](https://img.shields.io/pypi/v/overstory)](https://pypi.org/project/overstory/)
 [![Build](https://github.com/Knuckles-Team/overstory/actions/workflows/release.yml/badge.svg)](https://github.com/Knuckles-Team/overstory/actions/workflows/release.yml)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-526cfe)](https://knuckles-team.github.io/overstory/)
 [![GitHub license](https://img.shields.io/github/license/Knuckles-Team/overstory)](LICENSE)
 [![Docs build](https://github.com/Knuckles-Team/overstory/actions/workflows/pages.yml/badge.svg?branch=main)](https://github.com/Knuckles-Team/overstory/actions/workflows/pages.yml)
-[![PyPI - Downloads](https://img.shields.io/pypi/dd/agent-webui)](https://pypi.org/project/agent-webui/)
-[![PyPI - License](https://img.shields.io/pypi/l/agent-webui)](https://pypi.org/project/agent-webui/)
-[![PyPI - Wheel](https://img.shields.io/pypi/wheel/agent-webui)](https://pypi.org/project/agent-webui/)
-[![PyPI - Implementation](https://img.shields.io/pypi/implementation/agent-webui)](https://pypi.org/project/agent-webui/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dd/overstory)](https://pypi.org/project/overstory/)
+[![PyPI - License](https://img.shields.io/pypi/l/overstory)](https://pypi.org/project/overstory/)
+[![PyPI - Wheel](https://img.shields.io/pypi/wheel/overstory)](https://pypi.org/project/overstory/)
+[![PyPI - Implementation](https://img.shields.io/pypi/implementation/overstory)](https://pypi.org/project/overstory/)
 [![GitHub Repo stars](https://img.shields.io/github/stars/Knuckles-Team/overstory)](https://github.com/Knuckles-Team/overstory/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/Knuckles-Team/overstory)](https://github.com/Knuckles-Team/overstory/forks)
 [![GitHub contributors](https://img.shields.io/github/contributors/Knuckles-Team/overstory)](https://github.com/Knuckles-Team/overstory/graphs/contributors)
@@ -90,7 +90,7 @@ then use the shared platform map to move between components:
 
 ## Architecture
 
-[![Runtime architecture: people use Agent Web UI, Agent Terminal UI, Geniusbot, and Arbora-hosted messaging. MCP, REST, and A2A clients enter through Arbora; source systems flow through Agent Connector SDK into Epistemic Graph.](https://raw.githubusercontent.com/Knuckles-Team/medulla/main/docs/assets/runtime-architecture.svg)](https://knuckles-team.github.io/.github/architecture/#webui)
+[![Runtime architecture: people use Overstory, Agent Terminal UI, Geniusbot, and Arbora-hosted messaging. MCP, REST, and A2A clients enter through Arbora; source systems flow through Agent Connector SDK into Epistemic Graph.](https://raw.githubusercontent.com/Knuckles-Team/medulla/main/docs/assets/runtime-architecture.svg)](https://knuckles-team.github.io/.github/architecture/#webui)
 
 [Explore the live architecture](https://knuckles-team.github.io/.github/architecture/#webui)
 

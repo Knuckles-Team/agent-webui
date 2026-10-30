@@ -118,7 +118,7 @@ describe('Work admission and authoritative task availability', () => {
   it('does not reuse a fresh cached task after observed admission renewal', async () => {
     const view = setup()
     await screen.findByText('Status: working')
-    const held = state.tools.get('agent-webui.work.cancel-task.review')!
+    const held = state.tools.get('overstory.work.cancel-task.review')!
     vi.mocked(workApi.getTask).mockImplementationOnce(
       () =>
         new Promise(() => {
@@ -135,7 +135,7 @@ describe('Work admission and authoritative task availability', () => {
   it('retires held cancellation review while an authoritative refresh is pending', async () => {
     const { client } = setup()
     await screen.findByRole('button', { name: 'Cancel task…' })
-    const held = state.tools.get('agent-webui.work.cancel-task.review')!
+    const held = state.tools.get('overstory.work.cancel-task.review')!
     await act(async () => {
       await held.execute({}, { signal: new AbortController().signal })
     })
@@ -176,7 +176,7 @@ describe('Work admission and authoritative task availability', () => {
   it('retires held cancellation review on role downgrade', async () => {
     const view = setup()
     await screen.findByRole('button', { name: 'Cancel task…' })
-    const held = state.tools.get('agent-webui.work.cancel-task.review')!
+    const held = state.tools.get('overstory.work.cancel-task.review')!
     state.role = 'reader'
     view.rerender()
     expect(screen.getByRole('alert')).toHaveTextContent('not available')

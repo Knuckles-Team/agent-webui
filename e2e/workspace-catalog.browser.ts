@@ -79,7 +79,7 @@ test('catalog definitions share deep links, keyboard search and native history a
     if (path === '/api/chats') return route.fulfill({ json: [] })
     return route.fulfill({ status: 501, json: { detail: 'Unavailable in synthetic catalog fixture' } })
   })
-  await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+  await page.addInitScript(() => localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1'))
   await page.goto('/workspace/operate?connector=srv%3Arecords&definition=tool%3ALookup')
   const catalog = page.getByRole('region', { name: 'Connector catalog', exact: true })
   const detail = catalog.getByRole('region', { name: 'Selected catalog definition' })

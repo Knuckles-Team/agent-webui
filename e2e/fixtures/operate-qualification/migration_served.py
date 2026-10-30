@@ -9,8 +9,8 @@ from pathlib import Path
 
 import fleet_support
 import uvicorn
-from agent_webui.host import config
-from agent_webui.server import create_agent_web_app
+from overstory.host import config
+from overstory.server import create_agent_web_app
 from arbora.fleet.catalog_reader import (
     CatalogComponent,
     CatalogServer,

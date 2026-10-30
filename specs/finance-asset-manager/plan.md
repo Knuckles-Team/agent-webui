@@ -4,7 +4,7 @@
 
 ## Existing system and reuse
 
-The React app derives route rendering, sidebar, mobile layout and role filtering from `src/lib/nav-registry.ts` and `src/App.tsx`. The server applies its own role ladder in `agent/agent_webui/rbac.py`; hiding a route is not authorization. `src/lib/gateway.ts` already returns `{ok,data,unavailable,error}`, validates optional Zod response schemas and distinguishes HTTP 404/501 from empty results. `src/lib/atlas/types.ts` already recognizes a `series` result shape; `src/lib/atlas/renderers.ts` and `src/components/atlas/renderers/index.ts` own the renderer registry. No financial chart is registered in the inspected base. `src/lib/webmcp/atlas.tsx` shows the browser-controller pattern. These are the required integration points.
+The React app derives route rendering, sidebar, mobile layout and role filtering from `src/lib/nav-registry.ts` and `src/App.tsx`. The server applies its own role ladder in `agent/overstory/rbac.py`; hiding a route is not authorization. `src/lib/gateway.ts` already returns `{ok,data,unavailable,error}`, validates optional Zod response schemas and distinguishes HTTP 404/501 from empty results. `src/lib/atlas/types.ts` already recognizes a `series` result shape; `src/lib/atlas/renderers.ts` and `src/components/atlas/renderers/index.ts` own the renderer registry. No financial chart is registered in the inspected base. `src/lib/webmcp/atlas.tsx` shows the browser-controller pattern. These are the required integration points.
 
 Use React Query for server state and component/context state for ephemeral UI state. Add a single finance API adapter using existing browser-safe gateway helpers and Zod schemas. Do not add a parallel router, provider client, auth store, chart registry, or browser-side finance calculation engine.
 
@@ -70,7 +70,7 @@ In a second terminal run `pnpm run dev`. `pnpm run dev:server` listens on port 3
 
 ## Quality and delivery gates
 
-Run `pnpm run typecheck`, `pnpm run lint`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`, `uv run --all-extras pytest agent/agent_webui/__tests__`, and `pre-commit run --config .config/pre-commit.yaml --all-files` for a source implementation. For this documentation-only change, run the normal commit hooks and validate links/forbidden references. The local hook `complexity-staged` calls `python3 scripts/check_complexity_staged.py` on staged supported source and uses CCCC. jscpd and dupehound are required design-review concepts but no command or numeric threshold is configured in this repository. Define approved tooling and thresholds before claiming those gates pass. KISS review must name reused route, gateway, renderer and auth wiring and justify every new abstraction. Do not install a self-calibrating baseline or suppress a finding to manufacture green.
+Run `pnpm run typecheck`, `pnpm run lint`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`, `uv run --all-extras pytest agent/overstory/__tests__`, and `pre-commit run --config .config/pre-commit.yaml --all-files` for a source implementation. For this documentation-only change, run the normal commit hooks and validate links/forbidden references. The local hook `complexity-staged` calls `python3 scripts/check_complexity_staged.py` on staged supported source and uses CCCC. jscpd and dupehound are required design-review concepts but no command or numeric threshold is configured in this repository. Define approved tooling and thresholds before claiming those gates pass. KISS review must name reused route, gateway, renderer and auth wiring and justify every new abstraction. Do not install a self-calibrating baseline or suppress a finding to manufacture green.
 
 ## Cross-repository ownership
 
@@ -81,4 +81,4 @@ Run `pnpm run typecheck`, `pnpm run lint`, `pnpm run test`, `pnpm run test:e2e`,
 | [arbora](https://github.com/Knuckles-Team/arbora) | authenticated finance projection, replay-safe DCA scheduling and outbox alert delivery | ARBORA-DATA-MARKET-R006, MEDULLA-FINANCE-PRIMITIVES-R011 |
 | [agent-utilities](https://github.com/Knuckles-Team/agent-utilities) | workflow orchestration without a duplicate finance math authority | MEDULLA-FINANCE-PRIMITIVES-R009, ARBORA-DATA-MARKET-R006 |
 | [media-downloader](https://github.com/Knuckles-Team/media-downloader) and Emerald skills | source intake, claim/evidence separation and leveraged-trading guide | EMERALD-GUIDE-R001, EMERALD-MEDIA-R001 |
-| [agent-webui](https://github.com/Knuckles-Team/agent-webui) | this Markets workspace and shared chart | OVERSTORY-R001, OVERSTORY-R002 |
+| [overstory](https://github.com/Knuckles-Team/overstory) | this Markets workspace and shared chart | OVERSTORY-R001, OVERSTORY-R002 |

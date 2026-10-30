@@ -87,14 +87,14 @@ export function ExploreGraphLens({ state, role, active }: { state: ExploreLensSt
     const refreshSchema = z.object({}).strict()
     return [
       makeTool({
-        name: 'agent-webui.explore.graph.select',
+        name: 'overstory.explore.graph.select',
         title: 'Inspect a sampled graph node',
         description: 'Select a loaded graph node without changing evidence, querying or editing the graph.',
         inputSchema: schema,
         outputSchema: schema,
         jsonSchema: z.toJSONSchema(schema),
         readOnly: false,
-        source: 'agent-webui:src/components/workspace/ExploreGraphLens.tsx',
+        source: 'overstory:src/components/workspace/ExploreGraphLens.tsx',
         execute: ({ node }) => {
           verify()
           if (node !== null && !nodes.some((item) => item.id === node))
@@ -104,14 +104,14 @@ export function ExploreGraphLens({ state, role, active }: { state: ExploreLensSt
         },
       }),
       makeTool({
-        name: 'agent-webui.explore.graph.refresh',
+        name: 'overstory.explore.graph.refresh',
         title: 'Refresh the graph sample',
         description: 'Read the existing graph sample and aggregate facades. Does not edit or execute a query.',
         inputSchema: refreshSchema,
         outputSchema: refreshSchema,
         jsonSchema: z.toJSONSchema(refreshSchema),
         readOnly: true,
-        source: 'agent-webui:src/components/workspace/ExploreGraphLens.tsx',
+        source: 'overstory:src/components/workspace/ExploreGraphLens.tsx',
         execute: () => {
           verify()
           graph.refresh()

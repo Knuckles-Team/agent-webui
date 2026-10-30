@@ -167,7 +167,7 @@ async function prepareIdentity(page: Page, theme: string) {
     if (path.startsWith('/api/chats/')) return route.fulfill({ json: { messages: [] } })
     return route.fulfill({ status: 501, json: { detail: 'Unavailable in the synthetic workspace fixture' } })
   })
-  await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+  await page.addInitScript(() => localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1'))
 
   await page.addInitScript((value) => localStorage.setItem('pydantic-chat-ui-theme', value), theme)
   await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -376,7 +376,7 @@ async function checkDesktopShell(page: Page, size: { width: number; height: numb
   await page.mouse.move(x - 128, y, { steps: 8 })
   await page.mouse.up()
   await expect(handle).toHaveAttribute('aria-valuenow', '14')
-  expect(await page.evaluate(() => localStorage.getItem('agent-webui.workspace-map-width'))).toBe('14')
+  expect(await page.evaluate(() => localStorage.getItem('overstory.workspace-map-width'))).toBe('14')
   const task = await page.getByRole('region', { name: 'Current workspace task' }).boundingBox()
   expect(task!.width).toBeGreaterThanOrEqual(384)
   await expect(page.locator('.workspace-map')).toHaveCSS('animation-name', 'none')

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Renamed to Overstory (hard cutover)** — the PyPI distribution is now
+  `overstory` (was `agent-webui`), the import package is `overstory` (was
+  `agent_webui`), and every `AGENT_WEBUI_*` environment variable is now
+  `OVERSTORY_*` with no fallback read of the old names. The frontend package is
+  `overstory`, browser storage keys moved from `agent-webui-*` to
+  `overstory-*`, and spec prefixes `WEBUI-`/`FIN-UI-` are `OVERSTORY-`. The
+  release workflow publishes only the `overstory` distribution.
+
 ### Removed
 - **Container image** — the Docker image build is gone: the release workflow
   no longer runs `publish-docker`, and `docker/` and `.dockerignore` no longer

@@ -70,9 +70,9 @@ extra_css:
 
 extra:
   ecosystem:
-    current: agent-webui
+    current: overstory
     sites:
-      - slug: agent-webui
+      - slug: overstory
         name: Overstory
         role: operator experience
         url: https://knuckles-team.github.io/overstory/
@@ -96,7 +96,7 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/Knuckles-Team/overstory
     - icon: fontawesome/brands/python
-      link: https://pypi.org/project/agent-webui/
+      link: https://pypi.org/project/overstory/
 
 nav:
   - Home: index.md

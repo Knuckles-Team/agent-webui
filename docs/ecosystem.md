@@ -13,7 +13,7 @@ Arbora presents those capabilities without duplicating them.
   <article class="site-card">
     <h3 class="site-card__title">Arbora</h3>
     <p class="site-card__body">The operator experience: browser presentation, local interaction state, accessible navigation, and a same-origin server boundary.</p>
-    <p><a href="https://knuckles-team.github.io/agent-webui/">Documentation →</a></p>
+    <p><a href="https://knuckles-team.github.io/overstory/">Documentation →</a></p>
   </article>
   <article class="site-card">
     <h3 class="site-card__title">Arbora</h3>

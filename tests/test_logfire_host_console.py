@@ -28,7 +28,7 @@ def capture(**kwargs):
     calls.append(kwargs)
     return configure(**kwargs)
 logfire.configure = capture
-import agent_webui.server
+import overstory.server
 logfire.info('host-console-regression')
 enabled = sys.argv[1] == 'true'
 if enabled:
@@ -47,7 +47,7 @@ print(json.dumps({'ok': True}))
         if not key.startswith(('LOGFIRE_', 'OTEL_'))
     }
     env.update(
-        AGENT_WEBUI_LOGFIRE_ENABLED='true' if enabled else 'false',
+        OVERSTORY_LOGFIRE_ENABLED='true' if enabled else 'false',
         HOME=str(tmp_path),
         XDG_CONFIG_HOME=str(tmp_path / 'config'),
         XDG_DATA_HOME=str(tmp_path / 'data'),

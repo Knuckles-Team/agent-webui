@@ -25,7 +25,7 @@ def test_protocol_execution_is_isolated_and_failure_is_not_acceptance(
         ['run_installed.py', '--python', str(interpreter), '--output', str(output)],
     )
     monkeypatch.setenv('PYTHONPATH', '/untrusted-source-overlay')
-    monkeypatch.setenv('AGENT_WEBUI_AUTH_MODE', 'none')
+    monkeypatch.setenv('OVERSTORY_AUTH_MODE', 'none')
     observed = []
 
     def run(command, *, cwd, env, check, timeout):
@@ -36,7 +36,7 @@ def test_protocol_execution_is_isolated_and_failure_is_not_acceptance(
         assert (cwd / 'qualification' / 'test_oidc_lifecycle.py').is_file()
         assert env['WEBUI_INSTALLED_QUALIFICATION'] == '1'
         assert 'PYTHONPATH' not in env
-        assert 'AGENT_WEBUI_AUTH_MODE' not in env
+        assert 'OVERSTORY_AUTH_MODE' not in env
         assert check is True
         assert timeout == 180
         if exit_code:
@@ -69,7 +69,7 @@ def test_collection_and_explicit_missing_prerequisites(tmp_path, opt_in):
         'class RejectCandidateImports:\n'
         '    def find_spec(self, fullname, path=None, target=None):\n'
         '        if fullname.split(".")[0] in '
-        '{"agent_webui", "arbora", "cryptography", "fastapi", "httpx", "joserfc"}:\n'
+        '{"overstory", "arbora", "cryptography", "fastapi", "httpx", "joserfc"}:\n'
         '            raise AssertionError("Unexpected candidate import: " + fullname)\n'
         'sys.meta_path.insert(0, RejectCandidateImports())\n'
     )

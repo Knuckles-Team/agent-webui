@@ -14,7 +14,7 @@ web app) was never swallowed -- it starts with ``api`` -- but
 
 These tests reproduce the swallow for real: they write a throwaway
 ``dist/index.html`` at the exact path ``create_agent_web_app`` hard-codes
-(``Path(__file__).parent / 'dist'`` in ``agent_webui/server.py``, gitignored,
+(``Path(__file__).parent / 'dist'`` in ``overstory/server.py``, gitignored,
 normally produced by the Vite build) so ``SPAStaticFiles`` actually mounts,
 then assert the fix -- explicit routes registered before that mount --
 prevents `/health`, `/healthz`, and `/api/healthz` from ever reaching the
@@ -51,9 +51,9 @@ def webui_dist_present(tmp_path, monkeypatch):
     The server resolves ``dist`` beside its own module file, so the fixture
     points that file into ``tmp_path``. The real build output is never touched.
     """
-    from agent_webui import server as server_module
+    from overstory import server as server_module
 
-    package = tmp_path / 'agent_webui'
+    package = tmp_path / 'overstory'
     (package / 'dist').mkdir(parents=True)
     (package / 'dist' / 'index.html').write_text(_FAKE_INDEX_HTML)
     monkeypatch.setattr(server_module, '__file__', str(package / 'server.py'))
@@ -71,7 +71,7 @@ def app(webui_dist_present):
     # Depended on for its side effect (materializing dist/index.html before
     # ``create_agent_web_app`` checks ``dist_path.exists()``), not a value.
     _ = webui_dist_present
-    from agent_webui.server import create_agent_web_app
+    from overstory.server import create_agent_web_app
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
 

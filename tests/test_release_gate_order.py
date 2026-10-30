@@ -33,7 +33,7 @@ class CiTestsJobTests(unittest.TestCase):
         cache = re.search(r'^          cache-local-path: (.+)$', setup, re.MULTILINE)
         self.assertIsNotNone(cache)
         assert cache is not None
-        self.assertEqual(cache.group(1), '${{ runner.temp }}/agent-webui/uv-cache')
+        self.assertEqual(cache.group(1), '${{ runner.temp }}/overstory/uv-cache')
         self.assertNotIn('enable-cache:', setup)
         self.assertNotIn('UV_LINK_MODE', WORKFLOW.read_text(encoding='utf-8'))
 

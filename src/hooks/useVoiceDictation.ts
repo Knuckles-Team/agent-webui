@@ -3,8 +3,8 @@
  * @description Microphone-capture -> transcript state machine for the voice
  * dictation control (`VoiceDictationButton`).
  *
- * Talks to agent-webui's OWN backend route, `POST /api/enhanced/voice/transcribe`
- * (`agent/agent_webui/api_extensions.py`) — a single-shot upload (record, stop,
+ * Talks to overstory's OWN backend route, `POST /api/enhanced/voice/transcribe`
+ * (`agent/overstory/api_extensions.py`) — a single-shot upload (record, stop,
  * upload the whole clip), not a live streaming transcript: there is no
  * streaming ASR backend behind this route today, so this hook never claims one.
  *

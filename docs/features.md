@@ -10,8 +10,8 @@
 
 | Variable                             | Default | Description                                                                                                           |
 | ------------------------------------ | ------- | --------------------------------------------------------------------------------------------------------------------- |
-| `AGENT_WEBUI_CONTACT_DESTINATION`    | unset   | Fixed server-side destination passed only to the injected governed delivery adapter. Invalid values disable delivery. |
-| `AGENT_WEBUI_CONTACT_RETENTION_DAYS` | unset   | Explicit PII retention decision from `0` (delivery only) through `3650`. Missing or invalid values disable delivery.  |
+| `OVERSTORY_CONTACT_DESTINATION`    | unset   | Fixed server-side destination passed only to the injected governed delivery adapter. Invalid values disable delivery. |
+| `OVERSTORY_CONTACT_RETENTION_DAYS` | unset   | Explicit PII retention decision from `0` (delivery only) through `3650`. Missing or invalid values disable delivery.  |
 
 The host must also pass a `ContactDeliveryPort` implementation to
 `create_agent_web_app(contact_delivery=...)`. An enabling implementation must
@@ -131,7 +131,7 @@ Observability renders a `parentId` trace waterfall. That view describes span
 nesting, not the dependency DAG of agent orchestration. Existing collapsible
 components do not prove live public summaries, tool events or child conversations.
 
-The [Work specification](https://github.com/Knuckles-Team/agent-webui/blob/main/specs/arbora-app-surface/requirements.md) retains
+The [Work specification](https://github.com/Knuckles-Team/overstory/blob/main/specs/arbora-app-surface/requirements.md) retains
 nested execution navigation, separate hierarchy/dependency edges and stable deep
 links as remaining acceptance work. Public detail expansion also requires qualification. Targeted
 active-child messaging and completed-child continuation require distinct

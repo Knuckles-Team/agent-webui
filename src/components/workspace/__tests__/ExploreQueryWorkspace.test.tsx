@@ -81,7 +81,7 @@ describe('integrated Explore query lenses', () => {
   })
   it('uses typed tool navigation and retires held context handles', async () => {
     renderWithProviders(surface())
-    const held = state.tools.get('agent-webui.explore.lens')!
+    const held = state.tools.get('overstory.explore.lens')!
     await act(async () => {
       await held.execute({ lens: 'validation' }, { signal: new AbortController().signal })
     })
@@ -95,7 +95,7 @@ describe('integrated Explore query lenses', () => {
       target: { value: 'SELECT ?private WHERE {}' },
     })
     fireEvent.click(screen.getByRole('link', { name: 'Stored records' }))
-    const evidence = state.tools.get('agent-webui.explore.select')!
+    const evidence = state.tools.get('overstory.explore.select')!
     openAdvanced()
     fireEvent.click(screen.getByRole('link', { name: 'Query stored data (SPARQL)' }))
     await expect(
@@ -146,7 +146,7 @@ describe('integrated Explore query lenses', () => {
 // spec: OVERSTORY-APPS-R049.1.8
 describe('attended query editor tools', () => {
   const invoke = (name: string, input = {}) =>
-    state.tools.get(`agent-webui.explore.${name}`)!.execute(input, { signal: new AbortController().signal })
+    state.tools.get(`overstory.explore.${name}`)!.execute(input, { signal: new AbortController().signal })
   it('edits without execution and requires visible confirmation for submission', async () => {
     renderWithProviders(surface())
     await act(async () => {
@@ -170,7 +170,7 @@ describe('attended query editor tools', () => {
   })
   it('refuses same-tick old handles after an edit and stale review after manual changes', async () => {
     renderWithProviders(surface())
-    const held = state.tools.get('agent-webui.explore.request-query-submission')!
+    const held = state.tools.get('overstory.explore.request-query-submission')!
     await act(async () => {
       await invoke('edit-query', { text: 'SELECT ?fresh WHERE {}' })
       await expect(held.execute({}, { signal: new AbortController().signal })).rejects.toThrow('stale')
@@ -187,7 +187,7 @@ describe('attended query editor tools', () => {
   })
   it('retires review and held tool after owner change', async () => {
     const view = renderWithProviders(surface())
-    const held = state.tools.get('agent-webui.explore.edit-query')!
+    const held = state.tools.get('overstory.explore.edit-query')!
     await act(async () => {
       await invoke('request-query-submission')
     })

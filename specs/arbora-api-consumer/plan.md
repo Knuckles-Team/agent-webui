@@ -2,7 +2,7 @@
 
 ## Current and target wiring
 
-Current WebUI calls are concentrated in `src/lib/api.ts`, `src/lib/admin-api.ts`, `src/lib/atlas/`, `src/lib/webmcp/`, and the FastAPI `agent/agent_webui/api_extensions.py` facade. The host is assembled in `agent/agent_webui/server.py`; `src/lib/nav-registry.ts` is the route authority. Audit every current browser route and host handler before deleting it. Target path: browser → same-origin WebUI session host → generated Arbora `/api/v1` client → Arbora operation registry → authorized owning service. Arbora owns credentials, operation schema, scope, effect gate, audit and stable errors; the WebUI owns rendering, interaction and browser-safe session forwarding.
+Current WebUI calls are concentrated in `src/lib/api.ts`, `src/lib/admin-api.ts`, `src/lib/atlas/`, `src/lib/webmcp/`, and the FastAPI `agent/overstory/api_extensions.py` facade. The host is assembled in `agent/overstory/server.py`; `src/lib/nav-registry.ts` is the route authority. Audit every current browser route and host handler before deleting it. Target path: browser → same-origin WebUI session host → generated Arbora `/api/v1` client → Arbora operation registry → authorized owning service. Arbora owns credentials, operation schema, scope, effect gate, audit and stable errors; the WebUI owns rendering, interaction and browser-safe session forwarding.
 
 Generate the client into `src/lib/arbora-api/` from a pinned published schema with a repeatable command and checked-in lock/digest. The adapter accepts typed operation name and params, supplies correlation/request ID and caller context through the host, validates error envelopes, and returns a discriminated success/error result. It must not synthesize scopes, bypass server policy or accept arbitrary URL targets from browser input. For effects, the response carries a `plan_ref`, effect class and required confirmation/step-up; confirmation posts the exact unmodified plan reference and binds it to the current principal/session. Denial codes and database codes remain intact for display and debugging without leaking sensitive detail.
 
@@ -47,7 +47,7 @@ adding a fixed source pin. Fixture tests cover matching and invalid downloads.
 Real host tests must still pass before runtime acceptance.
 
 CI support source for `OVERSTORY-API-R005` is
-[`d3bf9a9651c70688dd19ade62b45dc2897d9fa9a`](https://github.com/Knuckles-Team/agent-webui/commit/d3bf9a9651c70688dd19ade62b45dc2897d9fa9a).
+[`d3bf9a9651c70688dd19ade62b45dc2897d9fa9a`](https://github.com/Knuckles-Team/overstory/commit/d3bf9a9651c70688dd19ade62b45dc2897d9fa9a).
 Seven fixture tests pass. Native host acceptance remains pending. This change
 does not add a test binding or claim new runtime verification for the row.
 
@@ -89,7 +89,7 @@ Do not replace the public owner API or hide an import failure.
 
 ### 2026-10-11: bind the tested failure-log tests
 
-Hosted job [38129639497](https://github.com/Knuckles-Team/agent-webui/actions/runs/38129639497)
+Hosted job [38129639497](https://github.com/Knuckles-Team/overstory/actions/runs/38129639497)
 tested source `1684efea0e6d85f720803a6b729bdc2ee2b01a38` with the real host
 and certified engine wheel. At 10:00:11 UTC, all five tests in
 `tests/test_log_failure_error_code.py` passed. All 19 selected tests passed.

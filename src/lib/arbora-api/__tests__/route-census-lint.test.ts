@@ -8,7 +8,7 @@ import {
   type RouteCensusEntry,
 } from '@/lib/arbora-api/route-census'
 
-const source = readFileSync('agent/agent_webui/api_extensions.py', 'utf8')
+const source = readFileSync('agent/overstory/api_extensions.py', 'utf8')
 const census = JSON.parse(readFileSync('src/lib/arbora-api/route-census.json', 'utf8')) as RouteCensusEntry[]
 
 describe('route census architecture lint', () => {

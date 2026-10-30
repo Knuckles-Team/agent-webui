@@ -52,7 +52,7 @@ jobs:
             --release-intent --repository . --head-sha "${GITHUB_SHA}" \
             --github-output "${GITHUB_OUTPUT}"
 
-  # ── STAGE 1: build + publish the agent-webui wheel to PyPI, then tag the
+  # ── STAGE 1: build + publish the overstory wheel to PyPI, then tag the
   # release commit. This remains structurally equivalent to the fleet's
   # shared Python publication pipeline, while owning WebUI's stricter
   # immutable-version preflight: an existing release is success only when

@@ -31,9 +31,9 @@ def built_bundle(tmp_path, monkeypatch):
     The server resolves ``dist`` beside its own module file, so the fixture
     points that file into ``tmp_path``. The real build output is never touched.
     """
-    from agent_webui import server as server_module
+    from overstory import server as server_module
 
-    package = tmp_path / 'agent_webui'
+    package = tmp_path / 'overstory'
     dist = package / 'dist'
     (dist / 'assets').mkdir(parents=True)
     (dist / 'index.html').write_text(_INDEX)
@@ -43,7 +43,7 @@ def built_bundle(tmp_path, monkeypatch):
 
 
 def _build(**kwargs: Any) -> Any:
-    from agent_webui.server import create_agent_web_app
+    from overstory.server import create_agent_web_app
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
 
@@ -51,7 +51,7 @@ def _build(**kwargs: Any) -> Any:
 
 
 def _no_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent_webui.host import config
+    from overstory.host import config
 
     for field in ('auth_jwt_jwks_uri', 'auth_jwt_issuer', 'auth_jwt_audience'):
         monkeypatch.setattr(config, field, None, raising=False)
@@ -66,7 +66,7 @@ def test_a_loopback_listener_without_a_verifier_is_refused(
 
 
 def test_a_half_configured_verifier_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent_webui.host import config
+    from overstory.host import config
 
     monkeypatch.setattr(config, 'auth_jwt_audience', None, raising=False)
     with pytest.raises(RuntimeError, match='JWKS URI, issuer, and audience'):
@@ -85,7 +85,7 @@ def test_a_host_session_boundary_satisfies_the_verifier_requirement(
 def test_host_boundary_and_webui_oidc_cannot_both_own_auth(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from agent_webui import oidc_session
+    from overstory import oidc_session
 
     monkeypatch.setattr(oidc_session, 'load_settings', lambda: object())
     with pytest.raises(RuntimeError, match='both own'):

@@ -38,8 +38,8 @@ Use the packaged Arbora process for the backend, then run Vite for frontend
 changes:
 
 ```bash
-git clone https://github.com/Knuckles-Team/agent-webui.git
-cd agent-webui
+git clone https://github.com/Knuckles-Team/overstory.git
+cd overstory
 pnpm install --frozen-lockfile
 BACKEND_PORT=8080 pnpm run dev
 ```

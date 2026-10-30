@@ -74,7 +74,7 @@ for (const viewport of [
       localStorage.clear()
       sessionStorage.clear()
       localStorage.setItem('pydantic-chat-ui-theme', 'light')
-      localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1')
+      localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1')
     })
     await page.goto('/workspace/explore?q=retained&entity=evidence-a&tool=history&lens=graph&graphNode=graph-a')
     const lens = page.getByRole('region', { name: 'Graph lens' })

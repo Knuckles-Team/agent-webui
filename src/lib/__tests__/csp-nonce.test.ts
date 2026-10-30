@@ -27,7 +27,7 @@ describe('csp nonce', () => {
   })
 
   it('ignores the unreplaced build placeholder', async () => {
-    const { cspNonce, installCspNonce } = await loadWithMeta('AGENT_WEBUI_CSP_NONCE')
+    const { cspNonce, installCspNonce } = await loadWithMeta('OVERSTORY_CSP_NONCE')
     expect(cspNonce()).toBeUndefined()
     installCspNonce()
     expect((globalThis as { __webpack_nonce__?: string }).__webpack_nonce__).toBeUndefined()

@@ -1,7 +1,7 @@
 # OVERSTORY-DESIGN — Accessible Arbora browser design system
 
 **ID:** OVERSTORY-DESIGN
-**Owner:** agent-webui
+**Owner:** overstory
 **Related ID:** OVERSTORY-DESIGN-R001
 **Delivery:** specified; acceptance audit open
 **Acceptance:** open

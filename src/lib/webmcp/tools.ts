@@ -30,7 +30,7 @@ import { createValidatedExecutor, parseBoundedWebMcpOutput } from './validation'
 import type { WebMcpExecutionOptions, WebMcpJsonSchema, WebMcpToolDefinition } from './types'
 
 const WEBMCP_LOCAL_TOOL_VERSION = '1.0.0'
-const WEBMCP_LOCAL_TOOL_SOURCE = 'agent-webui:src/lib/webmcp/tools.ts'
+const WEBMCP_LOCAL_TOOL_SOURCE = 'overstory:src/lib/webmcp/tools.ts'
 
 const PAGE_CONTEXT_JSON_SCHEMA: WebMcpJsonSchema = {
   type: 'object',
@@ -193,7 +193,7 @@ export function createPageTools(options: PageToolOptions): readonly WebMcpToolDe
 
   return [
     makeTool({
-      name: 'agent-webui.get-page-context',
+      name: 'overstory.get-page-context',
       title: 'Get page context',
       description:
         'Read the current Arbora route, view, selection, and filter context. ' +
@@ -205,7 +205,7 @@ export function createPageTools(options: PageToolOptions): readonly WebMcpToolDe
       execute: () => publicContext,
     }),
     makeTool({
-      name: 'agent-webui.navigate',
+      name: 'overstory.navigate',
       title: 'Navigate in Arbora',
       description:
         'Navigate to a registered same-origin Arbora route visible to the current role. ' +
@@ -231,7 +231,7 @@ export function createAtlasTools(controller: AtlasToolController): readonly WebM
 
   return [
     makeTool({
-      name: 'agent-webui.atlas.get-state',
+      name: 'overstory.atlas.get-state',
       title: 'Get Atlas UI state',
       description:
         'Read the current Atlas adapter, filters, selection, renderer, and graph context. ' +
@@ -243,7 +243,7 @@ export function createAtlasTools(controller: AtlasToolController): readonly WebM
       execute: () => publicState,
     }),
     makeTool({
-      name: 'agent-webui.atlas.set-filters',
+      name: 'overstory.atlas.set-filters',
       title: 'Set Atlas filters',
       description:
         'Replace Atlas’s local filter editor state. This does not execute a query or write backend data; ' +
@@ -262,7 +262,7 @@ export function createAtlasTools(controller: AtlasToolController): readonly WebM
       },
     }),
     makeTool({
-      name: 'agent-webui.atlas.select',
+      name: 'overstory.atlas.select',
       title: 'Select in Atlas',
       description:
         'Change Atlas’s local selection or clear it. Selection data is limited to kind, id, label, and type; ' +

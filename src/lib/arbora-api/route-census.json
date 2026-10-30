@@ -48,7 +48,7 @@
     "route": "POST /api/enhanced/editor-context",
     "disposition": "session-protocol",
     "owning_operation": null,
-    "caller": "src/components/views/WorkspaceIDEView.tsx; agent/agent_webui bridge extension",
+    "caller": "src/components/views/WorkspaceIDEView.tsx; agent/overstory bridge extension",
     "scope": "served editor-context protocol; preserve bridge and WorkspaceIDEView callers until a browser-safe context operation replaces the host store",
     "effect_class": "write",
     "migration_state": "host-session-protocol"
@@ -57,7 +57,7 @@
     "route": "GET /api/enhanced/editor-context",
     "disposition": "session-protocol",
     "owning_operation": null,
-    "caller": "src/components/views/WorkspaceIDEView.tsx; agent/agent_webui bridge extension",
+    "caller": "src/components/views/WorkspaceIDEView.tsx; agent/overstory bridge extension",
     "scope": "served editor-context protocol; preserve bridge and WorkspaceIDEView callers until a browser-safe context operation replaces the host store",
     "effect_class": "read",
     "migration_state": "host-session-protocol"
@@ -66,7 +66,7 @@
     "route": "GET /api/enhanced/config-files",
     "disposition": "retire",
     "owning_operation": null,
-    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "caller": "no current browser caller located; agent/overstory/api_extensions.py",
     "scope": "workspace configuration domain; retirement is pending a generated Arbora operation; preserve any host integration until cutover proof",
     "effect_class": "read",
     "migration_state": "pending-arbora-operation"
@@ -75,7 +75,7 @@
     "route": "GET /api/enhanced/agents",
     "disposition": "retire",
     "owning_operation": null,
-    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "caller": "no current browser caller located; agent/overstory/api_extensions.py",
     "scope": "agent registry domain; retirement is pending a generated Arbora operation; preserve any host integration until cutover proof",
     "effect_class": "read",
     "migration_state": "pending-arbora-operation"
@@ -174,7 +174,7 @@
     "route": "POST /api/enhanced/reload",
     "disposition": "retire",
     "owning_operation": null,
-    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py (/reload)",
+    "caller": "no current browser caller located; agent/overstory/api_extensions.py (/reload)",
     "scope": "domain route; retirement is pending a generated Arbora operation; preserve current caller until cutover proof",
     "effect_class": "write",
     "migration_state": "pending-arbora-operation"
@@ -210,7 +210,7 @@
     "route": "GET /api/enhanced/agent-icon",
     "disposition": "ui-local",
     "owning_operation": null,
-    "caller": "browser asset consumer; explicit host asset owner agent/agent_webui/api_extensions.py",
+    "caller": "browser asset consumer; explicit host asset owner agent/overstory/api_extensions.py",
     "scope": "browser branding asset; explicit UI-local owner; preserve host asset serving until a packaged asset boundary replaces it",
     "effect_class": "read",
     "migration_state": "browser-local"
@@ -714,7 +714,7 @@
     "route": "GET /api/enhanced/prompts/graph/{prompt_id}",
     "disposition": "retire",
     "owning_operation": null,
-    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "caller": "no current browser caller located; agent/overstory/api_extensions.py",
     "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
     "effect_class": "read",
     "migration_state": "pending-arbora-operation"
@@ -732,7 +732,7 @@
     "route": "PUT /api/enhanced/prompts/graph/{prompt_id}",
     "disposition": "retire",
     "owning_operation": null,
-    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "caller": "no current browser caller located; agent/overstory/api_extensions.py",
     "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
     "effect_class": "write",
     "migration_state": "pending-arbora-operation"
@@ -741,7 +741,7 @@
     "route": "GET /api/enhanced/prompts/graph/{prompt_id}/versions",
     "disposition": "retire",
     "owning_operation": null,
-    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "caller": "no current browser caller located; agent/overstory/api_extensions.py",
     "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
     "effect_class": "read",
     "migration_state": "pending-arbora-operation"
@@ -750,7 +750,7 @@
     "route": "POST /api/enhanced/prompts/graph/{prompt_id}/rollback/{version_id}",
     "disposition": "retire",
     "owning_operation": null,
-    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "caller": "no current browser caller located; agent/overstory/api_extensions.py",
     "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
     "effect_class": "write",
     "migration_state": "pending-arbora-operation"
@@ -759,7 +759,7 @@
     "route": "GET /api/enhanced/prompts/graph/{prompt_id}/diff/{version_a}/{version_b}",
     "disposition": "retire",
     "owning_operation": null,
-    "caller": "no current browser caller located; agent/agent_webui/api_extensions.py",
+    "caller": "no current browser caller located; agent/overstory/api_extensions.py",
     "scope": "prompt domain; retirement is pending a generated Arbora operation; preserve Chat and prompt-view callers until cutover proof",
     "effect_class": "read",
     "migration_state": "pending-arbora-operation"

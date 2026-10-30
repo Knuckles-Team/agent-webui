@@ -102,7 +102,7 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
   const tools = useMemo(
     () => [
       makeTool({
-        name: 'agent-webui.operate.select',
+        name: 'overstory.operate.select',
         title: 'Select Operate context',
         description:
           'Navigate discovered fleet children and capabilities. Does not invoke, load, start or modify anything.',
@@ -110,7 +110,7 @@ function AuthorizedOperate({ identity, generation }: { identity: Identity; gener
         outputSchema: z.object({ selected: z.literal(true) }).strict(),
         jsonSchema: z.toJSONSchema(OperateFleetSelectionSchema),
         readOnly: false,
-        source: 'agent-webui:src/components/workspace/OperateWorkspace.tsx',
+        source: 'overstory:src/components/workspace/OperateWorkspace.tsx',
         execute: (next) => {
           if (!active.current) throw new Error('Operate admission has changed')
           const latest = latestDiscovery.current

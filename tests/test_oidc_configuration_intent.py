@@ -1,7 +1,7 @@
 """Real loader/factory configuration tests, not live identity-provider proof."""
 
 import pytest
-from agent_webui.oidc_session import OIDCConfigurationError, load_settings
+from overstory.oidc_session import OIDCConfigurationError, load_settings
 from test_identity_boundary import _build
 
 _BROWSER_SETTINGS = (

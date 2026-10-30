@@ -42,7 +42,7 @@ export interface DomainRoute {
 
 const ROUTER_DECORATOR = /^\s*@router\.(get|post|put|patch|delete|options|head|api_route)\(\s*(['"])([^'"]+)\2/gm
 const API_EXTENSIONS_PREFIX = '/api/enhanced'
-const API_EXTENSIONS_SOURCE = 'agent/agent_webui/api_extensions.py'
+const API_EXTENSIONS_SOURCE = 'agent/overstory/api_extensions.py'
 
 /** Extract the browser-facing routes declared by the enhanced host router. */
 export function extractDomainRoutes(source: string): DomainRoute[] {

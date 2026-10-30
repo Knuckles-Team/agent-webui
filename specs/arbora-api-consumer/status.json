@@ -243,8 +243,8 @@
         "be36ad8c76c8"
       ],
       "verified_by": [
-        "agent/agent_webui/__tests__/test_served_operations.py:188",
-        "agent/agent_webui/__tests__/test_served_operations.py:275",
+        "agent/overstory/__tests__/test_served_operations.py:188",
+        "agent/overstory/__tests__/test_served_operations.py:275",
         "tests/test_logfire_host_console.py:12"
       ]
     },
@@ -268,7 +268,7 @@
         "c767b6a5b17f"
       ],
       "verified_by": [
-        "agent/agent_webui/__tests__/test_run_identity.py:3",
+        "agent/overstory/__tests__/test_run_identity.py:3",
         "src/__tests__/Chat.swe-mode.test.tsx:2"
       ]
     },

@@ -92,7 +92,7 @@ it.each([
   ['100', 22],
   ['1', 12],
 ])('bounds stored map width %s and persists keyboard resizing', (saved, expected) => {
-  localStorage.setItem('agent-webui.workspace-map-width', saved)
+  localStorage.setItem('overstory.workspace-map-width', saved)
   render(<ResizeSurface />)
   const separator = screen.getByRole('separator', { name: 'Resize workspace map' })
   expect(separator).toHaveAttribute('aria-valuenow', String(expected))
@@ -100,10 +100,10 @@ it.each([
   expect(separator).toHaveAttribute('aria-valuenow', '12')
   fireEvent.keyDown(separator, { key: 'ArrowRight', shiftKey: true })
   expect(separator).toHaveAttribute('aria-valuenow', '14')
-  expect(localStorage.getItem('agent-webui.workspace-map-width')).toBe('14')
+  expect(localStorage.getItem('overstory.workspace-map-width')).toBe('14')
   fireEvent.keyDown(separator, { key: 'End' })
   expect(separator).toHaveAttribute('aria-valuenow', '22')
-  localStorage.removeItem('agent-webui.workspace-map-width')
+  localStorage.removeItem('overstory.workspace-map-width')
 })
 
 it('retains keyboard resizing when preference storage is unavailable', () => {

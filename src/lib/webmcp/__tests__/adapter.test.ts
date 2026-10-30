@@ -24,7 +24,7 @@ describe('experimental WebMCP adapter', () => {
       },
     } as unknown as Document)!
     const execute = vi.fn(async () => ({ ok: true }))
-    const definition = { name: 'agent-webui.test', description: 'test', inputSchema: { type: 'object' }, execute }
+    const definition = { name: 'overstory.test', description: 'test', inputSchema: { type: 'object' }, execute }
     const first = registerWebMcpTools(adapter, [definition])
     await first.acknowledged
     const [oldName] = native.keys()
@@ -34,7 +34,7 @@ describe('experimental WebMCP adapter', () => {
     const [newName] = native.keys()
     expect(newName).not.toBe(oldName)
     expect(native.get(oldName)).toBeUndefined()
-    expect(snapshot.activeToolNames).toEqual(['agent-webui.test'])
+    expect(snapshot.activeToolNames).toEqual(['overstory.test'])
     await native.get(newName)!.execute({}, executionOptions())
     expect(execute).toHaveBeenCalledOnce()
     replacement()
@@ -52,7 +52,7 @@ describe('experimental WebMCP adapter', () => {
       },
     }
     const tool: WebMcpToolDefinition = {
-      name: 'agent-webui.test',
+      name: 'overstory.test',
       description: 'test',
       inputSchema: { type: 'object' },
       execute: async () => ({ ok: true }),
@@ -69,7 +69,7 @@ describe('experimental WebMCP adapter', () => {
     expect(signal.aborted).toBe(true)
     await Promise.resolve()
     expect(registration.getSnapshot().activeToolNames).toEqual([])
-    expect(registration.getSnapshot().statusByTool['agent-webui.test']).toBe('aborted')
+    expect(registration.getSnapshot().statusByTool['overstory.test']).toBe('aborted')
   })
 
   it('acknowledges only settled registrations and keeps pending tools unavailable', async () => {
@@ -82,7 +82,7 @@ describe('experimental WebMCP adapter', () => {
         }),
     }
     const tool: WebMcpToolDefinition = {
-      name: 'agent-webui.pending',
+      name: 'overstory.pending',
       description: 'pending',
       inputSchema: { type: 'object' },
       execute: async () => ({ ok: true }),
@@ -91,16 +91,16 @@ describe('experimental WebMCP adapter', () => {
     const registration = registerWebMcpTools(adapter, [tool])
     expect(registration.getSnapshot()).toMatchObject({
       activeToolNames: [],
-      unavailableToolNames: ['agent-webui.pending'],
-      statusByTool: { 'agent-webui.pending': 'pending' },
+      unavailableToolNames: ['overstory.pending'],
+      statusByTool: { 'overstory.pending': 'pending' },
     })
 
     acknowledge?.()
     await expect(registration.acknowledged).resolves.toMatchObject({
       generation: registration.generation,
-      activeToolNames: ['agent-webui.pending'],
+      activeToolNames: ['overstory.pending'],
       unavailableToolNames: [],
-      statusByTool: { 'agent-webui.pending': 'active' },
+      statusByTool: { 'overstory.pending': 'active' },
     })
   })
 
@@ -112,7 +112,7 @@ describe('experimental WebMCP adapter', () => {
       },
     }
     const tool: WebMcpToolDefinition = {
-      name: 'agent-webui.failed',
+      name: 'overstory.failed',
       description: 'failed',
       inputSchema: { type: 'object' },
       execute: async () => ({ ok: true }),
@@ -121,14 +121,14 @@ describe('experimental WebMCP adapter', () => {
     const registration = registerWebMcpTools(adapter, [tool])
     const snapshot = await registration.acknowledged
     expect(snapshot.activeToolNames).toEqual([])
-    expect(snapshot.unavailableToolNames).toEqual(['agent-webui.failed'])
-    expect(snapshot.statusByTool['agent-webui.failed']).toBe('failed')
-    expect(snapshot.errorByTool['agent-webui.failed']).toBe('permission denied')
+    expect(snapshot.unavailableToolNames).toEqual(['overstory.failed'])
+    expect(snapshot.statusByTool['overstory.failed']).toBe('failed')
+    expect(snapshot.errorByTool['overstory.failed']).toBe('permission denied')
   })
 
   it('makes unsupported registration explicit instead of fabricating active evidence', async () => {
     const tool: WebMcpToolDefinition = {
-      name: 'agent-webui.unsupported',
+      name: 'overstory.unsupported',
       description: 'unsupported',
       inputSchema: { type: 'object' },
       execute: async () => ({ ok: true }),
@@ -136,8 +136,8 @@ describe('experimental WebMCP adapter', () => {
     const registration = createUnavailableWebMcpRegistration([tool])
     await expect(registration.acknowledged).resolves.toMatchObject({
       activeToolNames: [],
-      unavailableToolNames: ['agent-webui.unsupported'],
-      statusByTool: { 'agent-webui.unsupported': 'unavailable' },
+      unavailableToolNames: ['overstory.unsupported'],
+      statusByTool: { 'overstory.unsupported': 'unavailable' },
     })
   })
 })

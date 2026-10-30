@@ -2,7 +2,7 @@
 
 ## Reuse and ownership
 
-`src/lib/nav-registry.ts` owns sections/routes; `src/lib/frontend-contributions.ts` validates contributed descriptors; `src/lib/webmcp/` owns attended page tools; `src/lib/atlas/renderers.ts` and `src/components/atlas/renderers/index.ts` own renderer registration. `src/App.tsx` mounts the shell. `public/`, `index.html`, `src/index.css` and the existing asset generator own brand presentation. `agent/agent_webui/server.py` serves packaged assets. Extend these seams; do not create another router, renderer registry, app permission database or client-side Arbora authority. The first native app lives under `src/apps/markets/`; its finance behavior is specified separately in this repository.
+`src/lib/nav-registry.ts` owns sections/routes; `src/lib/frontend-contributions.ts` validates contributed descriptors; `src/lib/webmcp/` owns attended page tools; `src/lib/atlas/renderers.ts` and `src/components/atlas/renderers/index.ts` own renderer registration. `src/App.tsx` mounts the shell. `public/`, `index.html`, `src/index.css` and the existing asset generator own brand presentation. `agent/overstory/server.py` serves packaged assets. Extend these seams; do not create another router, renderer registry, app permission database or client-side Arbora authority. The first native app lives under `src/apps/markets/`; its finance behavior is specified separately in this repository.
 
 ## AppSurface contract
 

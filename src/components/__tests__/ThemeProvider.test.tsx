@@ -117,9 +117,9 @@ function AppearanceControls() {
 }
 
 it('loads and persists bounded density and effect preferences independently of theme', () => {
-  localStorage.setItem('agent-webui.density', 'comfortable')
-  localStorage.setItem('agent-webui.motion', 'reduce')
-  localStorage.setItem('agent-webui.transparency', 'opaque')
+  localStorage.setItem('overstory.density', 'comfortable')
+  localStorage.setItem('overstory.motion', 'reduce')
+  localStorage.setItem('overstory.transparency', 'opaque')
   render(
     <ThemeProvider storageKey="theme-transition-test">
       <AppearanceControls />
@@ -131,9 +131,9 @@ it('loads and persists bounded density and effect preferences independently of t
   fireEvent.click(screen.getByRole('button', { name: 'Motion' }))
   fireEvent.click(screen.getByRole('button', { name: 'Surfaces' }))
   expect(root.dataset).toMatchObject({ density: 'compact', motion: 'system', transparency: 'glass' })
-  expect(localStorage.getItem('agent-webui.density')).toBe('compact')
-  expect(localStorage.getItem('agent-webui.motion')).toBe('system')
-  expect(localStorage.getItem('agent-webui.transparency')).toBe('glass')
+  expect(localStorage.getItem('overstory.density')).toBe('compact')
+  expect(localStorage.getItem('overstory.motion')).toBe('system')
+  expect(localStorage.getItem('overstory.transparency')).toBe('glass')
 })
 
 it('keeps preference changes usable when storage is denied', () => {

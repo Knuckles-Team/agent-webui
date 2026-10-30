@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 
-const storageKey = 'agent-webui.workspace-map-width'
+const storageKey = 'overstory.workspace-map-width'
 export const mapMinimum = 12
 const mapMaximum = 22
 

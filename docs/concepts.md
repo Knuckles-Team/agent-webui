@@ -1,6 +1,6 @@
-# Concept Registry — agent-webui
+# Concept Registry — overstory
 
-> **Prefix**: `CONCEPT:WEBUI-*`
+> **Prefix**: `CONCEPT:OVERSTORY-*`
 > **Version**: 0.17.0
 > **Bridge**: [`CONCEPT:AU-ECO.messaging.native-backend-abstraction`](https://github.com/Knuckles-Team/agent-utilities/blob/main/docs/concepts.md) (Unified Toolkit Ingestion)
 
@@ -28,4 +28,4 @@
 
 ## Synergy with agent-utilities
 
-This project integrates with `agent-utilities` via `CONCEPT:AU-ECO.messaging.native-backend-abstraction` (Unified Toolkit Ingestion). The `agent_webui` MCP server registers its tools with the agent-utilities FastMCP middleware, enabling automatic discovery, telemetry, and Knowledge Graph ingestion of all WEBUI-* concepts.
+This project integrates with `agent-utilities` via `CONCEPT:AU-ECO.messaging.native-backend-abstraction` (Unified Toolkit Ingestion). The `overstory` MCP server registers its tools with the agent-utilities FastMCP middleware, enabling automatic discovery, telemetry, and Knowledge Graph ingestion of all OVERSTORY-* concepts.

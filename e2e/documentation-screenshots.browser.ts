@@ -35,7 +35,7 @@ for (const capture of captures) {
     await page.addInitScript((value) => {
       localStorage.clear()
       sessionStorage.clear()
-      localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1')
+      localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1')
       localStorage.setItem('pydantic-chat-ui-theme', value)
     }, theme)
     await page.setViewportSize(capture.viewport)

@@ -74,7 +74,7 @@ function OwnedTaskControls({
   const tools = useMemo(
     () => [
       makeTool({
-        name: 'agent-webui.work.cancel-task.review',
+        name: 'overstory.work.cancel-task.review',
         title: 'Review cancellation of the selected task',
         description:
           'Open local review for the selected task. Never sends a cancellation request. Requires visible human confirmation.',
@@ -82,7 +82,7 @@ function OwnedTaskControls({
         outputSchema: reviewResult,
         jsonSchema: z.toJSONSchema(empty),
         readOnly: false,
-        source: 'agent-webui:src/components/workspace/WorkTaskControls.tsx',
+        source: 'overstory:src/components/workspace/WorkTaskControls.tsx',
         execute: requestReview,
       }),
     ],

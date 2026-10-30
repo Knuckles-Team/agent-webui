@@ -23,8 +23,8 @@ def issuer():
 
 @pytest.fixture
 def browser(monkeypatch, issuer):
-    from agent_webui import host, oidc_session
-    from agent_webui.server import create_agent_web_app
+    from overstory import host, oidc_session
+    from overstory.server import create_agent_web_app
     from arbora.webui_host.session_boundary import identity_factory_kwargs
     from cryptography.fernet import Fernet
     from fastapi.testclient import TestClient
@@ -49,7 +49,7 @@ def browser(monkeypatch, issuer):
         'gateway_rate_burst': 0,
     }.items():
         monkeypatch.setattr(host.config, field, value, raising=False)
-    monkeypatch.setenv('AGENT_WEBUI_ACCESS_LOG_POLICY', 'disabled')
+    monkeypatch.setenv('OVERSTORY_ACCESS_LOG_POLICY', 'disabled')
 
     def compose(app):
         @app.get('/api/lifecycle')
@@ -84,7 +84,7 @@ def sign_in(browser):
 
 
 def test_signed_oidc_login_refresh_logout(browser, issuer, monkeypatch):
-    from agent_webui import oidc_session
+    from overstory import oidc_session
 
     assert browser.get('/api/lifecycle').status_code == 401
     sign_in(browser)
@@ -115,7 +115,7 @@ def test_signed_oidc_login_refresh_logout(browser, issuer, monkeypatch):
 def test_expired_session_refresh_refusal_clears_browser(
     browser, issuer, monkeypatch, first_path
 ):
-    from agent_webui import oidc_session
+    from overstory import oidc_session
 
     sign_in(browser)
     issuer.reject_refresh = True

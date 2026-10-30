@@ -21,7 +21,7 @@ The catalog page (OVERSTORY-DASH-R016) reads MEDULLA-TYPED-PACKS-R106 and R108 a
 
 - `model.ts` holds pure edit functions. Each returns a new document with revision + 1.
 - `history.ts` holds the undo stack and the activity log. Each entry records the actor.
-- `tools.ts` builds the WebMCP tools over a controller. Tool names use the `agent-webui.dashboard.` prefix.
+- `tools.ts` builds the WebMCP tools over a controller. Tool names use the `overstory.dashboard.` prefix.
 - `store.ts` defines the store interface. The local store is the interim implementation.
 
 ## Decisions

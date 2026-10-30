@@ -12,12 +12,12 @@ export default defineConfig(() => ({
   // remain available for deployments that host assets beneath another prefix.
   base: '/',
   // The server swaps this placeholder for a per-response CSP nonce (src/lib/csp-nonce.ts).
-  html: { cspNonce: 'AGENT_WEBUI_CSP_NONCE' },
+  html: { cspNonce: 'OVERSTORY_CSP_NONCE' },
   resolve: {
     dedupe: ['react', 'react-dom'],
   },
   build: {
-    // BUG-PE-062: `agent/agent_webui/dist` is the LIVE, NFS-mounted
+    // BUG-PE-062: `agent/overstory/dist` is the LIVE, NFS-mounted
     // production artifact -- vite empties `outDir` and writes files into
     // it over the whole build, `index.html` last, so building straight
     // into that path let any interrupted build (Ctrl-C, OOM, a `git push`
@@ -27,7 +27,7 @@ export default defineConfig(() => ({
     // build`) verifies the staged build is complete and swaps it into
     // `dist` atomically. Never point this at `dist` directly -- see that
     // script's header for why.
-    outDir: 'agent/agent_webui/dist.tmp',
+    outDir: 'agent/overstory/dist.tmp',
     emptyOutDir: true,
     assetsDir: 'assets',
   },

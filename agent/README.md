@@ -1,7 +1,7 @@
-# Agent WebUI Python host
+# Overstory Python host
 
 The packaged FastAPI boundary and built React assets for
-[Agent WebUI](../README.md).
+[Overstory](../README.md).
 
 ## Overview
 
@@ -20,9 +20,9 @@ injects the platform gateway and checked runtime context through the public
 
 ## Documentation
 
-Use the [published documentation](https://knuckles-team.github.io/agent-webui/)
+Use the [published documentation](https://knuckles-team.github.io/overstory/)
 for setup, architecture, feature reference, and operations. The
-[ecosystem map](https://knuckles-team.github.io/agent-webui/ecosystem/) explains
+[ecosystem map](https://knuckles-team.github.io/overstory/ecosystem/) explains
 the boundary between this host and Arbora.
 
 ## Architecture
@@ -52,4 +52,4 @@ routing, fleet supervision, and runtime policy in Arbora. Follow the root
 
 ## License
 
-Agent WebUI is available under the [MIT License](../LICENSE).
+Overstory is available under the [MIT License](../LICENSE).

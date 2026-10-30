@@ -79,7 +79,7 @@ for (const width of [1280, 640, 740]) {
         if (path === '/api/chats') return route.fulfill({ json: [] })
         return route.fulfill({ status: 501, json: { detail: 'Unavailable in synthetic zoom fixture' } })
       })
-      await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+      await page.addInitScript(() => localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1'))
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await page.goto('http://127.0.0.1:5199/workspace/explore?lens=query')
       const draft = page.getByRole('textbox', { name: 'SPARQL query' })

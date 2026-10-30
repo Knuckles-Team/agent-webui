@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { lintRouteCensus } from '../src/lib/arbora-api/route-census.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const sourcePath = resolve(root, 'agent/agent_webui/api_extensions.py')
+const sourcePath = resolve(root, 'agent/overstory/api_extensions.py')
 const censusPath = resolve(root, 'src/lib/arbora-api/route-census.json')
 
 try {

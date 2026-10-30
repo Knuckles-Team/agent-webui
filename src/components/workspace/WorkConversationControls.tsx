@@ -102,7 +102,7 @@ function OwnedConversationControls({
   const tools = useMemo(
     () => [
       makeTool({
-        name: 'agent-webui.work.conversation.review',
+        name: 'overstory.work.conversation.review',
         title: 'Review a local conversation change',
         description:
           'Open visible review for a fresh conversation, local rename or local removal. Does not change history, submit a message or delete remote data.',
@@ -110,7 +110,7 @@ function OwnedConversationControls({
         outputSchema: resultSchema,
         jsonSchema: z.toJSONSchema(requestSchema),
         readOnly: false,
-        source: 'agent-webui:src/components/workspace/WorkConversationControls.tsx',
+        source: 'overstory:src/components/workspace/WorkConversationControls.tsx',
         execute: request,
       }),
     ],

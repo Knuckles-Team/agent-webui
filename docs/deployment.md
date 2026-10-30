@@ -1,6 +1,6 @@
 # Deployment and operations
 
-Agent Web UI ships only as a Python package on PyPI (wheel and sdist). Arbora
+Overstory ships only as a Python package on PyPI (wheel and sdist). Arbora
 installs it through its `webui` extra and serves it in-process on port 8080,
 next to MCP and REST. It is the browser-facing presentation service and composes
 the canonical gateway routes provided by Arbora and Agent Utilities.
@@ -22,20 +22,20 @@ audited, host-injected delegation ports.
 Before exposing a listener, inspect the effective contract:
 
 ```bash
-python -m agent_webui.server --security-doctor --host 0.0.0.0
+python -m overstory.server --security-doctor --host 0.0.0.0
 ```
 
 The CLI disables Uvicorn access logging because raw query strings can contain searches,
 graph symbols, and other sensitive values. An embedding ASGI server must set
-`AGENT_WEBUI_ACCESS_LOG_POLICY=disabled` or provide a redacting logger and
-attest with `AGENT_WEBUI_ACCESS_LOG_POLICY=redacted`.
+`OVERSTORY_ACCESS_LOG_POLICY=disabled` or provide a redacting logger and
+attest with `OVERSTORY_ACCESS_LOG_POLICY=redacted`.
 
 Content Security Policy defaults to self-hosted content with frames denied.
 Additional script, style, image, font, connection, media, worker, and frame
 sources must be exact origins in the corresponding
-`AGENT_WEBUI_CSP_*_SOURCES` variables. Wildcards, credentials, paths, and
+`OVERSTORY_CSP_*_SOURCES` variables. Wildcards, credentials, paths, and
 directive injection are rejected. Custom HTML rendering also requires
-`AGENT_WEBUI_CSP_CUSTOM_RENDERING=1`.
+`OVERSTORY_CSP_CUSTOM_RENDERING=1`.
 
 ## Install and serve
 
@@ -46,7 +46,7 @@ the co-service:
 uvx --from "arbora[webui]" arbora --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
-Upgrade by moving Arbora's pinned `agent-webui` release; roll back by pinning
+Upgrade by moving Arbora's pinned `overstory` release; roll back by pinning
 the previous release. After either, run the security doctor and confirm the
 served frontend bundle matches the release.
 

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 
-export const CONSENT_VERSION = 'agent-webui-consent-v1'
-export const CONSENT_STORAGE_KEY = 'agent-webui.consent'
-export const CONSENT_DISMISSED_KEY = 'agent-webui.consent-dismissed'
-export const CONSENT_CHANGED_EVENT = 'agent-webui-consent-changed'
+export const CONSENT_VERSION = 'overstory-consent-v1'
+export const CONSENT_STORAGE_KEY = 'overstory.consent'
+export const CONSENT_DISMISSED_KEY = 'overstory.consent-dismissed'
+export const CONSENT_CHANGED_EVENT = 'overstory-consent-changed'
 
 export type ConsentChoice = 'granted' | 'denied'
 

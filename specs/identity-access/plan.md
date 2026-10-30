@@ -2,7 +2,7 @@
 
 ## Existing seams
 
-Reuse `src/lib/auth.ts` and the existing identity context for display state; `src/components/views/UserManagementView.tsx`, `AdminView.tsx` and `src/lib/nav-registry.ts` for admin navigation; `src/components/ApprovalCard.tsx` and `FleetView.tsx` for approval affordances. The FastAPI host composition in `agent/agent_webui/server.py`, `oidc_session.py`, `graph_identity.py` and `graph_admission.py` already exposes identity, session and graph-admission boundaries. Audit those exact current functions before changing them. Do not add a browser-only role database or duplicate policy engine. Arbora owns `identity.*` and elevation operations and validates the caller.
+Reuse `src/lib/auth.ts` and the existing identity context for display state; `src/components/views/UserManagementView.tsx`, `AdminView.tsx` and `src/lib/nav-registry.ts` for admin navigation; `src/components/ApprovalCard.tsx` and `FleetView.tsx` for approval affordances. The FastAPI host composition in `agent/overstory/server.py`, `oidc_session.py`, `graph_identity.py` and `graph_admission.py` already exposes identity, session and graph-admission boundaries. Audit those exact current functions before changing them. Do not add a browser-only role database or duplicate policy engine. Arbora owns `identity.*` and elevation operations and validates the caller.
 
 ## Contract and flow
 

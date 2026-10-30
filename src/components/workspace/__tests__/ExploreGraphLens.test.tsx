@@ -128,7 +128,7 @@ beforeEach(() => {
   window.history.replaceState({}, '', '/workspace/explore?q=retained&entity=e1&tool=history&lens=graph&graphNode=g1')
 })
 const invoke = (name: string, value: unknown = {}) =>
-  context.tools.get(`agent-webui.explore.graph.${name}`)!.execute(value, { signal: new AbortController().signal })
+  context.tools.get(`overstory.explore.graph.${name}`)!.execute(value, { signal: new AbortController().signal })
 function openAdvanced() {
   const summary = screen.getByText('Advanced')
   if (!summary.closest('details')!.open) fireEvent.click(summary)
@@ -242,14 +242,14 @@ describe('native graph lens', () => {
   it('fences type-refresh generations and retained tool handles including same-tick refresh', async () => {
     renderWithProviders(surface())
     await ready()
-    const held = context.tools.get('agent-webui.explore.graph.select')!
+    const held = context.tools.get('overstory.explore.graph.select')!
     await act(async () => {
       await invoke('refresh')
       await expect(held.execute({ node: 'g2' }, { signal: new AbortController().signal })).rejects.toThrow('stale')
     })
     await ready()
     await expect(invoke('select', { node: 'not-loaded' })).rejects.toThrow('outside')
-    const visible = context.tools.get('agent-webui.explore.graph.select')!
+    const visible = context.tools.get('overstory.explore.graph.select')!
     openAdvanced()
     fireEvent.click(screen.getByRole('link', { name: 'Stored records' }))
     await expect(visible.execute({ node: 'g2' }, { signal: new AbortController().signal })).rejects.toThrow('stale')
@@ -294,7 +294,7 @@ describe('native graph lens', () => {
       ),
     )
     const view = renderWithProviders(surface())
-    const old = context.tools.get('agent-webui.explore.graph.select')!
+    const old = context.tools.get('overstory.explore.graph.select')!
     context.owner = 'b'
     vi.stubGlobal(
       'fetch',

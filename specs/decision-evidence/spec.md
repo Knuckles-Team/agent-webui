@@ -1,7 +1,7 @@
 # OVERSTORY-DECIDE — Decision evidence and calibration
 
 **ID:** OVERSTORY-DECIDE
-**Owner:** agent-webui
+**Owner:** overstory
 **Related IDs:** OVERSTORY-DECIDE-R002, OVERSTORY-DECIDE-R001
 **Delivery:** specified; existing source requires current-main and browser acceptance audit
 **Acceptance:** open

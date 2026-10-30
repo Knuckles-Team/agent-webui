@@ -39,7 +39,7 @@ describe('local dashboard store (OVERSTORY-DASH-R011)', () => {
 
   it('drops invalid stored documents and reports storage failure', () => {
     const storage = new MemoryStorage()
-    storage.setItem('agent-webui.dashboards.v1', JSON.stringify([{ nope: true }]))
+    storage.setItem('overstory.dashboards.v1', JSON.stringify([{ nope: true }]))
     const store = createLocalStore(storage)
     expect(store.list()).toEqual([])
     storage.failWrites = true
