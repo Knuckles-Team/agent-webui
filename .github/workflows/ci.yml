@@ -30,7 +30,7 @@ on:
 
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('pr-{0}-{1}', github.workflow, github.event.pull_request.number) || format('main-{0}-{1}', github.workflow, github.ref) }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -89,9 +89,7 @@ jobs:
       # These hooks need the bootstrapped siblings or the Node toolchain; the
       # `tests` job runs them after bootstrap; its mandatory full lint owns
       # eslint-staged's coverage without a duplicate whole-repository pass.
-      # ste-staged (STE-lite prose lint) is advisory: the `tests` job runs it
-      # report-only (operator gate cut).
-      skip-hooks: check-stubs,check-sprawl,okf-no-legacy-concepts,uv-lock,eslint-staged,no-fabrication-gate,ste-staged
+      skip-hooks: okf-no-legacy-concepts,uv-lock,eslint-staged,no-fabrication-gate
       all-files: ${{ github.event_name != 'pull_request' }}
       # Bash patterns (`*` crosses `/`); replaces the retired skip companion.
       docs-only-paths: 'specs/* docs/* *.md plans/* LICENSE'
@@ -262,7 +260,7 @@ jobs:
           PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          for hook in check-stubs check-sprawl okf-no-legacy-concepts; do
+          for hook in okf-no-legacy-concepts; do
             uvx pre-commit run "$hook" --config .config/pre-commit.yaml --hook-stage pre-commit --all-files --show-diff-on-failure
           done
           # The mandatory full lint step below covers eslint-staged's files
@@ -270,14 +268,6 @@ jobs:
           for hook in uv-lock no-fabrication-gate; do
             uvx pre-commit run "$hook" --config .config/pre-commit.yaml --hook-stage pre-push --all-files --show-diff-on-failure
           done
-
-      - name: STE-lite prose lint (advisory, report-only)
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        env:
-          PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit-${{ github.run_id }}-${{ github.run_attempt }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: uvx pre-commit run ste-staged --config .config/pre-commit.yaml --hook-stage pre-commit --from-ref "$BASE_SHA" --to-ref HEAD
 
       - name: Type check and full lint (manual-stage hooks, always full)
         timeout-minutes: 15

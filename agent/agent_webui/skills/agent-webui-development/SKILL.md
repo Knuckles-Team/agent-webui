@@ -63,7 +63,7 @@ Specs are already designed. The work is implementation, delivered in very small,
 **Specs update themselves (land VERIFIED, not just LANDED)**
 - Every commit that delivers a requirement ends with the trailer `Spec: <ID>[, <ID>...]`. A commit that touches code without delivering one says `Spec: none (ci|deps|refactor|fix-forward)`.
 - Every delivered ID gets at least one test bound to it in the same PR. Python: `@pytest.mark.spec("<ID>")`. Rust/TypeScript: a `// spec: <ID>` line directly above the test.
-- Never hand-edit `status.json`; it is generated (`spec-status`). Never write placeholder SHAs. If the work is only part of a requirement, decompose it into `<ID>.<n>` children first and deliver whole children.
+- Never hand-edit `status.json`; it is generated (`spec`). Never write placeholder SHAs. If the work is only part of a requirement, decompose it into `<ID>.<n>` children first and deliver whole children.
 - Write the marker with the literal ID, never a variable. Put `Spec:` and `Co-Authored-By:` on consecutive lines in the last paragraph of the commit message, or `Spec:` is not read as a trailer.
 - Generated status depends on the commit: run `pipelines-hook spec-status --write` again after committing and commit the result.
 - The generator applies the rules. Run `pipelines-hook spec-status` to see each row's state.
@@ -206,7 +206,7 @@ A hook whose tool or sibling checkout is missing prints
 closed instead (`CANNOT RUN`, exit status 2). Never bypass a gate with
 `--no-verify`, `SKIP`, a diagnostic-ignore comment, or warning suppression.
 
-Documentation changes also run `public-surface` and `mkdocs build --strict`.
+Documentation changes also run `mkdocs build --strict`.
 Skills under `agent/agent_webui/skills/` are not in `mkdocs.yml` nav — arbora
 discovers them as package data, not Pages content — so a skill-only change
 skips `mkdocs build --strict` unless it also touches `docs/` or `mkdocs.yml`.
