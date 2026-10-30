@@ -1,4 +1,4 @@
-"""The webui's application state lives under meristem's data directory."""
+"""The webui's application state lives under the arbora data directory."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ def _resolved_dirs(tmp_path: Path, **env: str) -> list[str]:
     run_env = {
         k: v
         for k, v in os.environ.items()
-        if not k.startswith(('MERISTEM_', 'AGENT_UTILITIES_'))
+        if not k.startswith(('ARBORA_', 'MERISTEM_', 'AGENT_UTILITIES_'))
     }
     run_env.update(HOME=str(tmp_path), XDG_DATA_HOME=str(tmp_path / 'share'), **env)
     out = subprocess.run(
@@ -30,9 +30,9 @@ def _resolved_dirs(tmp_path: Path, **env: str) -> list[str]:
     return out.stdout.strip().splitlines()[-2:]
 
 
-def test_webui_state_follows_meristem_data_dir(tmp_path: Path) -> None:
-    target = tmp_path / 'meristem-data'
-    webui, workspace = _resolved_dirs(tmp_path, MERISTEM_DATA_DIR=str(target))
+def test_webui_state_follows_arbora_data_dir(tmp_path: Path) -> None:
+    target = tmp_path / 'arbora-data'
+    webui, workspace = _resolved_dirs(tmp_path, ARBORA_DATA_DIR=str(target))
     assert Path(webui) == target / 'webui'
     assert Path(workspace) == target / 'webui' / 'workspace'
 
@@ -43,4 +43,4 @@ def test_webui_state_never_uses_the_retired_agent_utilities_dir(tmp_path: Path) 
     )
     assert 'agent-utilities' not in webui
     assert not webui.startswith(str(tmp_path / 'legacy'))
-    assert Path(webui) == tmp_path / 'share' / 'meristem' / 'webui'
+    assert Path(webui) == tmp_path / 'share' / 'arbora' / 'webui'
