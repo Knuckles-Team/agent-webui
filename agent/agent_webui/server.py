@@ -2296,8 +2296,9 @@ def _default_provider_models() -> dict[str, str]:
     """
 
     default_models: dict[str, str] = {}
-    if os.getenv('ANTHROPIC_API_KEY'):
-        default_models['Claude Sonnet 3.5'] = 'anthropic:claude-3-5-sonnet-latest'
+    anthropic_model = os.getenv('ANTHROPIC_MODEL')
+    if os.getenv('ANTHROPIC_API_KEY') and anthropic_model:
+        default_models[f'Anthropic {anthropic_model}'] = f'anthropic:{anthropic_model}'
     if os.getenv('OPENAI_API_KEY'):
         default_models['GPT 4o'] = 'openai:gpt-4o'
     if os.getenv('GOOGLE_API_KEY'):
