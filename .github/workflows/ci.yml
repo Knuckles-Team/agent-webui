@@ -83,6 +83,14 @@ jobs:
       config: .config/pre-commit.yaml
       # Tests need the bootstrap below, so the `tests` job owns them.
       test-scope: ''
+      # The operator-owned identity catalog for the shared secrets hook arrives
+      # through a repository variable the shared workflow hands to this step.
+      setup-command: |
+        set -euo pipefail
+        if [ -n "${PROHIBITED_IDENTITY_CATALOG:-}" ]; then
+          mkdir -p "$HOME/.config/arbora/governance"
+          printf '%s' "$PROHIBITED_IDENTITY_CATALOG" > "$HOME/.config/arbora/governance/prohibited-identities.json"
+        fi
       # Homelab self-hosted runner for same-repo traffic; a fork PR always
       # lands on the GitHub-hosted runner.
       runner: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","homelab"]' || '"ubuntu-latest"' }}
