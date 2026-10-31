@@ -87,25 +87,25 @@ export function ThemeProvider({
   ...props
 }: ThemeProviderProps) {
   const [theme, setTheme] = usePreference<Theme>(storageKey, ['dark', 'light', 'glass', 'system'], defaultTheme)
-  const [density, setDensity] = usePreference<Density>('agent-webui.density', ['compact', 'comfortable'], 'compact')
-  const [motion, setMotion] = usePreference<Motion>('agent-webui.motion', ['system', 'reduce'], 'system')
+  const [density, setDensity] = usePreference<Density>('overstory.density', ['compact', 'comfortable'], 'compact')
+  const [motion, setMotion] = usePreference<Motion>('overstory.motion', ['system', 'reduce'], 'system')
   const [transparency, setTransparency] = usePreference<Transparency>(
-    'agent-webui.transparency',
+    'overstory.transparency',
     ['glass', 'opaque'],
     'glass',
   )
   const [wallpaperMotion, setWallpaperMotion] = usePreference<WallpaperMotion>(
-    'agent-webui.wallpaper-motion',
+    'overstory.wallpaper-motion',
     ['off', 'subtle', 'expressive'],
     'subtle',
   )
   const [wallpaperScene, setWallpaperScene] = usePreference<WallpaperScene>(
-    'agent-webui.wallpaper-scene',
+    'overstory.wallpaper-scene',
     ['context', 'canopy', 'tree', 'roots', 'fluid'],
     'canopy',
   )
   const [wallpaperWeather, setWallpaperWeather] = usePreference<WallpaperWeather>(
-    'agent-webui.wallpaper-weather',
+    'overstory.wallpaper-weather',
     ['clear', 'rain', 'snow', 'thunderstorm', 'fog', 'heat', 'cloudy'],
     'clear',
   )

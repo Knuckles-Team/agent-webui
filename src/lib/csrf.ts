@@ -19,7 +19,7 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 let currentToken: string | null = null
 /** Marks the wrapper, so installing twice never wraps twice (and a `fetch`
  *  replaced after installation is wrapped again on the next install). */
-const WRAPPED = Symbol.for('agent-webui.csrf-fetch')
+const WRAPPED = Symbol.for('overstory.csrf-fetch')
 
 type MarkedFetch = typeof fetch & { [WRAPPED]?: true }
 

@@ -4,10 +4,10 @@ import re
 from pathlib import Path
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-API_SOURCE = (PACKAGE_ROOT / 'agent' / 'agent_webui' / 'api_extensions.py').read_text(
+API_SOURCE = (PACKAGE_ROOT / 'agent' / 'overstory' / 'api_extensions.py').read_text(
     encoding='utf-8'
 )
-SERVER_SOURCE = (PACKAGE_ROOT / 'agent' / 'agent_webui' / 'server.py').read_text(
+SERVER_SOURCE = (PACKAGE_ROOT / 'agent' / 'overstory' / 'server.py').read_text(
     encoding='utf-8'
 )
 

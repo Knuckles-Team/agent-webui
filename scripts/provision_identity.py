@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Idempotent, re-runnable identity provisioning for the Agent WebUI.
+"""Idempotent, re-runnable identity provisioning for the Overstory.
 
 Stands up **both** identities the WebUI needs, end to end, with no hand-placed
 credential anywhere:
@@ -8,29 +8,29 @@ credential anywhere:
     Reconciles the realm objects.  Two *separate* confidential clients, because
     the two flows must not share a credential:
 
-    * ``agent-webui`` — standard (authorization-code) flow only, PKCE ``S256``
+    * ``overstory`` — standard (authorization-code) flow only, PKCE ``S256``
       required, no service account.  This is the **end user's** login client;
       the tokens it issues carry the human's ``sub``/``email``/roles.
-    * ``agent-webui-svc`` — ``client_credentials`` only, no browser flow.  This
+    * ``overstory-svc`` — ``client_credentials`` only, no browser flow.  This
       is the WebUI **backend's** own service identity for outbound MCP calls.
 
     Both get the ``agent-services`` client scope, which carries the
     ``tenant_id`` and ``aud`` claims the graph session mint requires.  Roles are
     granted at the minimum that works: the service account gets ``kg:write``
     (the gate expands write ⇒ read); human users get ``kg:read`` + ``kg:write``
-    through the ``agent-webui-users`` group.  Neither gets ``kg:admin`` — the
+    through the ``overstory-users`` group.  Neither gets ``kg:admin`` — the
     WebUI's admin routes stay closed until a realm admin deliberately opens
     them.
 
 ``openbao``
-    Writes the resolved configuration to KV ``apps/agent-webui`` — the single
+    Writes the resolved configuration to KV ``apps/overstory`` — the single
     source the ``ExternalSecret`` mirrors.  Never writes to the mirrored
     Kubernetes Secret, which external-secrets silently reverts.  A previously
     generated ``WEBUI_SESSION_KEY`` is preserved across runs so re-running does
     not sign every browser out.
 
 ``kubernetes``
-    Ensures the ``agent-webui-oidc`` ExternalSecret and patches the Deployment
+    Ensures the ``overstory-oidc`` ExternalSecret and patches the Deployment
     to consume it, mounting the homelab CA bundle so JWKS discovery over
     ``https://keycloak.example`` validates.  Uses ``kubectl patch`` throughout;
     it never applies a committed manifest over live state.
@@ -76,9 +76,9 @@ ADMIN_REALM = os.environ.get('KEYCLOAK_ADMIN_REALM', 'master')
 ADMIN_USER = os.environ.get('KEYCLOAK_ADMIN_USER', 'admin')
 
 WEBUI_ORIGIN = os.environ.get('WEBUI_ORIGIN', 'http://au.example').rstrip('/')
-BROWSER_CLIENT = 'agent-webui'
-SERVICE_CLIENT = 'agent-webui-svc'
-USER_GROUP = 'agent-webui-users'
+BROWSER_CLIENT = 'overstory'
+SERVICE_CLIENT = 'overstory-svc'
+USER_GROUP = 'overstory-users'
 
 # The scope that stamps ``tenant_id`` and ``aud`` onto every issued access
 # token.  ``agent_utilities.security.request_identity`` refuses to mint a graph
@@ -106,11 +106,11 @@ USER_ROLES = ('kg:read', 'kg:write')
 GRAPH_ROLES = ('kg:read', 'kg:write', 'kg:admin')
 
 NAMESPACE = os.environ.get('WEBUI_NAMESPACE', 'apps')
-DEPLOYMENT = 'agent-webui'
+DEPLOYMENT = 'overstory'
 # Name of BOTH the ExternalSecret and the Kubernetes Secret it owns.
-ES_RESOURCE_NAME = 'agent-webui-oidc'
+ES_RESOURCE_NAME = 'overstory-oidc'
 BAO_MOUNT = os.environ.get('BAO_MOUNT', 'apps')
-BAO_PATH = os.environ.get('BAO_PATH', 'agent-webui')
+BAO_PATH = os.environ.get('BAO_PATH', 'overstory')
 BAO_NAMESPACE = os.environ.get('BAO_K8S_NAMESPACE', 'platform')
 
 CA_BUNDLE_CONFIGMAP = 'homelab-ca-bundle'
@@ -120,7 +120,8 @@ CA_BUNDLE_FILE = f'{CA_BUNDLE_MOUNT}/ca-bundle.pem'
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OPENBAO_ENV = Path(
     os.environ.get(
-        'OPENBAO_ENV_FILE', str(REPO_ROOT.parent.parent / 'services' / 'openbao' / '.env')
+        'OPENBAO_ENV_FILE',
+        str(REPO_ROOT.parent.parent / 'services' / 'openbao' / '.env'),
     )
 )
 
@@ -331,7 +332,9 @@ def _ensure_fleet_scope(token: str, dry_run: bool) -> str:
     return next(s['id'] for s in scopes if s['name'] == FLEET_SCOPE)
 
 
-def _create_client(token: str, client_id: str, desired: dict[str, Any], dry_run: bool) -> dict[str, Any] | None:
+def _create_client(
+    token: str, client_id: str, desired: dict[str, Any], dry_run: bool
+) -> dict[str, Any] | None:
     """Create a Keycloak client that does not exist yet. Returns ``None`` for
     a dry run (nothing was actually created to return)."""
     if dry_run:
@@ -345,7 +348,9 @@ def _create_client(token: str, client_id: str, desired: dict[str, Any], dry_run:
     return created
 
 
-def _resolve_client_field(existing: dict[str, Any], key: str, wanted: Any) -> tuple[bool, Any]:
+def _resolve_client_field(
+    existing: dict[str, Any], key: str, wanted: Any
+) -> tuple[bool, Any]:
     """Decide whether one client field has drifted, and what it should become.
 
     Keycloak normalizes and reorders list-valued fields, so an order-sensitive
@@ -366,7 +371,9 @@ def _resolve_client_field(existing: dict[str, Any], key: str, wanted: Any) -> tu
     return not have >= want, sorted(have | want)
 
 
-def _compute_client_drift(existing: dict[str, Any], desired: dict[str, Any]) -> dict[str, Any]:
+def _compute_client_drift(
+    existing: dict[str, Any], desired: dict[str, Any]
+) -> dict[str, Any]:
     drift: dict[str, Any] = {}
     for key, value in desired.items():
         if key in {'clientId', 'attributes'}:
@@ -381,7 +388,11 @@ def _compute_client_drift(existing: dict[str, Any], desired: dict[str, Any]) -> 
 
 
 def _apply_client_drift(
-    token: str, client_id: str, existing: dict[str, Any], drift: dict[str, Any], dry_run: bool
+    token: str,
+    client_id: str,
+    existing: dict[str, Any],
+    drift: dict[str, Any],
+    dry_run: bool,
 ) -> dict[str, Any] | None:
     if not drift:
         log(f'  client {client_id}: present, in sync')
@@ -607,7 +618,7 @@ def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
         token,
         {
             'clientId': BROWSER_CLIENT,
-            'name': 'Agent WebUI (browser sign-in)',
+            'name': 'Overstory (browser sign-in)',
             'description': (
                 'Confidential authorization-code client. Issues the END USER a '
                 'token; the WebUI never exceeds the signed-in human authority.'
@@ -648,7 +659,7 @@ def stage_keycloak(grant_users: list[str], dry_run: bool) -> dict[str, str]:
         token,
         {
             'clientId': SERVICE_CLIENT,
-            'name': 'Agent WebUI (backend service identity)',
+            'name': 'Overstory (backend service identity)',
             'description': (
                 'Confidential client_credentials client for the WebUI backend’s '
                 'own outbound calls. No browser flow, separate secret.'

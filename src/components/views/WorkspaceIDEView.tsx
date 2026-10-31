@@ -9,7 +9,7 @@
  * Two things make this more than "an iframe someone bolted on":
  *  - **Shared theme.** The workbench ships the "Arbora Dark" color theme
  *    (generated from this app's own `.dark` CSS tokens) via the first-party
- *    `agent-webui-bridge` extension baked into the code-server image.
+ *    `overstory-bridge` extension baked into the code-server image.
  *  - **Editor context.** The same extension publishes the active file,
  *    selection, cursor, dirty state, and diagnostics to
  *    `/api/enhanced/editor-context`. This view polls that endpoint and feeds

@@ -150,7 +150,7 @@ function AuthorizedWork({
     const allowedNodes = new Set(run?.nodes.map((node) => node.id) ?? [])
     return [
       makeTool({
-        name: 'agent-webui.work.select',
+        name: 'overstory.work.select',
         title: 'Select Work context',
         description:
           'Select a known conversation or independent execution trace and its node. Does not execute a run or imply conversation ownership.',
@@ -158,7 +158,7 @@ function AuthorizedWork({
         outputSchema: z.object({ selected: z.literal(true) }).strict(),
         jsonSchema: z.toJSONSchema(WorkStateSchema),
         readOnly: false,
-        source: 'agent-webui:src/components/workspace/WorkWorkspace.tsx',
+        source: 'overstory:src/components/workspace/WorkWorkspace.tsx',
         execute: (next) => {
           if (
             next.conversation !== null &&

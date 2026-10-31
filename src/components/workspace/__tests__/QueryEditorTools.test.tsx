@@ -61,7 +61,7 @@ function Harness({ lens = 'query' as 'query' | 'validation' }) {
   )
 }
 const invoke = (name: string, input = {}) =>
-  state.tools.get(`agent-webui.explore.${name}`)!.execute(input, { signal: new AbortController().signal })
+  state.tools.get(`overstory.explore.${name}`)!.execute(input, { signal: new AbortController().signal })
 beforeEach(() => {
   vi.clearAllMocks()
   state.tools.clear()

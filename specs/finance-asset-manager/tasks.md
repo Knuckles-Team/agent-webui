@@ -1,6 +1,6 @@
 # OVERSTORY — Delivery and evidence tracker
 
-**Spec status:** SPECIFIED. **Implementation status:** UNVERIFIED. **Owner:** `agent-webui`. The related cross-repository requirement IDs below are stable identifiers, each defined in its owning repository's own `requirements.md`. Status changes only when linked merged code and the tests in [test-spec.md](test-spec.md) prove the behavior.
+**Spec status:** SPECIFIED. **Implementation status:** UNVERIFIED. **Owner:** `overstory`. The related cross-repository requirement IDs below are stable identifiers, each defined in its owning repository's own `requirements.md`. Status changes only when linked merged code and the tests in [test-spec.md](test-spec.md) prove the behavior.
 
 | Work package | Owner | IDs | Current state | Required evidence |
 |---|---|---|---|---|
@@ -9,16 +9,16 @@
 | Strategy, backtest, recommendation and leverage | medulla / agent-utilities | MEDULLA-FINANCE-PRIMITIVES-R007–MEDULLA-FINANCE-PRIMITIVES-R009, MEDULLA-FINANCE-PRIMITIVES-R010 | PENDING | Versioned deterministic outputs, abstention, scorecard and risk-policy proof |
 | DCA scheduling and alert delivery | arbora / emerald-exchange | ARBORA-DATA-MARKET-R006, MEDULLA-FINANCE-PRIMITIVES-R011 | PENDING | Replay-safe event and delivery receipts |
 | Source intake and leverage guide | media-downloader / emerald-exchange | EMERALD-GUIDE-R001, EMERALD-MEDIA-R001 | PENDING | Public citations, source capture time, claims separated from executable rules |
-| Responsive Markets route and views | agent-webui | OVERSTORY-R001 | SPECIFIED | PR/commit, FIN-T01–T04, T07–T14, served-path and visual evidence |
-| Shared Finance/Atlas ChartRenderer | agent-webui | OVERSTORY-R002 | SPECIFIED | PR/commit, FIN-T05–T06, T13–T14 and mobile performance evidence |
-| Detail-tab/ChartRenderer/supportedChartMode contracts (PR #59) | agent-webui | OVERSTORY-R001.1, OVERSTORY-R002.1, OVERSTORY-R008.1 | LANDED | `chart-contract.test.ts`, `detail-support.test.ts` — 11 passed |
-| Overlay/performance/strategy/delivery contracts (PR #60) | agent-webui | OVERSTORY-R010.1, OVERSTORY-R011.1, OVERSTORY-R012.1, OVERSTORY-R013.1 | LANDED | 4 new vitest files — 19 passed |
-| CSV import/offline-cache/a11y contracts (PR #61) | agent-webui | OVERSTORY-R014.1, OVERSTORY-R015.1, OVERSTORY-R016.1 | LANDED | vitest — 13 passed |
-| Live wiring of detail-tab/ChartRenderer/supportedChartMode (remaining) | agent-webui | OVERSTORY-R001.2, OVERSTORY-R002.2, OVERSTORY-R008.2 | SPECIFIED | Live ChartPage/ChartRenderer component wiring, PR pending |
-| Live wiring of overlay/performance/strategy (remaining) | agent-webui | OVERSTORY-R010.2, OVERSTORY-R011.2, OVERSTORY-R012.2 | SPECIFIED | `overlay-wiring.test.ts`, `PerformanceCardView.test.tsx`, `StrategyPanel.test.tsx` — 10 passed, PR pending |
-| Live wiring of delivery (remaining) | agent-webui | OVERSTORY-R013.2 | SPECIFIED | `DeliveryStateList.test.tsx` — 3 passed, PR pending |
-| Live wiring of CSV import/offline-cache (remaining) | agent-webui | OVERSTORY-R014.2, OVERSTORY-R015.2 | SPECIFIED | `CsvImportFlow.test.tsx`, `OfflineCacheView.test.tsx` — 7 passed, PR pending |
-| Live wiring of a11y (remaining) | agent-webui | OVERSTORY-R016.2 | SPECIFIED | `ChartA11ySummary.test.tsx` — 4 passed, PR pending |
+| Responsive Markets route and views | overstory | OVERSTORY-R001 | SPECIFIED | PR/commit, FIN-T01–T04, T07–T14, served-path and visual evidence |
+| Shared Finance/Atlas ChartRenderer | overstory | OVERSTORY-R002 | SPECIFIED | PR/commit, FIN-T05–T06, T13–T14 and mobile performance evidence |
+| Detail-tab/ChartRenderer/supportedChartMode contracts (PR #59) | overstory | OVERSTORY-R001.1, OVERSTORY-R002.1, OVERSTORY-R008.1 | LANDED | `chart-contract.test.ts`, `detail-support.test.ts` — 11 passed |
+| Overlay/performance/strategy/delivery contracts (PR #60) | overstory | OVERSTORY-R010.1, OVERSTORY-R011.1, OVERSTORY-R012.1, OVERSTORY-R013.1 | LANDED | 4 new vitest files — 19 passed |
+| CSV import/offline-cache/a11y contracts (PR #61) | overstory | OVERSTORY-R014.1, OVERSTORY-R015.1, OVERSTORY-R016.1 | LANDED | vitest — 13 passed |
+| Live wiring of detail-tab/ChartRenderer/supportedChartMode (remaining) | overstory | OVERSTORY-R001.2, OVERSTORY-R002.2, OVERSTORY-R008.2 | SPECIFIED | Live ChartPage/ChartRenderer component wiring, PR pending |
+| Live wiring of overlay/performance/strategy (remaining) | overstory | OVERSTORY-R010.2, OVERSTORY-R011.2, OVERSTORY-R012.2 | SPECIFIED | `overlay-wiring.test.ts`, `PerformanceCardView.test.tsx`, `StrategyPanel.test.tsx` — 10 passed, PR pending |
+| Live wiring of delivery (remaining) | overstory | OVERSTORY-R013.2 | SPECIFIED | `DeliveryStateList.test.tsx` — 3 passed, PR pending |
+| Live wiring of CSV import/offline-cache (remaining) | overstory | OVERSTORY-R014.2, OVERSTORY-R015.2 | SPECIFIED | `CsvImportFlow.test.tsx`, `OfflineCacheView.test.tsx` — 7 passed, PR pending |
+| Live wiring of a11y (remaining) | overstory | OVERSTORY-R016.2 | SPECIFIED | `ChartA11ySummary.test.tsx` — 4 passed, PR pending |
 
 ## Build sequence
 
@@ -35,7 +35,7 @@
 
 | Date | Commit/PR | Environment and fixture/service revision | Tests/gates | Decision |
 |---|---|---|---|---|
-| 2026-10-08 | Port of 0809b6d3ca onto `origin/main` (PR pending) | Local worktree, pnpm/uv toolchain, no live provider | `pytest agent/agent_webui/__tests__/test_markets_app.py` 14 passed. `vitest run src/apps/markets src/lib/apps` 26 passed. `tsc --noEmit` clean. `node scripts/generate-site-assets.mjs` and `check-site-assets.mjs` pass. `no_fabrication_gate.mjs` OK | OVERSTORY-R006 and OVERSTORY-R003 code merged to a branch off current main. Owner repository dependencies remain PENDING. They are EG finance primitives and SDK sources. This spec stays SPECIFIED. |
+| 2026-10-08 | Port of 0809b6d3ca onto `origin/main` (PR pending) | Local worktree, pnpm/uv toolchain, no live provider | `pytest agent/overstory/__tests__/test_markets_app.py` 14 passed. `vitest run src/apps/markets src/lib/apps` 26 passed. `tsc --noEmit` clean. `node scripts/generate-site-assets.mjs` and `check-site-assets.mjs` pass. `no_fabrication_gate.mjs` OK | OVERSTORY-R006 and OVERSTORY-R003 code merged to a branch off current main. Owner repository dependencies remain PENDING. They are EG finance primitives and SDK sources. This spec stays SPECIFIED. |
 | 2026-10-09 | Markets five-destination nav, stacked on the 0809b6d3ca port branch (PR pending) | Local worktree, pnpm toolchain | `vitest run src/apps/markets` 29 passed (new `MarketsNav.test.tsx`). `tsc --noEmit` clean. Site-assets generate and check pass. The no-fabrication gate passes | OVERSTORY-R004 code merged to a branch stacked on the open Markets-app-port PR. News and Portfolio destinations state their PENDING owner dependency. Calendar reuses the macro-events route. The spec stays SPECIFIED. |
 
 ## Unreferenced requirement IDs

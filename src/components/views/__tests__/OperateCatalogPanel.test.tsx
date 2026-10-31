@@ -117,7 +117,7 @@ it('retires earlier admission data while the new identity read is pending', asyn
   }
   renderWithProviders(<Harness />)
   await screen.findByRole('article', { name: 'Catalog connector records' })
-  const held = tools.get('agent-webui.workspace.commands')!
+  const held = tools.get('overstory.workspace.commands')!
   fetcher.mockImplementationOnce(
     () =>
       new Promise<Response>(() => {
@@ -246,18 +246,18 @@ it('uses loaded catalog commands for semantic selection and retires handles on r
     </WorkspaceCommandsProvider>,
   )
   await screen.findByRole('link', { name: 'Inspect records' })
-  const list = tools.get('agent-webui.workspace.commands')!
+  const list = tools.get('overstory.workspace.commands')!
   const context = { signal: new AbortController().signal }
   const catalog = (await list.execute({ offset: 0 }, context)) as { commands: { commandId: string; label: string }[] }
   const entry = catalog.commands.find((entry) => entry.label.startsWith('tool:'))!
-  const selected = tools.get('agent-webui.workspace.command')!
+  const selected = tools.get('overstory.workspace.command')!
   await act(async () => {
     await selected.execute({ commandId: entry.commandId }, context)
   })
   expect(screen.getByRole('region', { name: 'Selected catalog definition' })).toHaveTextContent('tool:records')
   expect(window.location.search).toBe('?connector=srv%3Arecords&definition=tool%3Arecords&lens=services')
   await expect(selected.execute({ commandId: entry.commandId }, context)).rejects.toThrow('stale')
-  const held = tools.get('agent-webui.workspace.commands')!
+  const held = tools.get('overstory.workspace.commands')!
   refused = true
   fireEvent.click(screen.getByRole('button', { name: 'Refresh connector catalog' }))
   await screen.findByRole('alert')

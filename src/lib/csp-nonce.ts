@@ -5,7 +5,7 @@
  * with a fresh nonce and adds it to `style-src-elem`. Libraries that insert
  * <style> elements read it from here, so the policy never needs 'unsafe-inline'.
  */
-const NONCE_PLACEHOLDER = 'AGENT_WEBUI_CSP_NONCE'
+const NONCE_PLACEHOLDER = 'OVERSTORY_CSP_NONCE'
 
 let cached: string | undefined | null = null
 

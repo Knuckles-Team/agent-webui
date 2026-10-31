@@ -1,6 +1,6 @@
 # Browser design system
 
-Arbora shares one set of tokens, primitives and interaction rules across browser surfaces. Each view extends this common system. This page documents tokens from [`src/index.css`](https://github.com/Knuckles-Team/agent-webui/blob/main/src/index.css) and their contrast targets.
+Arbora shares one set of tokens, primitives and interaction rules across browser surfaces. Each view extends this common system. This page documents tokens from [`src/index.css`](https://github.com/Knuckles-Team/overstory/blob/main/src/index.css) and their contrast targets.
 The `src/components/ui/` primitives consume these tokens. The token audit
 (`src/__tests__/design-tokens.test.ts`) mirrors the documented defaults and checks
 stylesheet values and contrast pairs. Source checks do not replace rendered
@@ -77,7 +77,7 @@ bounded shell/Explore changes, not evidence of an all-route redesign.
 
 The owner approved the desktop theme on 2026-10-25.
 
-Source: [`9478612`](https://github.com/Knuckles-Team/agent-webui/commit/9478612117a32ec497a71c9ab6fff451804c0486).
+Source: [`9478612`](https://github.com/Knuckles-Team/overstory/commit/9478612117a32ec497a71c9ab6fff451804c0486).
 Keep this palette, wallpaper and material hierarchy while adapting real product content and context.
 This approval does not accept synthetic research vocabulary, all-route parity or unfinished accessibility checks.
 
@@ -102,7 +102,7 @@ Dark, opaque and accessibility fallbacks remain unchanged. Semantic action color
 Other theme changes require a new explicit visual review.
 The hosted run retains real desktop/mobile screenshots and a short transition recording.
 
-Capture: [preview run](https://github.com/Knuckles-Team/agent-webui/actions/runs/40157438929).
+Capture: [preview run](https://github.com/Knuckles-Team/overstory/actions/runs/40157438929).
 
 This fixture uses synthetic records; it does not represent a connected research project or live provider.
 
@@ -142,9 +142,9 @@ base-color controls. There is no second preference provider.
 | Preference | Values | Default | Persistence |
 |---|---|---|---|
 | Theme | `system`, `light`, `dark`, `glass` | `system` | `vite-ui-theme` unless the provider supplies another storage key |
-| Density | `compact`, `comfortable` | `compact` | `agent-webui.density` |
-| Motion | `system`, `reduce` | `system` | `agent-webui.motion` |
-| Transparency | `glass`, `opaque` | `glass` | `agent-webui.transparency` |
+| Density | `compact`, `comfortable` | `compact` | `overstory.density` |
+| Motion | `system`, `reduce` | `system` | `overstory.motion` |
+| Transparency | `glass`, `opaque` | `glass` | `overstory.transparency` |
 
 The provider applies one theme class and root `data-density`, `data-motion` and
 `data-transparency` attributes. System theme follows color-scheme changes.
@@ -228,7 +228,7 @@ Components that need an explicit reduced-motion alternative beyond this
 global floor (for example the chat drawer's open/close transition and its
 decorative ping/pulse) also use Tailwind's `motion-reduce:` variant,
 documented alongside the components it touches in
-[`specs/browser-design-system/interaction-contract.md`](https://github.com/Knuckles-Team/agent-webui/blob/main/specs/browser-design-system/interaction-contract.md).
+[`specs/browser-design-system/interaction-contract.md`](https://github.com/Knuckles-Team/overstory/blob/main/specs/browser-design-system/interaction-contract.md).
 Every gesture-driven action in the reviewed journeys also has a plain click or
 keyboard equivalent — see the same interaction contract.
 

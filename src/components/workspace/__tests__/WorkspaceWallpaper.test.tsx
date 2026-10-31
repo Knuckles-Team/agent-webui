@@ -71,7 +71,7 @@ it('caps backing pixels and DPR for small and ultra-wide displays', () => {
   }
 })
 it('preserves saved Off, allows animation, pauses offscreen and cleans up', () => {
-  localStorage.setItem('agent-webui.wallpaper-motion', 'off')
+  localStorage.setItem('overstory.wallpaper-motion', 'off')
   const view = mount()
   expect(screen.getByLabelText('Wallpaper motion')).toHaveValue('off')
   expect(view.container.querySelector('canvas')).toHaveAttribute('data-active', 'false')
@@ -101,7 +101,7 @@ it('preserves saved Off, allows animation, pauses offscreen and cleans up', () =
 })
 it('system reduction overrides stored expressive motion from mount', () => {
   reduced = true
-  localStorage.setItem('agent-webui.wallpaper-motion', 'expressive')
+  localStorage.setItem('overstory.wallpaper-motion', 'expressive')
   mount()
   const baseline = clearRect.mock.calls.length
   void act(() => vi.advanceTimersByTime(2000))
@@ -110,11 +110,11 @@ it('system reduction overrides stored expressive motion from mount', () => {
 it('labels weather as manual and persists only appearance settings', () => {
   mount()
   fireEvent.change(screen.getByLabelText('Weather preview (manual)'), { target: { value: 'thunderstorm' } })
-  expect(localStorage.getItem('agent-webui.wallpaper-weather')).toBe('thunderstorm')
+  expect(localStorage.getItem('overstory.wallpaper-weather')).toBe('thunderstorm')
   expect(screen.getByText(/no location or live provider/)).toBeInTheDocument()
 })
 it('retains the original photo fallback when canvas is unavailable', () => {
-  localStorage.setItem('agent-webui.wallpaper-scene', 'tree')
+  localStorage.setItem('overstory.wallpaper-scene', 'tree')
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
   expect(() => mount()).not.toThrow()
 })
@@ -152,7 +152,7 @@ it('stops drawing and retains the photo when the context fails during painting',
   clearRect.mockImplementationOnce(() => {
     throw new Error('Synthetic context failure')
   })
-  localStorage.setItem('agent-webui.wallpaper-motion', 'expressive')
+  localStorage.setItem('overstory.wallpaper-motion', 'expressive')
   const view = mount()
   expect(view.container.querySelector('canvas')).toHaveAttribute('hidden')
   const failed = clearRect.mock.calls.length
@@ -175,8 +175,8 @@ it('resolves only canonical page context and preserves manual overrides', () => 
 })
 
 it('follows route changes only by choice without enabling motion or retaining old effects', () => {
-  localStorage.setItem('agent-webui.wallpaper-motion', 'off')
-  localStorage.setItem('agent-webui.wallpaper-scene', 'context')
+  localStorage.setItem('overstory.wallpaper-motion', 'off')
+  localStorage.setItem('overstory.wallpaper-scene', 'context')
   const content = (routeId: string) => (
     <ThemeProvider>
       <WorkspaceAppearance />
@@ -197,12 +197,12 @@ it('follows route changes only by choice without enabling motion or retaining ol
   fireEvent.change(screen.getByLabelText('Wallpaper scene'), { target: { value: 'fluid' } })
   view.rerender(content('workspace.explore-proof'))
   expect(view.container.querySelector('canvas')).toHaveAttribute('data-scene', 'fluid')
-  expect(localStorage.getItem('agent-webui.wallpaper-scene')).toBe('fluid')
+  expect(localStorage.getItem('overstory.wallpaper-scene')).toBe('fluid')
   expect(screen.getByLabelText('Wallpaper motion')).toHaveValue('off')
 })
 
 it.each([null, 'invalid'])('defaults to bounded Subtle for preference %s without persisting it', (stored) => {
-  if (stored) localStorage.setItem('agent-webui.wallpaper-motion', stored)
+  if (stored) localStorage.setItem('overstory.wallpaper-motion', stored)
   const view = mount()
   expect(screen.getByLabelText('Wallpaper motion')).toHaveValue('subtle')
   expect(screen.getByLabelText('Wallpaper scene')).toHaveValue('canopy')
@@ -212,9 +212,9 @@ it.each([null, 'invalid'])('defaults to bounded Subtle for preference %s without
   })
   expect(clearRect.mock.calls.length - start).toBeGreaterThan(0)
   expect(clearRect.mock.calls.length - start).toBeLessThanOrEqual(12)
-  expect(localStorage.getItem('agent-webui.wallpaper-motion')).toBe(stored)
+  expect(localStorage.getItem('overstory.wallpaper-motion')).toBe(stored)
   fireEvent.change(screen.getByLabelText('Wallpaper motion'), { target: { value: 'off' } })
-  expect(localStorage.getItem('agent-webui.wallpaper-motion')).toBe('off')
+  expect(localStorage.getItem('overstory.wallpaper-motion')).toBe('off')
   expect(view.container.querySelector('canvas')).toHaveAttribute('data-active', 'false')
   const stopped = clearRect.mock.calls.length
   act(() => {
@@ -224,7 +224,7 @@ it.each([null, 'invalid'])('defaults to bounded Subtle for preference %s without
 })
 
 it.each(['reduce', 'save-data', 'low-memory', 'system-reduce'])('keeps default animation static with %s', (guard) => {
-  if (guard === 'reduce') localStorage.setItem('agent-webui.motion', 'reduce')
+  if (guard === 'reduce') localStorage.setItem('overstory.motion', 'reduce')
   if (guard === 'system-reduce') reduced = true
   if (guard === 'save-data')
     Object.defineProperty(navigator, 'connection', { configurable: true, value: { saveData: true } })
@@ -240,15 +240,15 @@ it.each(['reduce', 'save-data', 'low-memory', 'system-reduce'])('keeps default a
 })
 
 it('retains saved manual scene and motion choices', () => {
-  localStorage.setItem('agent-webui.wallpaper-motion', 'off')
-  localStorage.setItem('agent-webui.wallpaper-scene', 'roots')
+  localStorage.setItem('overstory.wallpaper-motion', 'off')
+  localStorage.setItem('overstory.wallpaper-scene', 'roots')
   mount()
   expect(screen.getByLabelText('Wallpaper motion')).toHaveValue('off')
   expect(screen.getByLabelText('Wallpaper scene')).toHaveValue('roots')
 })
 
 it.each(['opaque', 'forced-colors', 'reduced-transparency'])('hides default decoration for %s', (guard) => {
-  if (guard === 'opaque') localStorage.setItem('agent-webui.transparency', 'opaque')
+  if (guard === 'opaque') localStorage.setItem('overstory.transparency', 'opaque')
   else
     vi.spyOn(window, 'matchMedia').mockImplementation(
       (query) =>

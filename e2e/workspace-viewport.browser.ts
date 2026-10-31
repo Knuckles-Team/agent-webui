@@ -40,7 +40,7 @@ for (const simulatedKeyboard of [true, false]) {
     })
     // Deterministic keyboard-like occlusion. This is not native soft-keyboard acceptance.
     await page.addInitScript((simulate) => {
-      localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1')
+      localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1')
       if (!simulate) return
       const viewport = Object.assign(new EventTarget(), { height: 740, scale: 1 })
       Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true })

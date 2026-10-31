@@ -333,12 +333,12 @@ it('keeps privacy out of the workspace until Settings is opened without changing
   expect(screen.queryByRole('complementary', { name: 'Privacy consent' })).not.toBeInTheDocument()
   expect(screen.getByRole('region', { name: 'Privacy settings' })).not.toBeVisible()
   expect(screen.queryByRole('link', { name: 'Privacy' })).not.toBeInTheDocument()
-  expect(localStorage.getItem('agent-webui.consent')).toBeNull()
+  expect(localStorage.getItem('overstory.consent')).toBeNull()
   fireEvent.click(screen.getByText('Settings'))
   expect(screen.getByRole('region', { name: 'Privacy settings' })).toBeVisible()
   expect(screen.getByRole('button', { name: 'Disable optional' })).toBeVisible()
   expect(screen.getByRole('link', { name: 'Privacy policy and details' })).toHaveAttribute('href', '/privacy')
-  expect(localStorage.getItem('agent-webui.consent')).toBeNull()
+  expect(localStorage.getItem('overstory.consent')).toBeNull()
 })
 
 // spec: OVERSTORY-APPS-R049.2.1
@@ -354,6 +354,6 @@ it.each(['/overview', '/contact'])(
       await screen.findByRole('heading', { name: 'Contact the service owner' })
     }
     expect(screen.queryByRole('complementary', { name: 'Privacy consent' })).not.toBeInTheDocument()
-    expect(localStorage.getItem('agent-webui.consent')).toBeNull()
+    expect(localStorage.getItem('overstory.consent')).toBeNull()
   },
 )

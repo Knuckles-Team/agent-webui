@@ -23,8 +23,8 @@ import {
 } from './model'
 import type { Cell, QueryOutcome } from './query'
 
-export const DASHBOARD_TOOL_PREFIX = 'agent-webui.dashboard.'
-const SOURCE = 'agent-webui:src/lib/dashboards/tools.ts'
+export const DASHBOARD_TOOL_PREFIX = 'overstory.dashboard.'
+const SOURCE = 'overstory:src/lib/dashboards/tools.ts'
 
 export interface DashboardController {
   /** The dashboard open in the page, or null when none is open. */

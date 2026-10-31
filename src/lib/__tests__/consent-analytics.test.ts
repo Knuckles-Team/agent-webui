@@ -5,7 +5,7 @@ import { loadAnalytics, sanitizeAnalyticsEvent } from '@/lib/analytics'
 describe('consent and analytics boundaries', () => {
   afterEach(() => {
     window.localStorage.removeItem(CONSENT_STORAGE_KEY)
-    document.head.querySelectorAll('script[data-agent-webui-analytics]').forEach((script) => {
+    document.head.querySelectorAll('script[data-overstory-analytics]').forEach((script) => {
       script.remove()
     })
     vi.restoreAllMocks()

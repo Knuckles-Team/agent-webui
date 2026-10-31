@@ -28,7 +28,7 @@ describe('normalizeBaseColor', () => {
 afterEach(() => {
   vi.restoreAllMocks()
   localStorage.removeItem('pydantic-brand-color')
-  localStorage.removeItem('agent-webui.explicit-accent')
+  localStorage.removeItem('overstory.explicit-accent')
   document.documentElement.classList.remove('dark')
   for (const name of ['--primary', '--sidebar-primary', '--pydantic-brand'])
     document.documentElement.style.removeProperty(name)
@@ -58,7 +58,7 @@ it('distinguishes an explicit re-selection of the old default hue', () => {
     result.current.setBaseColor('0.52 0.18 260')
   })
   expect(document.documentElement.style.getPropertyValue('--primary')).toBe('oklch(0.47 0.08 260)')
-  expect(localStorage.getItem('agent-webui.explicit-accent')).toBe('true')
+  expect(localStorage.getItem('overstory.explicit-accent')).toBe('true')
 })
 
 it('restores an explicitly selected blue hue after remount and adapts it to dark', async () => {
@@ -85,7 +85,7 @@ it('does not change a legacy stored hue or manufacture evidence of an explicit c
   expect(document.documentElement.style.getPropertyValue('--pydantic-brand')).toBe('')
   expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', 'oklch(0.47 0.055 155)')
   expect(localStorage.getItem('pydantic-brand-color')).toBe('0.52 0.18 260')
-  expect(localStorage.getItem('agent-webui.explicit-accent')).toBeNull()
+  expect(localStorage.getItem('overstory.explicit-accent')).toBeNull()
   expect(document.documentElement.style.getPropertyValue('--primary')).toBe('')
 })
 

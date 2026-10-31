@@ -49,7 +49,7 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) {
       if (path === '/api/chats') return route.fulfill({ json: [] })
       return route.fulfill({ status: 501, json: { detail: 'Unavailable in synthetic branch fixture' } })
     })
-    await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+    await page.addInitScript(() => localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1'))
     await page.emulateMedia({ reducedMotion })
     await page.goto('/workspace/operate?server=catalog')
     await expect(page.getByRole('link', { name: 'Search', exact: true })).toBeVisible()

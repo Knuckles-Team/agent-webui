@@ -38,7 +38,7 @@ for (const viewport of [
       if (path.startsWith('/api/enhanced/workflows') && request.method() !== 'GET') writes.push(path)
       return route.fulfill({ status: 501, json: { detail: 'Unavailable in synthetic fixture' } })
     })
-    await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+    await page.addInitScript(() => localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1'))
     await page.setViewportSize(viewport)
     await page.goto('/workspace/work?task=task-a&lens=workflows&workflow=workflow%3Ademo')
     const editor = page.getByRole('region', { name: 'Workflow plan editor' })

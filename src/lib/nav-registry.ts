@@ -1,6 +1,6 @@
 /**
  * @file nav-registry.ts
- * @description The single declarative source of truth for every page in agent-webui.
+ * @description The single declarative source of truth for every page in overstory.
  *
  * `ROUTES` is what the sidebar, the router, the mobile layout, and (eventually) the
  * role filter and the agent's page-navigation tool all derive from. Adding a page
@@ -56,7 +56,7 @@ import {
 
 /** Minimum role required to see/use a route. Enforced in two places, both derived from
  * this same field: {@link roleAtLeast} filters the sidebar and gates route rendering in
- * `App.tsx` (UI), and `agent/agent_webui/rbac.py` enforces the equivalent ladder
+ * `App.tsx` (UI), and `agent/overstory/rbac.py` enforces the equivalent ladder
  * server-side in `WebUIAuthorizationMiddleware` — a hidden nav item alone is not a
  * permission. */
 export type Role = 'reader' | 'user' | 'maintainer' | 'admin'
@@ -75,7 +75,7 @@ export function roleAtLeast(role: Role | null | undefined, minimum: Role): boole
   return roleRank >= ROLE_ORDER.indexOf(minimum)
 }
 
-/** The top-level information-architecture sections (charter: agent-webui IA table),
+/** The top-level information-architecture sections (charter: overstory IA table),
  * plus `apps`: hosted application surfaces (EH-429), each declared by its own
  * `src/apps/<id>/routes.ts`. */
 export type SectionId =

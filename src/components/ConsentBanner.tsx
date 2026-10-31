@@ -22,7 +22,7 @@ function ConsentActions({ record, analyticsConfigured, onChoose, onRevoke, onClo
         <Button
           type="button"
           size="sm"
-          className="min-h-[var(--agent-webui-mobile-cta-button-height)]"
+          className="min-h-[var(--overstory-mobile-cta-button-height)]"
           onClick={() => {
             onChoose('granted')
           }}
@@ -34,7 +34,7 @@ function ConsentActions({ record, analyticsConfigured, onChoose, onRevoke, onClo
         type="button"
         variant="outline"
         size="sm"
-        className="min-h-[var(--agent-webui-mobile-cta-button-height)]"
+        className="min-h-[var(--overstory-mobile-cta-button-height)]"
         onClick={() => {
           onChoose('denied')
         }}
@@ -45,7 +45,7 @@ function ConsentActions({ record, analyticsConfigured, onChoose, onRevoke, onClo
         <Button
           type="button"
           size="sm"
-          className="min-h-[var(--agent-webui-mobile-cta-button-height)]"
+          className="min-h-[var(--overstory-mobile-cta-button-height)]"
           onClick={() => {
             onChoose('granted')
           }}
@@ -58,7 +58,7 @@ function ConsentActions({ record, analyticsConfigured, onChoose, onRevoke, onClo
           type="button"
           variant="ghost"
           size="sm"
-          className="min-h-[var(--agent-webui-mobile-cta-button-height)]"
+          className="min-h-[var(--overstory-mobile-cta-button-height)]"
           onClick={onRevoke}
         >
           Revoke
@@ -68,7 +68,7 @@ function ConsentActions({ record, analyticsConfigured, onChoose, onRevoke, onClo
         type="button"
         variant="ghost"
         size="sm"
-        className="min-h-[var(--agent-webui-mobile-cta-button-height)]"
+        className="min-h-[var(--overstory-mobile-cta-button-height)]"
         onClick={onClose}
       >
         Dismiss
@@ -126,7 +126,7 @@ function ConsentPrompt({
           ? mobileSurfaceStyle
           : {
               ...mobileSurfaceStyle,
-              maxHeight: 'calc(100dvh - 1.5rem - var(--agent-webui-mobile-safe-area-bottom))',
+              maxHeight: 'calc(100dvh - 1.5rem - var(--overstory-mobile-safe-area-bottom))',
               zIndex: MOBILE_SURFACE.consentZIndex,
             }
       }

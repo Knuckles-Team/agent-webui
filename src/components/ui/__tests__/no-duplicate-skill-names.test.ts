@@ -2,9 +2,9 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const SKILLS_DIR = resolve(import.meta.dirname, '../../../../agent/agent_webui/skills')
+const SKILLS_DIR = resolve(import.meta.dirname, '../../../../agent/overstory/skills')
 
-/** Directory names under agent/agent_webui/skills that hold a SKILL.md. */
+/** Directory names under agent/overstory/skills that hold a SKILL.md. */
 function skillDirNames(): string[] {
   return readdirSync(SKILLS_DIR).filter((name) => {
     const path = resolve(SKILLS_DIR, name)

@@ -135,7 +135,7 @@ function routeContext(route: string): {
   filters: Record<string, PageContextFilterValue>
   timeRange?: PageContextTimeRange
 } {
-  const url = new URL(route, 'http://agent-webui.local')
+  const url = new URL(route, 'http://overstory.local')
   const filters: Record<string, PageContextFilterValue> = {}
   const timeRange: PageContextTimeRange = {}
 

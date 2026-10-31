@@ -31,7 +31,7 @@ async function fixture() {
         outputSchema: { type: 'object' },
         mutationClass: 'local-ui-mutation',
         confirmationPolicy: 'exact-request',
-        source: 'agent-webui:test',
+        source: 'overstory:test',
       },
       execute: createValidatedExecutor(
         z.object({ target: z.string() }).strict(),

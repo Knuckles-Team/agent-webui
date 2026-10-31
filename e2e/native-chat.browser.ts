@@ -24,7 +24,7 @@ async function prepare(page: Page, messages: unknown[] = transcript, path = '/wo
     return route.continue()
   })
   await page.addInitScript((messages) => {
-    localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1')
+    localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1')
     localStorage.setItem('pydantic-chat-ui-theme', 'light')
     localStorage.setItem('activeConversationId', '/native-dock')
     localStorage.setItem(

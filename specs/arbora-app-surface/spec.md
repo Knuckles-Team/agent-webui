@@ -1,7 +1,7 @@
 # OVERSTORY-APPS — Arbora browser shell and app surfaces
 
 **ID:** OVERSTORY-APPS
-**Owner:** agent-webui
+**Owner:** overstory
 **Related IDs:** OVERSTORY-APPS-R002, OVERSTORY-APPS-R003, OVERSTORY-APPS-R001; OVERSTORY-R003 is the first app consumer
 **Delivery:** specified; publication and consumer cutover unverified
 **Acceptance:** open
@@ -15,14 +15,14 @@ The browser presents one Arbora product identity and a first-class Apps section.
 | ID | Behavior | Related ID | Evidence |
 |---|---|---|---|
 | OVERSTORY-APPS-R038 | Titles, metadata, webmanifest, assets, theme, UI copy and published Pages identity consistently say Arbora | OVERSTORY-APPS-R002 | Asset regeneration + rendered snapshot + Pages build |
-| OVERSTORY-APPS-R039 | Package/import, npm metadata, WebMCP IDs, skills, browser storage/consent and environment variable names keep the agent-webui component identity. Only user-visible strings are rebranded (operator decision 2026-10-09) | OVERSTORY-APPS-R003 | Build and wheel tests |
+| OVERSTORY-APPS-R039 | Package/import, npm metadata, WebMCP IDs, skills, browser storage/consent and environment variable names keep the overstory component identity. Only user-visible strings are rebranded (operator decision 2026-10-09) | OVERSTORY-APPS-R003 | Build and wheel tests |
 | OVERSTORY-APPS-R040 | `apps` is one section in `nav-registry.ts`. Each app declares route, capability, typed client, WebMCP page and optional Atlas renderer in one `AppSurface` | OVERSTORY-APPS-R001 | Contract and route-census tests |
 | OVERSTORY-APPS-R041 | Native and validated package-contributed apps resolve to the same shape. Untrusted descriptors cannot register executable code, arbitrary URLs or extra privileges | OVERSTORY-APPS-R001 | Invalid descriptor and denied capability tests |
 | OVERSTORY-APPS-R042 | Markets consumes the contract without duplicating scanner/chart or gateway wiring in the shell | OVERSTORY-R003, OVERSTORY-APPS-R001 | First-consumer integration test |
 | OVERSTORY-APPS-R043 | Storage and consent keys are unchanged by the rebrand, so legacy browser state stays valid. Any future key change expires or migrates it with explicit renewed consent | OVERSTORY-APPS-R003 | Browser test |
 | OVERSTORY-APPS-R044 | App navigation works with keyboard, touch, reduced motion and mobile/desktop layouts and has loading, unavailable and denied states | OVERSTORY-APPS-R001 | E2E accessibility suite |
 
-Operator decision 2026-10-09: only front-end-facing items carry the Arbora name; the repository, package and runtime identifiers stay `agent-webui`, an Arbora component. Public examples and setup instructions must use portable addresses and credentials supplied by a contributor, never a private service or inventory. The shell must not receive a service bearer in JavaScript.
+Operator decision 2026-10-09: only front-end-facing items carry the Arbora name; the repository, package and runtime identifiers stay `overstory`, an Arbora component. Public examples and setup instructions must use portable addresses and credentials supplied by a contributor, never a private service or inventory. The shell must not receive a service bearer in JavaScript.
 
 ## Completion
 

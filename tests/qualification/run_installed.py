@@ -79,7 +79,7 @@ def main():
             'HOME': os.environ.get('HOME', str(folder)),
             'XDG_CONFIG_HOME': str(folder / 'config'),
             'WEBUI_INSTALLED_QUALIFICATION': '1',
-            'AGENT_WEBUI_ACCESS_LOG_POLICY': 'disabled',
+            'OVERSTORY_ACCESS_LOG_POLICY': 'disabled',
         }
         subprocess.run(
             [str(args.python), '-m', 'pytest', '-q', 'qualification'],

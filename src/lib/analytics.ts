@@ -63,8 +63,8 @@ function sendEvent(config: AnalyticsConfig, event: SanitizedAnalyticsEvent): voi
     return
   }
 
-  const maybeWindow = window as Window & { agentWebUiAnalytics?: (event: SanitizedAnalyticsEvent) => void }
-  maybeWindow.agentWebUiAnalytics?.(sanitized)
+  const maybeWindow = window as Window & { overstoryAnalytics?: (event: SanitizedAnalyticsEvent) => void }
+  maybeWindow.overstoryAnalytics?.(sanitized)
 }
 
 let runtimeHandle: { config: AnalyticsConfig; track: (event: SanitizedAnalyticsEvent) => void } | null = null
@@ -90,13 +90,13 @@ export function loadAnalytics(config: AnalyticsConfig): { status: AnalyticsStatu
 
   if (source) {
     let script = document.head.querySelector<HTMLScriptElement>(
-      `script[data-agent-webui-analytics="${config.provider}"]`,
+      `script[data-overstory-analytics="${config.provider}"]`,
     )
     if (!script) {
       script = document.createElement('script')
       script.async = true
       script.src = source
-      script.dataset.agentWebuiAnalytics = config.provider
+      script.dataset.overstoryAnalytics = config.provider
       document.head.appendChild(script)
     }
   }

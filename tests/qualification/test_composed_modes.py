@@ -14,12 +14,12 @@ pytestmark = pytest.mark.skipif(
 @pytest.mark.parametrize('mode', ['none', 'oidc'])
 def test_actual_host_arguments_and_factory_refuse_unadmitted_effects(monkeypatch, mode):
     import httpx
-    from agent_webui import oidc_session
-    from agent_webui.host import config
-    from agent_webui.server import create_agent_web_app
     from arbora.webui_host.session_boundary import identity_factory_kwargs
     from cryptography.fernet import Fernet
     from fastapi.testclient import TestClient
+    from overstory import oidc_session
+    from overstory.host import config
+    from overstory.server import create_agent_web_app
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
 
@@ -65,9 +65,9 @@ def test_actual_host_arguments_and_factory_refuse_unadmitted_effects(monkeypatch
     client = TestClient(app)
     from pathlib import Path
 
-    import agent_webui
+    import overstory
 
-    packaged = Path(agent_webui.__file__).parent / 'dist' / 'index.html'
+    packaged = Path(overstory.__file__).parent / 'dist' / 'index.html'
     import re
 
     shell = client.get('/')
@@ -75,9 +75,9 @@ def test_actual_host_arguments_and_factory_refuse_unadmitted_effects(monkeypatch
     match = re.search(r'nonce="([^"]+)"', shell.text)
     assert match is not None
     nonce = match.group(1)
-    assert nonce != 'AGENT_WEBUI_CSP_NONCE'
+    assert nonce != 'OVERSTORY_CSP_NONCE'
     assert nonce in shell.headers['content-security-policy']
-    assert shell.text == packaged.read_text().replace('AGENT_WEBUI_CSP_NONCE', nonce)
+    assert shell.text == packaged.read_text().replace('OVERSTORY_CSP_NONCE', nonce)
     response = client.post('/api/synthetic-effect')
     assert response.status_code == (403 if mode == 'none' else 401)
     assert calls == []
@@ -88,14 +88,14 @@ def test_installed_candidate_paths_and_packaged_assets():
     import inspect
     from pathlib import Path
 
-    import agent_webui
     import arbora
-    from agent_webui.server import create_agent_web_app
+    import overstory
+    from overstory.server import create_agent_web_app
 
-    for package in (arbora, agent_webui):
+    for package in (arbora, overstory):
         assert package.__file__ is not None
         assert 'site-packages' in str(Path(package.__file__).resolve())
     assert 'auth_mode' in inspect.signature(create_agent_web_app).parameters
-    dist = Path(agent_webui.__file__).parent / 'dist'
+    dist = Path(overstory.__file__).parent / 'dist'
     assert (dist / 'index.html').is_file()
     assert list((dist / 'assets').glob('*.js'))

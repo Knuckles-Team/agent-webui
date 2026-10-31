@@ -50,10 +50,10 @@ describe('attended WebMCP controls', () => {
     expect(controlled.channel.arm).toHaveBeenCalledOnce()
 
     act(() => {
-      controlled.update({ status: 'armed', toolIds: ['agent-webui.read', 'agent-webui.navigate'] })
+      controlled.update({ status: 'armed', toolIds: ['overstory.read', 'overstory.navigate'] })
     })
     expect(screen.getByRole('status')).toHaveTextContent('Armed for 2 local browser tools')
-    expect(screen.getByRole('list', { name: 'Armed browser tools' })).toHaveTextContent('agent-webui.navigate')
+    expect(screen.getByRole('list', { name: 'Armed browser tools' })).toHaveTextContent('overstory.navigate')
     await user.click(screen.getByRole('button', { name: 'Revoke browser control' }))
     expect(controlled.channel.revoke).toHaveBeenCalledOnce()
   })
@@ -62,11 +62,11 @@ describe('attended WebMCP controls', () => {
     const controlled = fakeChannel({
       ...IDLE,
       status: 'armed',
-      toolIds: ['agent-webui.navigate'],
+      toolIds: ['overstory.navigate'],
       pendingConfirmation: {
         callId: 'call-1',
         leaseId: 'lease-1',
-        toolId: 'agent-webui.navigate',
+        toolId: 'overstory.navigate',
         toolTitle: 'Navigate in Arbora',
         toolVersion: '1.0.0',
         schemaDigest: `sha256:${'a'.repeat(64)}`,
@@ -78,7 +78,7 @@ describe('attended WebMCP controls', () => {
     render(<WebMcpControl visible channel={controlled.channel} isAttendedGesture={() => true} />)
 
     expect(screen.getByRole('dialog', { name: 'Confirm browser action' })).toBeVisible()
-    expect(screen.getByText('agent-webui.navigate@1.0.0')).toBeVisible()
+    expect(screen.getByText('overstory.navigate@1.0.0')).toBeVisible()
     expect(screen.getByText(`sha256:${'a'.repeat(64)}`)).toBeVisible()
     expect(screen.getByText(`sha256:${'b'.repeat(64)}`)).toBeVisible()
     expect(document.body).not.toHaveTextContent('/private/raw/argument')
@@ -93,7 +93,7 @@ describe('attended WebMCP controls', () => {
       pendingConfirmation: {
         callId: 'call-2',
         leaseId: 'lease-2',
-        toolId: 'agent-webui.mutate',
+        toolId: 'overstory.mutate',
         toolTitle: 'Mutate',
         toolVersion: '1.0.0',
         schemaDigest: `sha256:${'d'.repeat(64)}`,
@@ -126,7 +126,7 @@ describe('attended WebMCP controls', () => {
       pendingConfirmation: {
         callId: 'call-untrusted',
         leaseId: 'lease-untrusted',
-        toolId: 'agent-webui.navigate',
+        toolId: 'overstory.navigate',
         toolTitle: 'Navigate',
         toolVersion: '1.0.0',
         schemaDigest: `sha256:${'1'.repeat(64)}`,
@@ -179,7 +179,7 @@ it('keeps legacy browser controls in a dismissible flow disclosure without armin
 const PROPOSAL = {
   proposalId: 'proposal-1',
   proposalDigest: `sha256:${'d'.repeat(64)}`,
-  toolId: 'agent-webui.navigate',
+  toolId: 'overstory.navigate',
   toolTitle: 'Navigate to branch',
   argumentsJson: '{"target":"/atlas?tip=branch-2"}',
   requesterAgent: 'web-agent',
@@ -196,7 +196,7 @@ describe('agent proposal review surface', () => {
     expect(screen.getByText(PROPOSAL.argumentsJson)).toBeVisible()
     expect(screen.getByText(PROPOSAL.requesterAgent)).toBeVisible()
     expect(screen.getByText(PROPOSAL.requesterRunRef)).toBeVisible()
-    expect(screen.getByText('Navigate to branch (agent-webui.navigate)')).toBeVisible()
+    expect(screen.getByText('Navigate to branch (overstory.navigate)')).toBeVisible()
     expect(controlled.channel.respondProposal).not.toHaveBeenCalled()
     expect(controlled.channel.arm).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Accept request' }))

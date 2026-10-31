@@ -7,7 +7,7 @@
  */
 import { DashboardSchema, type Dashboard } from './model'
 
-export const STORAGE_KEY = 'agent-webui.dashboards.v1'
+export const STORAGE_KEY = 'overstory.dashboards.v1'
 
 export type SaveStatus = 'saved-locally-pending-arbora' | 'not-saved'
 

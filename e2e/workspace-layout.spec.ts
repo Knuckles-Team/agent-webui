@@ -32,7 +32,7 @@ test('response task remains pointer-reachable after transcript scroll and low-he
     return route.fulfill({ status: 501, json: { detail: 'Unavailable in this layout fixture' } })
   })
   await page.addInitScript((message) => {
-    localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1')
+    localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1')
     localStorage.setItem('chat:["owner-v1","layout-tenant","layout-user"]:messages:/layout', JSON.stringify([message]))
   }, response)
   await page.setViewportSize({ width: 740, height: 320 })

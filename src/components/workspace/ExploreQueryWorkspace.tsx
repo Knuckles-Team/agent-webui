@@ -97,7 +97,7 @@ function OwnedExplore({
     const schema = z.object({ lens: z.enum(available) }).strict()
     return [
       makeTool({
-        name: 'agent-webui.explore.lens',
+        name: 'overstory.explore.lens',
         title: 'Select an Explore lens',
         description:
           'Select evidence, graph, query or validation in the current workspace. Does not edit or execute queries or grant backend permission.',
@@ -105,7 +105,7 @@ function OwnedExplore({
         outputSchema: schema,
         jsonSchema: z.toJSONSchema(schema),
         readOnly: false,
-        source: 'agent-webui:src/components/workspace/ExploreQueryWorkspace.tsx',
+        source: 'overstory:src/components/workspace/ExploreQueryWorkspace.tsx',
         execute: ({ lens }) => {
           if (!active.current || live.current !== state) throw new Error('Explore lens context is stale')
           navigateExploreLens({ ...state, lens }, role, available)

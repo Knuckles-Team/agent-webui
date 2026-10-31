@@ -172,7 +172,7 @@ export default function ExploreWorkspace({
     ])
     return [
       makeTool({
-        name: 'agent-webui.explore.select',
+        name: 'overstory.explore.select',
         title: 'Select evidence in Explore',
         description:
           'Select a loaded result or related entity and its overview, relationships or history. Changes the visible workspace only.',
@@ -180,7 +180,7 @@ export default function ExploreWorkspace({
         outputSchema: schema,
         jsonSchema: z.toJSONSchema(schema),
         readOnly: false,
-        source: 'agent-webui:src/components/workspace/ExploreWorkspace.tsx',
+        source: 'overstory:src/components/workspace/ExploreWorkspace.tsx',
         execute: (next) => {
           if (!mounted.current || liveToolGeneration.current !== toolGeneration)
             throw new Error('Evidence navigation context is stale')

@@ -12,7 +12,7 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKEND = 'agent/agent_webui/__tests__'
+BACKEND = 'agent/overstory/__tests__'
 BACKEND_TEST = f'{BACKEND}/test_run_identity.py'
 ROOT_TEST = 'tests/test_gate_wrappers.py'
 
@@ -117,7 +117,7 @@ def test_scope_union_and_precedence(tmp_path, backend, root, expected):
         'tests',
     ]
     for args in calls:
-        assert args[args.index('--src-root') + 1] == 'agent/agent_webui'
+        assert args[args.index('--src-root') + 1] == 'agent/overstory'
         assert args[args.index('--base-ref') + 1] == 'published-base'
     assert (ROOT / BACKEND_TEST).is_file()
     assert (ROOT / ROOT_TEST).is_file()

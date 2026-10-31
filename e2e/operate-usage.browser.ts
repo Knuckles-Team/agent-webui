@@ -101,7 +101,7 @@ for (const viewport of [
       if (path === '/api/chats') return route.fulfill({ json: [] })
       return route.fulfill({ status: 501, json: { detail: 'Not available in synthetic usage fixture' } })
     })
-    await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+    await page.addInitScript(() => localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1'))
     await page.goto('/workspace/operate?lens=usage&usagePanel=sessions&usageProject=retained-project')
     const usage = page.getByRole('region', { name: 'Usage analysis', exact: true })
     await expect(usage.getByText('$0.00', { exact: true }).first()).toBeVisible()

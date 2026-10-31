@@ -38,7 +38,7 @@ function storedColor(fallback: string) {
 }
 function hasExplicitAccent() {
   try {
-    return localStorage.getItem('agent-webui.explicit-accent') === 'true'
+    return localStorage.getItem('overstory.explicit-accent') === 'true'
   } catch {
     return false
   }
@@ -46,7 +46,7 @@ function hasExplicitAccent() {
 function saveAccent(baseColor: string, explicitChoice: boolean) {
   try {
     localStorage.setItem('pydantic-brand-color', baseColor)
-    if (explicitChoice) localStorage.setItem('agent-webui.explicit-accent', 'true')
+    if (explicitChoice) localStorage.setItem('overstory.explicit-accent', 'true')
   } catch {
     /* Appearance remains usable without storage. */
   }

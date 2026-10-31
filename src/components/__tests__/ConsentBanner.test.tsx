@@ -108,7 +108,7 @@ describe('ConsentBanner lifecycle', () => {
   it('retains public safe-area placement before a decision', () => {
     render(<ConsentBanner />)
     expect(screen.getByRole('complementary', { name: 'Privacy consent' })).toHaveStyle({
-      '--agent-webui-mobile-safe-area-bottom': 'env(safe-area-inset-bottom, 0px)',
+      '--overstory-mobile-safe-area-bottom': 'env(safe-area-inset-bottom, 0px)',
     })
     expect(screen.getByRole('complementary', { name: 'Privacy consent' })).toHaveClass('top-3')
   })

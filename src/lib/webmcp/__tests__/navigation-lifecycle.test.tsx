@@ -37,7 +37,7 @@ function registrationFixture() {
       allowedActions: [],
       capturedAt: '2026-10-24T00:00:00.000Z',
     },
-  }).find((entry) => entry.name === 'agent-webui.navigate')
+  }).find((entry) => entry.name === 'overstory.navigate')
   if (!tool) throw new Error('navigation tool missing')
   const handle = registerWebMcpTools(adapter, [tool])
   return {

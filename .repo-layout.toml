@@ -22,7 +22,7 @@
 
 [dirs]
 ".specify" = "tracked Spec Kit constitution; generated tooling files remain ignored"
-agent = "the agent_webui Python backend package: FastAPI + pydantic-ai orchestrator, RBAC/OIDC session handling, observability, api_extensions -- plus its own README, icon, and mcp_config.json"
+agent = "the overstory Python backend package: FastAPI + pydantic-ai orchestrator, RBAC/OIDC session handling, observability, api_extensions -- plus its own README, icon, and mcp_config.json"
 patches = "pnpm patchedDependencies diffs; pnpm resolves them from the repository root (sonner CSP patch)"
 docs = "mkdocs documentation source (architecture, concepts, capability coverage)"
 e2e = "Playwright end-to-end specs (auth, graph-view, knowledge-base-view, memory-view, routes-smoke, sdd-view)"

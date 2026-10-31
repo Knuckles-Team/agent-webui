@@ -76,7 +76,7 @@ Each destination retains its role/capability restriction, compatible URL and dee
 | Capability family | Existing implementation seams | Existing owner and proof obligations |
 |---|---|---|
 | Persistent chat, previous conversations, streaming parts, approvals, elicitation, voice. | `src/Chat.tsx`, `src/components/ChatPanel.tsx`, Part/ApprovalCard/ElicitationModal/VoiceDictationButton; host chat adapters. | OVERSTORY-APPS-R004/R005/R006; preserve shared sessions, run provenance, cancellation, resume and upstream-produced usage, not browser-owned execution. |
-| Agents, fleet, goals, sessions, workflow editor, scheduler, prompts, tools, models, SDD. | Existing views and workflow node/inspector/palette; typed clients; `agent/agent_webui/api_extensions.py`. | OVERSTORY-APPS-R004/R005/R006 and OVERSTORY-API-R009; preserve CRUD, validation, role checks and server-owned admission. |
+| Agents, fleet, goals, sessions, workflow editor, scheduler, prompts, tools, models, SDD. | Existing views and workflow node/inspector/palette; typed clients; `agent/overstory/api_extensions.py`. | OVERSTORY-APPS-R004/R005/R006 and OVERSTORY-API-R009; preserve CRUD, validation, role checks and server-owned admission. |
 | Atlas query/filter/projection, tables, chart/viz, catalogue/schema/object detail, graph2D/3D/LOD/temporal/code/MAGMA. | `src/lib/atlas/`, `src/components/atlas/`, graph renderers/layout worker and `src/lib/kg-lod/`. | OVERSTORY-APPS-R030, OVERSTORY-API-R002/R008, OVERSTORY-DECIDE; preserve typed query semantics, cursor/purpose/tenant, graph selection and accessible alternatives. |
 | Memory, KB ingestion/search/articles, extraction, bookmarks, generated explanations. | Memory/KnowledgeBase/Extraction views and host adapters. | OVERSTORY-APPS-R031/R036/R001.8, OVERSTORY-API-R009; retain source/revision/provenance and explicit unavailable providers. |
 | Editor, workspace files, remote extension compatibility. | FilesView, WorkspaceIDEView and editor-context bridge. | OVERSTORY-APPS-R034, OVERSTORY-API-R010; preserve containment and existing admin restriction for unscoped files. Mobile must offer complete usable operations, not a desktop warning. |
@@ -232,7 +232,7 @@ panel tests retain the manual field/create/save/validation contract. Native
 rendered acceptance and semantic prompt form-edit/save parity remain open.
 
 Reader Operate happy-path qualification depends on the narrow fleet-read
-classification repair in agent-webui #158. This entry change does not widen
+classification repair in overstory #158. This entry change does not widen
 service grants or classify forbidden responses as available data.
 
 The entry tests now mount the actual persistent frame and map from the consolidated shell.

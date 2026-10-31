@@ -35,13 +35,13 @@ describe('public mobile surface contract', () => {
     )
 
     const main = screen.getByRole('main')
-    expect(main).toHaveClass('pb-[var(--agent-webui-mobile-cta-occupied-height)]')
-    expect(main).toHaveStyle({ scrollPaddingBottom: 'var(--agent-webui-mobile-cta-occupied-height)' })
+    expect(main).toHaveClass('pb-[var(--overstory-mobile-cta-occupied-height)]')
+    expect(main).toHaveStyle({ scrollPaddingBottom: 'var(--overstory-mobile-cta-occupied-height)' })
     expect(document.querySelector('[data-mobile-surface="cta"]')).toHaveStyle({
-      '--agent-webui-mobile-safe-area-bottom': 'env(safe-area-inset-bottom, 0px)',
+      '--overstory-mobile-safe-area-bottom': 'env(safe-area-inset-bottom, 0px)',
     })
     expect(document.querySelector('[data-mobile-surface="cta"] a')).toHaveStyle({
-      minHeight: 'var(--agent-webui-mobile-cta-button-height)',
+      minHeight: 'var(--overstory-mobile-cta-button-height)',
     })
   })
 

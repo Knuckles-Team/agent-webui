@@ -125,14 +125,14 @@ describe('loaded Work and Operate command adapters', () => {
     const link = await screen.findByRole('link', { name: 'Capability: Read records (source)' })
     expect(link).toHaveAttribute('href', '/workspace/operate?server=source&item=tool-a&q=source&lens=services')
     expect(screen.queryByRole('link', { name: /Capability: Hidden/ })).not.toBeInTheDocument()
-    const catalog = state.tools.get('agent-webui.workspace.commands')!
+    const catalog = state.tools.get('overstory.workspace.commands')!
     const result = (await catalog.execute({}, { signal: new AbortController().signal })) as {
       commands: { commandId: string; label: string }[]
     }
     const entry = result.commands.find((command) => command.label.startsWith('Capability: Read'))!
     await act(async () => {
       await state.tools
-        .get('agent-webui.workspace.command')!
+        .get('overstory.workspace.command')!
         .execute({ commandId: entry.commandId }, { signal: new AbortController().signal })
     })
     expect(window.location.search).toBe('?server=source&item=tool-a&q=source&lens=services')
@@ -140,7 +140,7 @@ describe('loaded Work and Operate command adapters', () => {
   it('withdraws Work leaves and rejects old palette handles when admission is denied', async () => {
     const view = renderWithProviders(<Surface />)
     await screen.findByRole('button', { name: 'Recorded span · span' })
-    const tool = state.tools.get('agent-webui.workspace.command')!
+    const tool = state.tools.get('overstory.workspace.command')!
     const ids = (tool.inputSchema as { properties: { commandId: { enum: string[] } } }).properties.commandId.enum
     state.denied = true
     view.rerender(<Surface />)
@@ -153,7 +153,7 @@ describe('loaded Work and Operate command adapters', () => {
   it.each(['role', 'owner'])('retires loaded Work handles on %s changes', async (change) => {
     const view = renderWithProviders(<Surface />)
     await screen.findByRole('button', { name: 'Recorded span · span' })
-    const held = state.tools.get('agent-webui.workspace.command')!
+    const held = state.tools.get('overstory.workspace.command')!
     const ids = (held.inputSchema as { properties: { commandId: { enum: string[] } } }).properties.commandId.enum
     if (change === 'role') state.role = 'reader'
     else state.tenant = 'b'
@@ -172,7 +172,7 @@ describe('loaded Work and Operate command adapters', () => {
     await screen.findByRole('link', { name: 'task-a' })
     open()
     await screen.findByRole('link', { name: 'Task: task-a' })
-    const held = state.tools.get('agent-webui.workspace.command')!
+    const held = state.tools.get('overstory.workspace.command')!
     const ids = (held.inputSchema as { properties: { commandId: { enum: string[] } } }).properties.commandId.enum
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
     vi.mocked(workApi.listTasks).mockRejectedValueOnce(new ApiError(403, 'access revoked'))

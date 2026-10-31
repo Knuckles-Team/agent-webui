@@ -57,7 +57,7 @@ export function QueryEditorTools({
     }
     return [
       makeTool({
-        name: 'agent-webui.explore.edit-query',
+        name: 'overstory.explore.edit-query',
         title: 'Edit the current query or validation draft',
         description:
           'Update the visible draft only. This never submits to a provider. Validation source types retain their existing meaning.',
@@ -65,7 +65,7 @@ export function QueryEditorTools({
         outputSchema: editedSchema,
         jsonSchema: z.toJSONSchema(editSchema),
         readOnly: false,
-        source: 'agent-webui:src/components/workspace/QueryEditorTools.tsx',
+        source: 'overstory:src/components/workspace/QueryEditorTools.tsx',
         execute: ({ text: nextText, sourceType: nextType }) => {
           assertCurrent()
           const argumentsValue = nextType === undefined ? { text: nextText } : { text: nextText, sourceType: nextType }
@@ -87,7 +87,7 @@ export function QueryEditorTools({
         },
       }),
       makeTool({
-        name: 'agent-webui.explore.request-query-submission',
+        name: 'overstory.explore.request-query-submission',
         title: 'Request human review of the visible draft',
         description:
           'Open an attended review dialog for the current draft. Does not submit or authorize provider execution. A person must confirm in the visible UI.',
@@ -95,7 +95,7 @@ export function QueryEditorTools({
         outputSchema: reviewSchema,
         jsonSchema: z.toJSONSchema(emptySchema),
         readOnly: false,
-        source: 'agent-webui:src/components/workspace/QueryEditorTools.tsx',
+        source: 'overstory:src/components/workspace/QueryEditorTools.tsx',
         execute: () => {
           assertCurrent()
           if (!generation.text.trim()) throw new Error('The draft is empty')

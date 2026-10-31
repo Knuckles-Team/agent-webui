@@ -46,7 +46,7 @@ for (const viewport of [
       return route.fulfill({ status: 501, json: { detail: 'Unavailable in this task fixture' } })
     })
     await page.addInitScript(() => {
-      localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1')
+      localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1')
     })
     await page.setViewportSize(viewport)
     await page.goto('/workspace/work?task=task-a')
@@ -113,7 +113,7 @@ test('trace inspection preserves Work context through parent, history and refres
     }
     return route.fulfill({ status: 501, json: { detail: 'Unavailable in this trace fixture' } })
   })
-  await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+  await page.addInitScript(() => localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1'))
   await page.goto('/workspace/work?task=task-a&run=trace-a&node=child')
   await page.getByRole('button', { name: 'Inspect recorded parent' }).click()
   await expect(page).toHaveURL(/task=task-a&run=trace-a&node=parent$/)
@@ -228,7 +228,7 @@ for (const viewport of [
       if (path in fixtures) return route.fulfill({ json: fixtures[path] })
       return route.fulfill({ status: 501, json: { detail: 'Unavailable in the journey fixture' } })
     })
-    await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+    await page.addInitScript(() => localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1'))
     await page.setViewportSize(viewport)
     await page.goto('/workspace/work')
     await page
@@ -343,7 +343,7 @@ for (const viewport of [
       return route.fulfill({ status: 501, json: { detail: 'Unavailable fixture surface' } })
     })
     await page.addInitScript(() => {
-      localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1')
+      localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1')
       localStorage.setItem(
         'chat:other-owner:conversationIds',
         JSON.stringify([{ id: '/other', firstMessage: 'Other owner', timestamp: 1 }]),
@@ -445,7 +445,7 @@ for (const viewport of [
       if (path === '/api/enhanced/models') return route.fulfill({ json: { models: [], default_id: '' } })
       return route.fulfill({ status: 501, json: { detail: 'Unavailable fixture surface' } })
     })
-    await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+    await page.addInitScript(() => localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1'))
     await page.setViewportSize(viewport)
     await page.goto('/workspace/work?task=task-a')
     await page.getByRole('link', { name: 'Prompt authoring', exact: true }).click()

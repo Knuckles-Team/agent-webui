@@ -45,7 +45,7 @@ dynamic depth, all-leaf coverage or manual screen-reader acceptance.
 | Graph and memory OVERSTORY-APPS-R031.6 | `src/__tests__/memory-files-evidence.test.tsx::test_save_evidence_respects_outcome_authority` (planned)                                                                                  | Authorized verdict/digests appear; refused entries reveal no cached head metadata. A successful save alone never shows in_sync.                                                                                                                                                                                                                                                                                                                                               |
 | Graph and memory OVERSTORY-APPS-R031.7 | `e2e/memory-files-served.spec.ts::file_conflict_preserves_both_versions; e2e/memory-files-served.spec.ts::stale_materialization_ack_never_shows_in_sync` (planned)                       | Two real clients compete, restart, read both durable conflict versions and resolve against current head. Delay a host acknowledgment, observe a newer edit without changing head, deliver old acknowledgment and prove no in_sync. Correct authenticated acknowledgment establishes served in_sync only without pending edits/conflicts. Browser observation/ack attempts refuse; absent evidence shows unavailable. No mocked transport, dispatch, authority or persistence. |
 
-Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`, `uv run --all-extras pytest agent/agent_webui/__tests__`, and `pre-commit run --config .config/pre-commit.yaml --all-files`. Hosted CI provisions browser and API fixtures; no live deployment is required to accept an external PR. CCCC staged threshold is no new function above cyclomatic 10/cognitive 15 and no regression. Run configured jscpd and Dupehound if installed; do not claim an unconfigured threshold passed. KISS rejects duplicate route/app/renderer registries. Record package, Pages and browser artifact digests with exact commit in `tasks.md`.
+Run `pnpm run typecheck`, `pnpm run test`, `pnpm run test:e2e`, `pnpm run build`, `uv run --all-extras pytest agent/overstory/__tests__`, and `pre-commit run --config .config/pre-commit.yaml --all-files`. Hosted CI provisions browser and API fixtures; no live deployment is required to accept an external PR. CCCC staged threshold is no new function above cyclomatic 10/cognitive 15 and no regression. Run configured jscpd and Dupehound if installed; do not claim an unconfigured threshold passed. KISS rejects duplicate route/app/renderer registries. Record package, Pages and browser artifact digests with exact commit in `tasks.md`.
 | OVERSTORY-APPS-R005.1 | src/lib/**tests**/nav-registry.test.ts | Nav entry declares a minimum role. |
 | OVERSTORY-APPS-R005.1.1 | src/lib/**tests**/nav-registry.test.ts | Registry role contract. |
 | OVERSTORY-APPS-R005.1.2 | `src/components/__tests__/AppRoleVisibility.test.tsx` | Mount the real sidebar and router for reader and admin fixtures. Refuse a guessed admin URL before mounting its view. Preserve allowed reader navigation. Backend authorization and browser acceptance remain separate. |
@@ -500,7 +500,7 @@ This bounded consumer check does not satisfy OVERSTORY-APPS-R004.3 or
 OVERSTORY-APPS-R004.8. Context-budget, cost and indexed-analysis acceptance remain
 open. No producer or full-session accounting acceptance is claimed.
 
-- `agent/agent_webui/__tests__/test_run_identity.py` checks exact receipts,
+- `agent/overstory/__tests__/test_run_identity.py` checks exact receipts,
   strict counters, outer identity and the actual Vercel stream.
 - `src/lib/__tests__/turn-usage.test.ts` checks caller-bound decoding, missing
   values, valid zero, replay replacement and distinct tasks.
@@ -716,7 +716,7 @@ R005.4.1: Chat.conversation-identity tests mount with stale agent-mode storage a
 |---|---|---|
 | OVERSTORY-APPS-R051 | All four child journeys below | No functional or durable-fork acceptance is claimed yet. |
 | OVERSTORY-APPS-R051.1 | `src/__tests__/Chat.edit-fork.test.tsx::own_message_editor` | Real mounted own-message action, boundary preview, keyboard/touch access and cancellation. |
-| OVERSTORY-APPS-R051.2 | `agent/agent_webui/__tests__/test_conversation_fork.py::test_bound_fork_adapter`; `src/__tests__/Chat.edit-fork.test.tsx::adopt_returned_branch` | Registered contract binding, exact returned lineage, original preservation and unsupported refusal. |
+| OVERSTORY-APPS-R051.2 | `agent/overstory/__tests__/test_conversation_fork.py::test_bound_fork_adapter`; `src/__tests__/Chat.edit-fork.test.tsx::adopt_returned_branch` | Registered contract binding, exact returned lineage, original preservation and unsupported refusal. |
 | OVERSTORY-APPS-R051.3 | `src/__tests__/Chat.edit-fork.test.tsx::fork_lifecycle` | Duplicate, unknown, conflict, active-run, navigation, restart and owner outcomes. |
 | OVERSTORY-APPS-R051.4 | `e2e/conversation-fork-served.spec.ts::edit_prior_prompt_and_reopen` | Real browser-to-producer persistence and native `tuig` parity. |
 

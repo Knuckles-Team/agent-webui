@@ -15,5 +15,5 @@ logfire[fastapi,starlette]>=5.1.1
 # Declared directly here so a fresh image build gets it unconditionally, regardless of which
 # agent-utilities version or extras the image build step chooses, instead of depending on the
 # out-of-band `/deps` NFS overlay documented in
-# inventory/k8s-migration/cutover/apptier/agent-webui.yaml to authenticate a single request.
+# inventory/k8s-migration/cutover/apptier/overstory.yaml to authenticate a single request.
 joserfc>=1.7.4

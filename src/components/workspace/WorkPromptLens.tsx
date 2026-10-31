@@ -34,7 +34,7 @@ function AdmittedWorkPromptLens({ state, role }: Props) {
     const schema = z.object({ lens: z.enum(['investigation', 'prompts']) }).strict()
     return [
       makeTool({
-        name: 'agent-webui.work.lens',
+        name: 'overstory.work.lens',
         title: 'Select a Work lens',
         description:
           'Select investigation or admin prompt authoring. Preserves conversation and task context; does not edit, save or run prompts.',
@@ -42,7 +42,7 @@ function AdmittedWorkPromptLens({ state, role }: Props) {
         outputSchema: schema,
         jsonSchema: z.toJSONSchema(schema),
         readOnly: false,
-        source: 'agent-webui:src/components/workspace/WorkPromptLens.tsx',
+        source: 'overstory:src/components/workspace/WorkPromptLens.tsx',
         execute: ({ lens }) => {
           if (!active.current || current.current !== state) throw new Error('Work lens context is stale')
           navigateWork({ ...state, lens }, role)

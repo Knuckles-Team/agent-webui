@@ -32,7 +32,7 @@ function renderView() {
 }
 
 function tool(name: string): WebMcpToolDefinition {
-  const found = registered.tools.find((t) => t.name === `agent-webui.dashboard.${name}`)
+  const found = registered.tools.find((t) => t.name === `overstory.dashboard.${name}`)
   if (!found) throw new Error(`tool ${name} is not registered`)
   return found
 }

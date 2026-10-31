@@ -1,4 +1,4 @@
-"""Verify that an agent-webui wheel carries its governed contact API."""
+"""Verify that an overstory wheel carries its governed contact API."""
 
 from __future__ import annotations
 
@@ -55,10 +55,10 @@ def _factory_wires_contact_router(module: ast.Module) -> bool:
 
 
 def check_wheel(wheel: Path, expected_version: str) -> None:
-    metadata_path = f'agent_webui-{expected_version}.dist-info/METADATA'
+    metadata_path = f'overstory-{expected_version}.dist-info/METADATA'
     required = {
-        'agent_webui/contact_delivery.py',
-        'agent_webui/server.py',
+        'overstory/contact_delivery.py',
+        'overstory/server.py',
         metadata_path,
     }
     with ZipFile(wheel) as archive:
@@ -66,8 +66,8 @@ def check_wheel(wheel: Path, expected_version: str) -> None:
         if missing:
             raise ValueError(f'wheel is missing required members: {sorted(missing)}')
         metadata = archive.read(metadata_path).decode('utf-8')
-        server = ast.parse(archive.read('agent_webui/server.py'))
-        contact = ast.parse(archive.read('agent_webui/contact_delivery.py'))
+        server = ast.parse(archive.read('overstory/server.py'))
+        contact = ast.parse(archive.read('overstory/contact_delivery.py'))
 
     if f'\nVersion: {expected_version}\n' not in f'\n{metadata}':
         raise ValueError(f'wheel metadata does not declare version {expected_version}')

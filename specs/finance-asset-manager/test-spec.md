@@ -41,7 +41,7 @@ pnpm run lint
 pnpm run test
 pnpm run test:e2e
 pnpm run build
-uv run --all-extras pytest agent/agent_webui/__tests__
+uv run --all-extras pytest agent/overstory/__tests__
 pre-commit run --config .config/pre-commit.yaml --all-files
 ```
 

@@ -229,7 +229,7 @@ function OwnedPalette({ context }: { context: CommandContext }) {
       .strict()
     return [
       makeTool({
-        name: 'agent-webui.workspace.command',
+        name: 'overstory.workspace.command',
         title: 'Open a workspace destination',
         description:
           'Select a migrated context or caller-visible loaded evidence destination. Navigation only; never executes backend operations.',
@@ -237,7 +237,7 @@ function OwnedPalette({ context }: { context: CommandContext }) {
         outputSchema: z.object({ selected: z.literal(true) }),
         jsonSchema: z.toJSONSchema(schema),
         readOnly: false,
-        source: 'agent-webui:src/components/workspace/WorkspaceCommands.tsx',
+        source: 'overstory:src/components/workspace/WorkspaceCommands.tsx',
         execute: ({ commandId }) => {
           const index = context.entries.findIndex((_, position) => `${generation.id}:${position}` === commandId)
           if (index < 0) throw new Error('Workspace command identifier is stale')
@@ -246,7 +246,7 @@ function OwnedPalette({ context }: { context: CommandContext }) {
         },
       }),
       makeTool({
-        name: 'agent-webui.workspace.commands',
+        name: 'overstory.workspace.commands',
         title: 'List available workspace destinations',
         description:
           'List bounded labels and ephemeral command identifiers for migrated contexts and currently loaded evidence. Does not expose collection query text.',
@@ -258,7 +258,7 @@ function OwnedPalette({ context }: { context: CommandContext }) {
         }),
         jsonSchema: z.toJSONSchema(z.object({ offset: z.number().int().min(0).max(103).default(0) }).strict()),
         readOnly: true,
-        source: 'agent-webui:src/components/workspace/WorkspaceCommands.tsx',
+        source: 'overstory:src/components/workspace/WorkspaceCommands.tsx',
         execute: ({ offset }) => {
           if (!active.current || live.current !== generation) throw new Error('Workspace command catalog is stale')
           return {

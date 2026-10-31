@@ -1,11 +1,11 @@
-# Agent WebUI engineering contract
+# Overstory engineering contract
 
 <!-- agent-contract:start -->
 ## Agent contract
 
 Tool-neutral rules for any AI agent or human working in this repository. This block is maintained by the fleet standard; edit outside the markers.
 
-- **Owner boundary:** this repository owns what a person sees in the web interface. Data reaches it only through arbora (spec prefix `WEBUI-`). Feature routing across repositories: [ecosystem boundaries](https://github.com/Knuckles-Team/pipelines/blob/main/reference/ecosystem-boundaries.md).
+- **Owner boundary:** this repository owns what a person sees in the web interface. Data reaches it only through arbora (spec prefix `OVERSTORY-`). Feature routing across repositories: [ecosystem boundaries](https://github.com/Knuckles-Team/pipelines/blob/main/reference/ecosystem-boundaries.md).
 - **Setup:** run `scripts/bootstrap.sh`. It is idempotent and non-interactive. It pins uv and Python, syncs the locked environment, installs the git hooks and prints the gate command.
 - **Gates:** `uvx pre-commit run --all-files` must pass before every push. Do not bypass hooks to get green.
 - **Commits:** one logical change per commit with a `Spec: <ID>` trailer (or `Spec: none (<reason>)`), plus a `Co-Authored-By:` trailer naming the assisting agent. Stage explicit paths only; never `git add -A` or `git add .`. Use the contributor's own configured Git identity, never a tool or bot name.
@@ -25,7 +25,7 @@ Route every feature with the [ecosystem boundaries standard](https://github.com/
 
 ## What this repository owns
 
-Agent WebUI owns the browser presentation layer for Arbora. It also owns
+Overstory owns the browser presentation layer for Arbora. It also owns
 the FastAPI host that safely adapts browser protocols to the platform gateway.
 Its public surface includes:
 
@@ -49,7 +49,7 @@ graph, orchestration, connector, or scheduling implementations.
 The runtime path is:
 
 ```text
-browser -> React application -> Agent WebUI FastAPI host
+browser -> React application -> Overstory FastAPI host
         -> authenticated Arbora gateway -> epistemic-graph / agent fleet
 ```
 
@@ -60,16 +60,16 @@ browser -> React application -> Agent WebUI FastAPI host
 - `src/lib/nav-registry.ts`: the single declarative route registry
   (`RouteDef`, `ROUTES`/`PUBLIC_ROUTES`/`ROUTE_REGISTRY`). Adding a page means
   adding one entry here; `App.tsx` mounts every route generically from it.
-- `agent/agent_webui/server.py`: FastAPI composition, middleware, and assets.
-- `agent/agent_webui/api_extensions.py`: canonical service browser facades.
-- `agent/agent_webui/oidc_session.py`: OIDC flow and protected sessions.
-- `agent/agent_webui/graph_identity.py`: request-scoped graph identity.
-- `agent/agent_webui/graph_admission.py`: graph operation authorization.
-- `agent/agent_webui/browser_control.py`: attended browser-control boundary.
-- `agent/agent_webui/observability.py`: redacted request telemetry.
+- `agent/overstory/server.py`: FastAPI composition, middleware, and assets.
+- `agent/overstory/api_extensions.py`: canonical service browser facades.
+- `agent/overstory/oidc_session.py`: OIDC flow and protected sessions.
+- `agent/overstory/graph_identity.py`: request-scoped graph identity.
+- `agent/overstory/graph_admission.py`: graph operation authorization.
+- `agent/overstory/browser_control.py`: attended browser-control boundary.
+- `agent/overstory/observability.py`: redacted request telemetry.
 - `public/`: static assets copied into the production build.
 - `docs/` and `mkdocs.yml`: published reference documentation.
-- `agent/agent_webui/__tests__/`: backend contract and security tests.
+- `agent/overstory/__tests__/`: backend contract and security tests.
 - `src/**/__tests__/` and `e2e/`: frontend and browser tests.
 
 Frontend server state uses React Query. Chat uses the Vercel AI SDK. Local UI
@@ -116,10 +116,10 @@ Backend and repository checks:
 uv run --no-sync pytest tests
 uvx pre-commit run --config .config/pre-commit.yaml --all-files
 uvx pre-commit run --config .config/pre-commit.yaml --all-files --hook-stage manual
-python -m agent_webui.server --security-doctor --host 0.0.0.0
+python -m overstory.server --security-doctor --host 0.0.0.0
 ```
 
-agent-webui ships only as a PyPI package (wheel and sdist). Arbora installs it
+overstory ships only as a PyPI package (wheel and sdist). Arbora installs it
 through its `webui` extra and serves it in-process on port 8080; there is no
 container image or deploy script in this repository.
 
@@ -214,7 +214,7 @@ On a maintainer workstation this is a shared multi-worktree repository. Never ed
 Create a distinct branch and a real Git worktree for each lane:
 
 ```bash
-git worktree add "$WORKTREE_ROOT/agent-webui/<branch>" -b <branch> main
+git worktree add "$WORKTREE_ROOT/overstory/<branch>" -b <branch> main
 ```
 
 Do not use harness-managed worktree isolation for this repository. It can alter

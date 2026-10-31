@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command setup for an agent-webui checkout (local or Claude Code cloud).
+# One-command setup for an overstory checkout (local or Claude Code cloud).
 #
 # From a fresh clone with git, python3 and node available this:
 #   1. checks out the pinned `.uv-workspace-siblings/` gate tooling listed in

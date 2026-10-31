@@ -1,4 +1,4 @@
-# Contributing to agent-webui
+# Contributing to overstory
 
 `AGENTS.md` is the full engineering contract; this page is the short path from
 a fresh clone to a pull request.

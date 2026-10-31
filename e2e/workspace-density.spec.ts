@@ -23,7 +23,7 @@ test('workspace panes use available width and keep collection drafts through dis
     if (path === '/api/chats') return route.fulfill({ json: [] })
     return route.fulfill({ status: 501, json: { detail: 'Unavailable in this synthetic layout fixture' } })
   })
-  await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+  await page.addInitScript(() => localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1'))
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/workspace/explore')
   const surface = page.getByRole('region', { name: 'Knowledge workspace', exact: true })

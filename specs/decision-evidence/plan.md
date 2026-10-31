@@ -2,7 +2,7 @@
 
 ## Existing components and reuse
 
-The browser application is assembled in `src/App.tsx`. Shared identity and requests live in `src/lib/auth.ts` and `src/lib/api.ts`. `src/components/views/` contains route views; `src/components/atlas/` provides reusable result and graph renderers. The FastAPI host in `agent/agent_webui/server.py` currently adapts browser protocols. Implementation must inventory the exact current decision route before editing, then extend its typed read client and route registration. Existing graph canvas and table renderers may display structure, but must not change decision semantics. Do not introduce a second decision engine or a browser-to-database credential.
+The browser application is assembled in `src/App.tsx`. Shared identity and requests live in `src/lib/auth.ts` and `src/lib/api.ts`. `src/components/views/` contains route views; `src/components/atlas/` provides reusable result and graph renderers. The FastAPI host in `agent/overstory/server.py` currently adapts browser protocols. Implementation must inventory the exact current decision route before editing, then extend its typed read client and route registration. Existing graph canvas and table renderers may display structure, but must not change decision semantics. Do not introduce a second decision engine or a browser-to-database credential.
 
 ## Data and interaction contract
 

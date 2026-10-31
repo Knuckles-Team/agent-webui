@@ -54,7 +54,7 @@ describe('workspace branch navigator', () => {
 
 // spec: OVERSTORY-APPS-R046.2.1
 it('opens privacy management inside Settings on retained routes without granting consent', () => {
-  window.localStorage.removeItem('agent-webui.consent')
+  window.localStorage.removeItem('overstory.consent')
   mount()
   const settings = screen.getByText('Settings')
   expect(settings.closest('details')).not.toHaveAttribute('open')
@@ -62,6 +62,6 @@ it('opens privacy management inside Settings on retained routes without granting
   fireEvent.click(settings)
   expect(screen.getByRole('region', { name: 'Privacy settings' })).toBeVisible()
   expect(screen.getByRole('link', { name: 'Privacy policy and details' })).toHaveAttribute('href', '/privacy')
-  expect(window.localStorage.getItem('agent-webui.consent')).toBeNull()
+  expect(window.localStorage.getItem('overstory.consent')).toBeNull()
   expect(window.location.pathname).toBe('/')
 })

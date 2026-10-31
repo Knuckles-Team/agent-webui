@@ -108,8 +108,6 @@ SEED_SCOPES = ['service:control', 'work:submit', 'work:claim', 'work:write']
 
 
 async def exercise(tcp, secret):
-    from agent_webui import host, oidc_session
-    from agent_webui.server import create_agent_web_app
     from arbora.api.http.browser_app import (
         create_browser_api_application,
         create_webui_session_boundary,
@@ -131,6 +129,8 @@ async def exercise(tcp, secret):
     from arbora.identity.issuer import LocalIssuer
     from arbora.mcp_server.current_plan_reader import NativeCurrentPlanReader
     from arbora.webui_host.session_boundary import identity_factory_kwargs
+    from overstory import host, oidc_session
+    from overstory.server import create_agent_web_app
     from pydantic_ai import Agent
     from pydantic_ai.models.test import TestModel
     from tests.identity import test_console_admission as admission_fixture

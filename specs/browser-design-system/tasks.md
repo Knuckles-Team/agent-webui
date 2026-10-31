@@ -162,7 +162,7 @@ It retains the same 14-rem result and preference-persistence assertions. Fresh f
 - [x] OVERSTORY-DESIGN-R011: import the six reviewed PNGs and provenance; update README/docs images and pass the integrity command.
 - [x] OVERSTORY-DESIGN-R011: qualify the published asset head with hosted lint, tests, hooks and browser verification.
 
-Hosted [run 40120522758](https://github.com/Knuckles-Team/agent-webui/actions/runs/40120522758)
+Hosted [run 40120522758](https://github.com/Knuckles-Team/overstory/actions/runs/40120522758)
 passed all six captures, the screenshot contract tests, and the existing identity/catalog browser journeys.
 The downloaded artifact passed archive digest verification. Pixel review covered all six PNGs before import.
 The clean rendered source is `167797965f7942f6849e44201fbb081f93ed37f1`, the Actions merge of `caf326ad` onto `99c31995`.
@@ -173,7 +173,7 @@ The manifest and six image digests pass `pnpm screenshots:check`.
 
 Local Chromium cannot start in this environment. Full local ESLint hit the memory limit; hosted qualification was explicitly approved.
 Asset head `033e3154911e595f7bf899cc6274cdee8a97964c` passed
-[run 40121492380](https://github.com/Knuckles-Team/agent-webui/actions/runs/40121492380), including full lint/typecheck, PR tests, hooks, Python compatibility and browser verification.
+[run 40121492380](https://github.com/Knuckles-Team/overstory/actions/runs/40121492380), including full lint/typecheck, PR tests, hooks, Python compatibility and browser verification.
 A second artifact reproduced five PNGs byte-for-byte. Operate wide differed only at 20 border pixels by one RGB level, with no content or layout change.
 Pixel review confirmed the second output. No bit-exact cross-run rasterization guarantee is made.
 Only R011 qualifies for delivery; final PR validation and review remain merge requirements.

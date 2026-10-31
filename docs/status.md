@@ -16,10 +16,10 @@ deployment.
 
 ## Release evidence
 
-- [PyPI package](https://pypi.org/project/agent-webui/)
-- [Release workflow](https://github.com/Knuckles-Team/agent-webui/actions/workflows/release.yml)
-- [Documentation workflow](https://github.com/Knuckles-Team/agent-webui/actions/workflows/pages.yml)
-- [GitHub releases](https://github.com/Knuckles-Team/agent-webui/releases)
+- [PyPI package](https://pypi.org/project/overstory/)
+- [Release workflow](https://github.com/Knuckles-Team/overstory/actions/workflows/release.yml)
+- [Documentation workflow](https://github.com/Knuckles-Team/overstory/actions/workflows/pages.yml)
+- [GitHub releases](https://github.com/Knuckles-Team/overstory/releases)
 
 Use the workflow records for commit-specific build results and the
 [architecture guide](architecture.md) for current ownership and request paths.

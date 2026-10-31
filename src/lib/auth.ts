@@ -4,10 +4,10 @@
  * server-side identity boundary: Arbora's identity broker
  * (`arbora/identity`, which owns `/auth/*` whenever the WebUI is served by
  * Arbora) or, for a standalone WebUI, the single-client OIDC boundary
- * (`agent/agent_webui/oidc_session.py`).
+ * (`agent/overstory/oidc_session.py`).
  *
  * This is deliberately NOT a second auth path: the `webui_role` that
- * `/auth/session` reports is computed server-side (`agent/agent_webui/rbac.py`)
+ * `/auth/session` reports is computed server-side (`agent/overstory/rbac.py`)
  * from the principal's verified scopes — the frontend never derives a role
  * itself, it only renders what the server decided. There is no
  * "unconfigured means full access" fallback any more: when
@@ -37,7 +37,7 @@ export interface AuthSession {
   picture?: string | null
   tenant?: string | null
   roles: string[]
-  /** Computed server-side by `agent/agent_webui/rbac.py::resolve_webui_role`. */
+  /** Computed server-side by `agent/overstory/rbac.py::resolve_webui_role`. */
   webui_role?: string | null
   expires_at?: number | null
   /** Arbora identity broker only: the stored auth mode (`null` while the

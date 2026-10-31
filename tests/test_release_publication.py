@@ -71,11 +71,11 @@ def test_pypi_release_response_is_reduced_to_filename_digests() -> None:
             self.close()
 
     def opener(url: str, *, timeout: int) -> Response:
-        assert url.endswith('/agent-webui/2.6.1/json')
+        assert url.endswith('/overstory/2.6.1/json')
         assert timeout == 15
         return Response(json.dumps(payload).encode())
 
-    assert module.pypi_artifact_digests('agent-webui', '2.6.1', opener=opener) == {
+    assert module.pypi_artifact_digests('overstory', '2.6.1', opener=opener) == {
         'package.whl': 'wheel-digest',
         'package.tar.gz': 'sdist-digest',
     }
@@ -87,7 +87,7 @@ def test_pypi_404_means_version_is_absent() -> None:
     def opener(url: str, *, timeout: int) -> None:
         raise urllib.error.HTTPError(url, 404, 'not found', Message(), None)
 
-    assert module.pypi_artifact_digests('agent-webui', '99.0.0', opener=opener) is None
+    assert module.pypi_artifact_digests('overstory', '99.0.0', opener=opener) is None
 
 
 @pytest.mark.parametrize(
@@ -150,12 +150,12 @@ def test_release_intent_skips_later_release_neutral_commit() -> None:
 
 def test_release_intent_requires_version_bump_for_runtime_change() -> None:
     module = _load_script()
-    with pytest.raises(module.VersionBumpRequired, match='agent/agent_webui/server.py'):
+    with pytest.raises(module.VersionBumpRequired, match='agent/overstory/server.py'):
         module.release_intent(
             {'package.whl': _sha(b'wheel')},
             tag_target='release-commit',
             head_sha='runtime-commit',
-            changed_paths=['agent/agent_webui/server.py', 'docs/status.md'],
+            changed_paths=['agent/overstory/server.py', 'docs/status.md'],
         )
 
 

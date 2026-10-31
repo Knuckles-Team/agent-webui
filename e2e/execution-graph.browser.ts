@@ -55,7 +55,7 @@ for (const viewport of [
       }
       return route.fulfill({ status: 501, json: { detail: 'Unavailable in this read-only fixture' } })
     })
-    await page.addInitScript(() => localStorage.setItem('agent-webui.consent-dismissed', 'agent-webui-consent-v1'))
+    await page.addInitScript(() => localStorage.setItem('overstory.consent-dismissed', 'overstory-consent-v1'))
     await page.setViewportSize(viewport)
     await page.goto(`/workspace/work?task=${encodeURIComponent(fixture.task_id)}`)
     const graph = page.getByRole('region', { name: 'Execution dependency graph', exact: true })

@@ -1,5 +1,5 @@
 /**
- * ACP Provider for agent-webui using @mcpc-tech/acp-ai-provider.
+ * ACP Provider for overstory using @mcpc-tech/acp-ai-provider.
  * Standardizes communication with the Pydantic AI agent via the native ACP protocol.
  */
 
@@ -18,7 +18,7 @@ export function createAgentProvider(baseUrl = '') {
     baseUrl: acpBaseUrl,
     // Add any global headers or security tokens here
     headers: {
-      'X-Agent-WebUI': 'true',
+      'X-Overstory': 'true',
     },
   })
 }
