@@ -77,7 +77,7 @@ Cross-repository: `ARBORA-OPS-R008` generates the engine-bound operations, `ARBO
 
 ### Current source and producer prerequisites
 
-[EG R085](https://github.com/Knuckles-Team/epistemic-graph/tree/c0b952776129fd509b9f87b411a298593c2591ec/specs/durable-graph-kernel) defines authoritative memory versions, conflicts, retention and synchronization evidence.
+[EG R085](https://github.com/Knuckles-Team/medulla/tree/c0b952776129fd509b9f87b411a298593c2591ec/specs/durable-graph-kernel) defines authoritative memory versions, conflicts, retention and synchronization evidence.
 [Arbora R024.4.1–.6](https://github.com/Knuckles-Team/arbora/tree/1d7fb3f0865a32be167b0090c01e28a2c5f258b4/specs/hosted-api-operations) defines hosted files and serving in [PR 272](https://github.com/Knuckles-Team/arbora/pull/272), currently a proposed producer dependency.
 Neither definition establishes installed operations or runtime acceptance.
 EG owns content, compare-and-set, retention and sync decisions. Arbora owns authenticated serving, hosted projection and authenticated materialization acknowledgments. AU consumes EG decisions. WebUI renders the returned state.
@@ -1084,7 +1084,7 @@ retained usage filters or session context. Add all three authored synthetic
 browser journeys to the existing required hosted selection and artifact capture.
 Source integration does not establish native-browser or provider acceptance.
 Workflow edits remain in memory with Save/Run unavailable. Analytics keep the existing unavailable bindings.
-Do not derive rich evidence from usage totals or add a producer endpoint. Durable indexes remain with epistemic-graph.
+Do not derive rich evidence from usage totals or add a producer endpoint. Durable indexes remain with medulla.
 
 ## Liquid Glass reference correction — 2026-10-25
 

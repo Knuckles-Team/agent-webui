@@ -232,7 +232,7 @@ Full R049.1.2 acceptance remains open, including other destinations, native cont
 
 The production build/typecheck and strict documentation build passed. The served
 fixture used installed Arbora 0.1.7, Agent Utilities 3.1.0, SDK 0.2.2 and
-epistemic-graph 2.27.5 with this candidate WebUI source and built assets. Browser
+medulla 2.27.5 with this candidate WebUI source and built assets. Browser
 identity and API data were synthetic; static documents, lazy chunks, styles and
 fonts crossed the real HTTP mount in Chromium 156.0.8078.4. This is not
 live-provider or auth acceptance.

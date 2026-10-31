@@ -4,9 +4,9 @@
 
 | Work package | Owner | IDs | Current state | Required evidence |
 |---|---|---|---|---|
-| Finance ontology, accounting, sessions and golden fixtures | epistemic-graph | MEDULLA-FINANCE-PRIMITIVES-R004–MEDULLA-FINANCE-PRIMITIVES-R006, MEDULLA-FINANCE-PRIMITIVES-R013 | PENDING | Merged owner spec/code, fixed-point and provenance fixture output |
+| Finance ontology, accounting, sessions and golden fixtures | medulla | MEDULLA-FINANCE-PRIMITIVES-R004–MEDULLA-FINANCE-PRIMITIVES-R006, MEDULLA-FINANCE-PRIMITIVES-R013 | PENDING | Merged owner spec/code, fixed-point and provenance fixture output |
 | Provider data, account reads and CSV import | agent-connector-sdk / emerald-exchange | SCION-FINANCE-SOURCES-R002, SCION-FINANCE-SOURCES-R003, SCION-FINANCE-SOURCES-R004 | PENDING | Qualified source coverage, entitlement, preview/idempotency contract tests |
-| Strategy, backtest, recommendation and leverage | epistemic-graph / agent-utilities | MEDULLA-FINANCE-PRIMITIVES-R007–MEDULLA-FINANCE-PRIMITIVES-R009, MEDULLA-FINANCE-PRIMITIVES-R010 | PENDING | Versioned deterministic outputs, abstention, scorecard and risk-policy proof |
+| Strategy, backtest, recommendation and leverage | medulla / agent-utilities | MEDULLA-FINANCE-PRIMITIVES-R007–MEDULLA-FINANCE-PRIMITIVES-R009, MEDULLA-FINANCE-PRIMITIVES-R010 | PENDING | Versioned deterministic outputs, abstention, scorecard and risk-policy proof |
 | DCA scheduling and alert delivery | arbora / emerald-exchange | ARBORA-DATA-MARKET-R006, MEDULLA-FINANCE-PRIMITIVES-R011 | PENDING | Replay-safe event and delivery receipts |
 | Source intake and leverage guide | media-downloader / emerald-exchange | EMERALD-GUIDE-R001, EMERALD-MEDIA-R001 | PENDING | Public citations, source capture time, claims separated from executable rules |
 | Responsive Markets route and views | agent-webui | OVERSTORY-R001 | SPECIFIED | PR/commit, FIN-T01–T04, T07–T14, served-path and visual evidence |

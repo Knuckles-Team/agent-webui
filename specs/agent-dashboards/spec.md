@@ -9,7 +9,7 @@ Code: ../../src/lib/dashboards/model.ts ../../src/lib/dashboards/tools.ts ../../
 
 ## Outcome
 
-A person builds business-intelligence dashboards in the browser. The chat agent builds and edits the same dashboards with the person. The agent acts through WebMCP tools that the Overstory Studio page exposes. A dashboard is a declarative, versioned document. Arbora saves it, and epistemic-graph stores it as a catalog asset.
+A person builds business-intelligence dashboards in the browser. The chat agent builds and edits the same dashboards with the person. The agent acts through WebMCP tools that the Overstory Studio page exposes. A dashboard is a declarative, versioned document. Arbora saves it, and medulla stores it as a catalog asset.
 
 ## Why a new spec
 
