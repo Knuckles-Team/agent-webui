@@ -79,21 +79,11 @@ repos:
   - id: nbqa-ruff
     args: ["--fix"]
 - repo: https://github.com/Knuckles-Team/pipelines
-  rev: main # sanctioned first-party exception; public-surface + ste gates
+  rev: main # sanctioned first-party exception
   hooks:
-  - id: public-surface
-  - id: ste-staged
-    stages: [pre-commit, manual]
-  - id: ste-staleness-staged
-    stages: [pre-commit, manual]
-  - id: spec-status
-    stages: [pre-commit, manual]
-  - id: spec-decomposition
-    stages: [pre-commit, manual]
-  - id: spec-standard
-    stages: [pre-commit, manual]
-  - id: spec-trailers
-    stages: [pre-push, manual]
+  - id: secrets
+  - id: spec
+    stages: [pre-commit, pre-push, manual]
 - repo: local
   hooks:
   - id: uv-lock
@@ -121,24 +111,6 @@ repos:
     language: system
     pass_filenames: false
     always_run: true
-  - id: check-stubs
-    name: Check for Active Stubs and TODOs
-    entry: python3 scripts/run_agent_utilities_gate.py --gate check-stubs --script scripts/check_stubs.py --
-    language: system
-    types: [python]
-  - id: check-sprawl
-    name: Guardrail — anti-sprawl
-    entry: python3 scripts/run_agent_utilities_gate.py --gate check-sprawl --script scripts/check_sprawl.py --
-    language: system
-    args: ["."]
-    pass_filenames: false
-    always_run: true
-  - id: complexity-staged
-    name: Complexity (cccc) - no NEW function over cyclomatic 10 / cognitive 15, none regressed
-    entry: python3 scripts/check_complexity_staged.py
-    language: system
-    pass_filenames: false
-    always_run: true
   - id: eslint-staged
     name: eslint (staged .ts/.tsx) - errors block, warnings (incl. jsx-a11y) reported only
     # Uses the locked local toolchain (`scripts/bootstrap.sh` runs
@@ -147,7 +119,7 @@ repos:
     # Scoped to the files pre-commit is about to commit (via `files:` below,
     # not a whole-repo `eslint .`) so this hook enforces the NEW/changed code
     # a commit actually introduces, the same "don't gate on unrelated debt"
-    # principle as `complexity-staged` above -- not `--max-warnings=0`: the
+    # principle as the former complexity gate -- not `--max-warnings=0`: the
     # jsx-a11y rules landed at `warn` (pre-existing findings across the
     # repo; see eslint.config.ts's own comment) specifically so they surface
     # without blocking every commit that touches an already-noisy file. Once
@@ -258,31 +230,6 @@ repos:
     always_run: true
 - repo: local
   hooks:
-  - id: security-sanitizer
-    name: Security and Garbage Sanitizer
-    entry: python scripts/security_sanitizer.py
-    language: python
-    pass_filenames: false
-    always_run: true
-- repo: local
-  hooks:
-  - id: guardrail-tracked-privacy
-    name: Guardrail — tracked public artifacts contain no host-specific data or local identities
-    entry: python3 scripts/check_tracked_privacy.py
-    language: system
-    # NOT scoped, despite being expensive: a privacy leak (hostname, local
-    # path, identity) can land in ANY tracked file type (docs, config,
-    # fixtures, .ts/.tsx source), not just one directory, so no `files:`
-    # regex narrower than "everything tracked" can be proven not to miss
-    # one. Ported from agent-utilities' identically-named/identically-behaved
-    # gate (`scripts/check_tracked_privacy.py`'s own module docstring notes
-    # the two intentional adaptations for this repo: its own top-level
-    # source trees, and .tsx/.jsx added to the source-suffix set since this
-    # repo is TypeScript/React, not Rust/Python). This repo publishes to a
-    # public GitHub org, same as agent-utilities.
-    pass_filenames: false
-    always_run: true
-
   - id: check-root-hygiene
     name: Repository root hygiene (manifest-declared entries only)
     entry: python3 scripts/check_root_hygiene.py

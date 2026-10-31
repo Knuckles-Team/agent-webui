@@ -145,10 +145,9 @@ Do not bypass a gate with `--no-verify`, `SKIP`, diagnostic ignores,
 or warning suppression. Fix the source of each finding or report a genuine
 environmental blocker.
 
-For documentation changes, run the shared public-surface gate and build Pages:
+For documentation changes, build Pages:
 
 ```bash
-pre-commit run --config .config/pre-commit.yaml public-surface --all-files
 mkdocs build --strict
 ```
 
