@@ -12,8 +12,8 @@
   "eg_fixture_file": "tests/conftest.py",
   "eg_fixture_sha256": "83300cdba77977cec16841f944cb65831200d966d51df2ed59c2832283ad335d",
   "releases": {
-    "epistemic_graph-2.27.6-cp39-abi3-manylinux_2_28_x86_64.whl": "85c57dbeaad1e5142322e360f44a6fe8032e6cf75882c8293859a84fab5bea0a",
-    "epistemic_graph_server-2.27.6-py3-none-manylinux_2_28_x86_64.whl": "1a711f76a58605776ff78229f263d851a6d83475fd40a30d2480ad81be668334",
+    "medulla-2.27.6-cp39-abi3-manylinux_2_28_x86_64.whl": "85c57dbeaad1e5142322e360f44a6fe8032e6cf75882c8293859a84fab5bea0a",
+    "medulla_server-2.27.6-py3-none-manylinux_2_28_x86_64.whl": "1a711f76a58605776ff78229f263d851a6d83475fd40a30d2480ad81be668334",
     "agent_connector_sdk-0.5.4-py3-none-any.whl": "d9a35dbbeec3cb50baa6bcd28a8f2d691fef23206532e86340d9c8d0fb617603",
     "native_executable_sha256": "c33b7ab5835e775eacb43dcea2039a3efce26c7c4b1b5193da4d0bca8956d606"
   },
