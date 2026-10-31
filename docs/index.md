@@ -3,7 +3,7 @@
   <h1 class="site-hero__title" id="webui-hero-title">See the work. Guide the agent. Explore the evidence.</h1>
   <p class="site-hero__summary">
     Overstory brings conversations, governed actions, workflows, fleet activity,
-    and epistemic knowledge into one role-aware browser workspace.
+    and Medulla knowledge into one role-aware browser workspace.
   </p>
   <div class="site-hero__actions">
     <a href="start/">Start locally</a>
@@ -32,7 +32,7 @@ See the [workspace gallery and screenshot refresh guide](screenshots.md).
     </article>
     <article class="site-ownership__item">
       <span class="site-ownership__label">The platform owns elsewhere</span>
-      <div class="site-ownership__value">Agent behavior lives in agent-utilities, durable knowledge in epistemic-graph, and source effects in connector services.</div>
+      <div class="site-ownership__value">The Meristem harness runs agent behavior, Medulla holds durable knowledge, and connector services own source effects.</div>
     </article>
   </div>
 </div>
@@ -80,7 +80,7 @@ See the [workspace gallery and screenshot refresh guide](screenshots.md).
   </li>
   <li class="site-flow__step">
     <h3 class="site-flow__title">Run</h3>
-    <p class="site-flow__body">agent-utilities runs agent behavior while epistemic-graph and connector services perform their owned operations.</p>
+    <p class="site-flow__body">Meristem applies decisions while Medulla and connector services perform their owned operations.</p>
   </li>
   <li class="site-flow__step">
     <h3 class="site-flow__title">Observe</h3>
@@ -94,7 +94,7 @@ See the [workspace gallery and screenshot refresh guide](screenshots.md).
 - [Capability Workbench](capability-workbench.md) — discover, preflight, invoke,
   and follow governed capabilities.
 - [Agents and events](agents.md) — event types, routing, and graph activity.
-- [Feature reference](features.md) — browser configuration and WebUI-owned API surfaces.
+- [Feature reference](features.md) — browser configuration and Overstory-owned API surfaces.
 - [Ecosystem map](ecosystem.md) — the five repositories and their exact ownership.
 
 ## Specification delivery

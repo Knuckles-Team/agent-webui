@@ -90,7 +90,7 @@ then use the shared platform map to move between components:
 
 ## Architecture
 
-[![Runtime architecture: people use Agent Web UI, Agent Terminal UI, Geniusbot, and Arbora-hosted messaging. MCP, REST, and A2A clients enter through Arbora; source systems flow through Agent Connector SDK into Epistemic Graph.](https://raw.githubusercontent.com/Knuckles-Team/medulla/main/docs/assets/runtime-architecture.svg)](https://knuckles-team.github.io/.github/architecture/#webui)
+[![Runtime architecture: people use Overstory, Tuig, Axil, and Arbora-hosted messaging. MCP, REST, and A2A clients enter through Arbora; source systems flow through Scion SDK into Medulla.](https://raw.githubusercontent.com/Knuckles-Team/medulla/main/docs/assets/runtime-architecture.svg)](https://knuckles-team.github.io/.github/architecture/#webui)
 
 [Explore the live architecture](https://knuckles-team.github.io/.github/architecture/#webui)
 
