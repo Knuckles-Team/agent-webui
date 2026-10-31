@@ -16,7 +16,7 @@ Browser Finance route / Atlas series result
   -> validated WebUI API adapter
   -> WebUI FastAPI host with session and RBAC checks
   -> authenticated arbora gateway
-  -> epistemic-graph finance storage/compute
+  -> medulla finance storage/compute
   -> Emerald Exchange + agent-connector-sdk for provider/account ingress and governed effects
 ```
 
@@ -76,7 +76,7 @@ Run `pnpm run typecheck`, `pnpm run lint`, `pnpm run test`, `pnpm run test:e2e`,
 
 | Repository | Owner-native deliverable; interface consumed here | IDs |
 |---|---|---|
-| [epistemic-graph](https://github.com/Knuckles-Team/epistemic-graph) | finance-v1 accounts, activities, lots, reference sessions, fixed-point accounting, strategy/backtest/recommendation/leverage outputs and golden fixtures | MEDULLA-FINANCE-PRIMITIVES-R004–MEDULLA-FINANCE-PRIMITIVES-R006, MEDULLA-FINANCE-PRIMITIVES-R007–MEDULLA-FINANCE-PRIMITIVES-R009, MEDULLA-FINANCE-PRIMITIVES-R010, MEDULLA-FINANCE-PRIMITIVES-R013 |
+| [medulla](https://github.com/Knuckles-Team/medulla) | finance-v1 accounts, activities, lots, reference sessions, fixed-point accounting, strategy/backtest/recommendation/leverage outputs and golden fixtures | MEDULLA-FINANCE-PRIMITIVES-R004–MEDULLA-FINANCE-PRIMITIVES-R006, MEDULLA-FINANCE-PRIMITIVES-R007–MEDULLA-FINANCE-PRIMITIVES-R009, MEDULLA-FINANCE-PRIMITIVES-R010, MEDULLA-FINANCE-PRIMITIVES-R013 |
 | [agent-connector-sdk](https://github.com/Knuckles-Team/agent-connector-sdk) and [emerald-exchange](https://github.com/Knuckles-Team/emerald-exchange) | qualified stock/FX/commodity source and account/import transport; governed effect boundary | SCION-FINANCE-SOURCES-R002, SCION-FINANCE-SOURCES-R003, SCION-FINANCE-SOURCES-R004 |
 | [arbora](https://github.com/Knuckles-Team/arbora) | authenticated finance projection, replay-safe DCA scheduling and outbox alert delivery | ARBORA-DATA-MARKET-R006, MEDULLA-FINANCE-PRIMITIVES-R011 |
 | [agent-utilities](https://github.com/Knuckles-Team/agent-utilities) | workflow orchestration without a duplicate finance math authority | MEDULLA-FINANCE-PRIMITIVES-R009, ARBORA-DATA-MARKET-R006 |
